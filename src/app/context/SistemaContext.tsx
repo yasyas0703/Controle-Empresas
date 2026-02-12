@@ -422,8 +422,14 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     try {
       const empresaId = await db.insertEmpresa(payload, depIds);
 
+      // Montar responsáveis incluindo depts do state E do payload (importação pode ter depts novos)
       const responsaveis: Empresa['responsaveis'] = {};
       for (const d of state.departamentos) responsaveis[d.id] = payload.responsaveis?.[d.id] ?? null;
+      if (payload.responsaveis) {
+        for (const [depId, userId] of Object.entries(payload.responsaveis)) {
+          if (!(depId in responsaveis)) responsaveis[depId] = userId;
+        }
+      }
 
       const empresa: Empresa = {
         id: empresaId,

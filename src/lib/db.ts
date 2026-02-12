@@ -370,9 +370,15 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
 
   const empresaId = data.id as string;
 
-  // Responsáveis padrão (null para todos os departamentos)
-  if (departamentoIds.length > 0) {
-    const rows = departamentoIds.map((depId) => ({
+  // Responsáveis: unir departamentos do state com os que vêm no payload
+  const allDeptIds = new Set(departamentoIds);
+  if (payload.responsaveis) {
+    for (const depId of Object.keys(payload.responsaveis)) {
+      allDeptIds.add(depId);
+    }
+  }
+  if (allDeptIds.size > 0) {
+    const rows = Array.from(allDeptIds).map((depId) => ({
       empresa_id: empresaId,
       departamento_id: depId,
       usuario_id: payload.responsaveis?.[depId] || null,

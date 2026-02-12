@@ -237,7 +237,9 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
         if (p) allPeople.add(p);
       }
     }
-    for (const personName of allPeople) {
+    const peopleArray = Array.from(allPeople);
+    for (let pi = 0; pi < peopleArray.length; pi++) {
+      const personName = peopleArray[pi];
       const key = norm(personName);
       if (userIdByName.has(key)) continue;
 
@@ -252,6 +254,9 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
 
       // Auto-vincular o usuário ao departamento onde mais aparece
       const autoDeptId = personBestDept.get(key) ?? null;
+
+      // Delay entre criações para evitar rate-limit do Supabase Auth
+      if (pi > 0) await new Promise((r) => setTimeout(r, 250));
 
       const id = await criarUsuario({
         nome: personName,
