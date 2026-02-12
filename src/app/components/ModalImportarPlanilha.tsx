@@ -129,14 +129,15 @@ interface ModalImportarPlanilhaProps {
 }
 
 export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilhaProps) {
-  const { empresas, criarEmpresa, departamentos, criarDepartamento, usuarios, criarUsuario, mostrarAlerta } = useSistema();
+  const { empresas, criarEmpresa, atualizarEmpresa, departamentos, criarDepartamento, usuarios, criarUsuario, mostrarAlerta } = useSistema();
 
   const [parsed, setParsed] = useState<ParsedRow[]>([]);
   const [fileName, setFileName] = useState('');
   const [importing, setImporting] = useState(false);
-  const [result, setResult] = useState<{ created: number; skipped: number; deptCreated: string[] } | null>(null);
+  const [result, setResult] = useState<{ created: number; updated: number; skipped: number; deptCreated: string[] } | null>(null);
 
   const existingCodigos = new Set(empresas.map((e) => e.codigo));
+  const empresaByCodigo = new Map(empresas.map((e) => [e.codigo, e]));
 
   const handleFile = useCallback((file: File) => {
     setFileName(file.name);
@@ -163,6 +164,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
   const handleImport = async () => {
     setImporting(true);
     const newRows = parsed.filter((r) => !existingCodigos.has(r.codigo));
+    const existingRows = parsed.filter((r) => existingCodigos.has(r.codigo));
     const deptCreated: string[] = [];
 
     const norm = (s: string) => s.toLowerCase().trim().replace(/\s+/g, ' ');
@@ -185,9 +187,10 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
     const onlyDigits = (s: string) => String(s || '').replace(/\D/g, '');
 
     // Ensure all departments from responsáveis exist (and keep a local name -> id map)
+    // Coletar de TODAS as rows (novas + existentes) para poder atualizar responsáveis das existentes também
     const deptIdByName = new Map(departamentos.map((d) => [norm(d.nome), d.id]));
     const allDeptNames = new Set<string>();
-    for (const row of newRows) {
+    for (const row of parsed) {
       for (const deptName of Object.keys(row.responsaveis)) {
         allDeptNames.add(deptName);
       }
@@ -203,7 +206,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
 
     // Build a map: person name -> which department they appear in most (to auto-assign departamentoId)
     const personDeptCount = new Map<string, Map<string, number>>(); // norm(person) -> Map(norm(dept) -> count)
-    for (const row of newRows) {
+    for (const row of parsed) {
       for (const [deptName, personName] of Object.entries(row.responsaveis)) {
         const p = String(personName || '').trim();
         if (!p) continue;
@@ -231,7 +234,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
     const userIdByName = new Map(usuarios.map((u) => [norm(u.nome), u.id]));
     const usedEmails = new Set(usuarios.map((u) => u.email.toLowerCase().trim()));
     const allPeople = new Set<string>();
-    for (const row of newRows) {
+    for (const row of parsed) {
       for (const personName of Object.values(row.responsaveis)) {
         const p = String(personName || '').trim();
         if (p) allPeople.add(p);
@@ -340,13 +343,42 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
       created++;
     }
 
-    const skipped = parsed.length - created;
-    setResult({ created, skipped, deptCreated });
+    // Atualizar responsáveis das empresas existentes
+    let updated = 0;
+    for (const row of existingRows) {
+      const empresa = empresaByCodigo.get(row.codigo);
+      if (!empresa) continue;
+
+      const responsaveis: Record<string, string | null> = {};
+      let hasAny = false;
+      for (const [deptName, personName] of Object.entries(row.responsaveis)) {
+        const deptId = deptIdByName.get(norm(deptName));
+        if (!deptId) continue;
+        const userId = userIdByName.get(norm(personName));
+        responsaveis[deptId] = userId ?? null;
+        hasAny = true;
+      }
+
+      if (hasAny) {
+        try {
+          await atualizarEmpresa(empresa.id, { responsaveis });
+          updated++;
+        } catch (err) {
+          console.error(`Falha ao atualizar responsáveis da empresa ${row.codigo}:`, err);
+        }
+      }
+    }
+
+    const skipped = parsed.length - created - updated;
+    setResult({ created, updated, skipped, deptCreated });
     setImporting(false);
 
-    if (created > 0) {
-      const extra = enriched > 0 ? ` • ${enriched} com endereço via CNPJ` : '';
-      mostrarAlerta('Importação concluída', `${created} empresa(s) importada(s) com sucesso.${extra}`, 'sucesso');
+    const parts: string[] = [];
+    if (created > 0) parts.push(`${created} criada(s)`);
+    if (updated > 0) parts.push(`${updated} atualizada(s)`);
+    if (enriched > 0) parts.push(`${enriched} com endereço via CNPJ`);
+    if (parts.length > 0) {
+      mostrarAlerta('Importação concluída', parts.join(' • '), 'sucesso');
     }
   };
 
@@ -394,8 +426,8 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
               <div className="text-sm text-gray-500">
                 {parsed.length} empresa(s) encontrada(s)
                 {skipCount > 0 && (
-                  <span className="text-amber-600 ml-2">
-                    • {skipCount} já cadastrada(s) (mesmo código) — serão ignoradas
+                  <span className="text-blue-600 ml-2">
+                    • {skipCount} já cadastrada(s) — responsáveis serão atualizados
                   </span>
                 )}
               </div>
@@ -423,11 +455,11 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
                   const exists = existingCodigos.has(row.codigo);
                   const respCount = Object.keys(row.responsaveis).length;
                   return (
-                    <tr key={i} className={`border-t ${exists ? 'bg-amber-50/50 text-gray-400' : 'hover:bg-gray-50'}`}>
+                    <tr key={i} className={`border-t ${exists ? 'bg-blue-50/50' : 'hover:bg-gray-50'}`}>
                       <td className="px-3 py-2">
                         {exists ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-amber-600">
-                            <AlertTriangle size={14} /> Existente
+                          <span className="inline-flex items-center gap-1 text-xs text-blue-600">
+                            <AlertTriangle size={14} /> Atualizar
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-xs text-green-600">
@@ -450,7 +482,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
           <div className="flex items-center justify-between gap-4 pt-2">
             <div className="text-sm text-gray-600">
               <span className="font-bold text-green-600">{newCount}</span> nova(s) •{' '}
-              <span className="font-bold text-amber-600">{skipCount}</span> ignorada(s)
+              <span className="font-bold text-blue-600">{skipCount}</span> atualizar responsáveis
             </div>
             <div className="flex gap-3">
               <button
@@ -461,11 +493,11 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
               </button>
               <button
                 onClick={handleImport}
-                disabled={newCount === 0 || importing}
+                disabled={parsed.length === 0 || importing}
                 className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-500 text-white font-bold hover:from-cyan-700 hover:to-teal-600 shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {importing ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
-                Importar {newCount} empresa(s)
+                Importar {parsed.length} empresa(s)
               </button>
             </div>
           </div>
@@ -479,8 +511,9 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
             <Check className="mx-auto text-green-600 mb-3" size={48} />
             <div className="text-xl font-bold text-green-900">Importação concluída!</div>
             <div className="text-sm text-green-700 mt-2">
-              {result.created} empresa(s) criada(s)
-              {result.skipped > 0 && ` • ${result.skipped} ignorada(s) (já existiam)`}
+              {result.created > 0 && `${result.created} empresa(s) criada(s)`}
+              {result.updated > 0 && `${result.created > 0 ? ' • ' : ''}${result.updated} empresa(s) atualizada(s)`}
+              {result.skipped > 0 && ` • ${result.skipped} sem alterações`}
             </div>
             {result.deptCreated.length > 0 && (
               <div className="text-sm text-green-700 mt-1">

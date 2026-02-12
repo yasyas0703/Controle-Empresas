@@ -383,7 +383,8 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
       departamento_id: depId,
       usuario_id: payload.responsaveis?.[depId] || null,
     }));
-    await supabase.from('responsaveis').insert(rows);
+    const { error: respError } = await supabase.from('responsaveis').insert(rows);
+    if (respError) console.error('Erro ao inserir responsáveis:', respError);
   }
 
   // RETs
