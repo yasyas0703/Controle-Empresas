@@ -26,6 +26,7 @@ export interface DocumentoEmpresa {
   id: UUID;
   nome: string;
   validade: string; // ISO date (YYYY-MM-DD)
+  arquivoUrl?: string; // URL do arquivo no Supabase Storage
   criadoEm: string; // ISO
   atualizadoEm: string; // ISO
 }
@@ -140,9 +141,15 @@ export interface SistemaState {
   currentUserId: UUID | null;
 }
 
+export type LixeiraTipo = 'empresa' | 'documento' | 'observacao';
+
 export interface LixeiraItem {
   id: UUID;
-  empresa: Empresa;
+  tipo: LixeiraTipo;
+  empresa: Empresa;              // dados da empresa (quando tipo=empresa) ou empresa-pai (quando tipo=documento/observacao)
+  documento?: DocumentoEmpresa;  // dados do documento (quando tipo=documento)
+  observacao?: Observacao;       // dados da observação (quando tipo=observacao)
+  empresaId?: UUID;              // id da empresa-pai (para restaurar doc/obs)
   excluidoPorId: UUID | null;
   excluidoPorNome: string;
   excluidoEm: string; // ISO

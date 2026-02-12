@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { X, Plus, Trash2, Send, MessageSquare, Pencil } from 'lucide-react';
+import React, { useMemo, useState, useCallback } from 'react';
+import { X, Plus, Trash2, Send, MessageSquare, Pencil, Download, Eye, Paperclip, FileText } from 'lucide-react';
 import type { Empresa, UUID } from '@/app/types';
 import ModalBase from '@/app/components/ModalBase';
 import ConfirmModal from '@/app/components/ConfirmModal';
@@ -19,18 +19,39 @@ function formatRetNumber(value: string): string {
 }
 
 export default function ModalDetalhesEmpresa({
-  empresa,
+  empresa: empresaProp,
   onClose,
 }: {
   empresa: Empresa;
   onClose: () => void;
 }) {
-  const { adicionarDocumento, removerDocumento, adicionarObservacao, removerObservacao, departamentos, usuarios, currentUser, canManage } = useSistema();
+  const { adicionarDocumento, removerDocumento, adicionarObservacao, removerObservacao, departamentos, usuarios, currentUser, canManage, empresas } = useSistema();
+  // Sempre buscar a versão mais atualizada da empresa no contexto
+  const empresa = empresas.find((e) => e.id === empresaProp.id) ?? empresaProp;
   const [docOpen, setDocOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [obsTexto, setObsTexto] = useState('');
   const [confirmDeleteDocId, setConfirmDeleteDocId] = useState<string | null>(null);
   const [confirmDeleteObsId, setConfirmDeleteObsId] = useState<string | null>(null);
+  const [previewDocId, setPreviewDocId] = useState<string | null>(null);
+
+  const forceDownload = useCallback(async (url: string, fileName: string) => {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      // Fallback: abrir em nova aba se fetch falhar (CORS)
+      window.open(url, '_blank');
+    }
+  }, []);
 
   const nome = useMemo(() => empresa.razao_social || empresa.apelido || '-', [empresa]);
 
@@ -183,24 +204,64 @@ export default function ModalDetalhesEmpresa({
                     const dias = daysUntil(d.validade);
                     const danger = dias !== null && dias <= 60;
                     return (
-                      <div key={d.id} className="rounded-xl border bg-white p-4 flex items-center justify-between gap-4">
-                        <div className="min-w-0">
-                          <div className="font-bold text-gray-900 truncate">{d.nome}</div>
-                          <div className="text-sm text-gray-600">
+                      <React.Fragment key={d.id}>
+                      <div className="rounded-xl border bg-white p-4 flex items-center justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <FileText size={16} className="text-orange-500 shrink-0" />
+                            <div className="font-bold text-gray-900 truncate">{d.nome}</div>
+                          </div>
+                          <div className="text-sm text-gray-600 mt-1">
                             Validade: <span className={danger ? 'font-bold text-red-600' : 'text-gray-900'}>{formatBR(d.validade)}</span>
                             {dias !== null ? ` • ${dias}d` : ''}
                           </div>
+                          {d.arquivoUrl && (
+                            <div className="flex items-center gap-1.5 mt-1.5">
+                              <Paperclip size={12} className="text-orange-400" />
+                              <span className="text-xs text-orange-600 font-semibold">Arquivo anexado</span>
+                            </div>
+                          )}
                         </div>
-                        <button
-                          onClick={() => setConfirmDeleteDocId(d.id)}
-                          className="rounded-xl border p-2 hover:bg-gray-50"
-                          title="Excluir"
-                        >
-                          <Trash2 className="text-red-600" size={18} />
-                        </button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {d.arquivoUrl && (
+                            <>
+                              <button
+                                onClick={() => setPreviewDocId(previewDocId === d.id ? null : d.id)}
+                                className={`rounded-xl border p-2 hover:bg-orange-50 transition ${previewDocId === d.id ? 'bg-orange-100 border-orange-300' : ''}`}
+                                title="Visualizar arquivo"
+                              >
+                                <Eye className="text-orange-600" size={18} />
+                              </button>
+                              <button
+                                onClick={() => forceDownload(d.arquivoUrl!, d.nome)}
+                                className="rounded-xl border p-2 hover:bg-blue-50 transition"
+                                title="Baixar arquivo"
+                              >
+                                <Download className="text-blue-600" size={18} />
+                              </button>
+                            </>
+                          )}
+                          <button
+                            onClick={() => setConfirmDeleteDocId(d.id)}
+                            className="rounded-xl border p-2 hover:bg-red-50 transition"
+                            title="Excluir documento"
+                          >
+                            <Trash2 className="text-red-600" size={18} />
+                          </button>
+                        </div>
                       </div>
-                    );
-                  })}
+                      {previewDocId === d.id && d.arquivoUrl && (
+                        <div className="rounded-xl border border-orange-200 bg-orange-50/50 overflow-hidden" style={{ height: 400 }}>
+                          <iframe
+                            src={d.arquivoUrl}
+                            className="w-full h-full border-0"
+                            title={`Preview: ${d.nome}`}
+                          />
+                        </div>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
                 </div>
               )}
             </Section>
@@ -304,7 +365,7 @@ export default function ModalDetalhesEmpresa({
       <ModalAdicionarDocumento
         isOpen={docOpen}
         onClose={() => setDocOpen(false)}
-        onSubmit={(doc) => adicionarDocumento(empresa.id, doc)}
+        onSubmit={(doc, file) => adicionarDocumento(empresa.id, doc, file)}
       />
 
       {editOpen && (

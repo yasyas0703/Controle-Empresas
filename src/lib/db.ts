@@ -261,51 +261,79 @@ async function fetchResponsaveisForEmpresa(empresaId: UUID): Promise<Record<UUID
 }
 
 export async function fetchEmpresas(): Promise<Empresa[]> {
-  const { data, error } = await supabase.from('empresas').select('*').order('criado_em', { ascending: false });
-  if (error) throw error;
+  // Batch-load: busca empresas e todos os relacionamentos em paralelo (evita N+1)
+  // .limit(10000) para garantir que não caia no limite padrão de 1000 do Supabase
+  const [empresasRes, allRetsRes, allDocsRes, allObsRes, allRespsRes] = await Promise.all([
+    supabase.from('empresas').select('*').order('criado_em', { ascending: false }).limit(10000),
+    supabase.from('rets').select('*').limit(10000),
+    supabase.from('documentos').select('*').order('criado_em', { ascending: false }).limit(10000),
+    supabase.from('observacoes').select('*').order('criado_em', { ascending: true }).limit(10000),
+    supabase.from('responsaveis').select('*').limit(10000),
+  ]);
 
-  const empresas: Empresa[] = [];
-  for (const e of data ?? []) {
-    const [rets, documentos, observacoes, responsaveis] = await Promise.all([
-      fetchRetsForEmpresa(e.id),
-      fetchDocsForEmpresa(e.id),
-      fetchObsForEmpresa(e.id),
-      fetchResponsaveisForEmpresa(e.id),
-    ]);
-    empresas.push({
-      id: e.id,
-      cadastrada: e.cadastrada,
-      cnpj: e.cnpj ?? undefined,
-      codigo: e.codigo,
-      razao_social: e.razao_social ?? undefined,
-      apelido: e.apelido ?? undefined,
-      data_abertura: e.data_abertura ?? undefined,
-      tipoEstabelecimento: e.tipo_estabelecimento ?? '',
-      tipoInscricao: e.tipo_inscricao ?? '',
-      servicos: e.servicos ?? [],
-      possuiRet: e.possui_ret,
-      rets,
-      inscricao_estadual: e.inscricao_estadual ?? undefined,
-      inscricao_municipal: e.inscricao_municipal ?? undefined,
-      regime_federal: e.regime_federal ?? undefined,
-      regime_estadual: e.regime_estadual ?? undefined,
-      regime_municipal: e.regime_municipal ?? undefined,
-      estado: e.estado ?? undefined,
-      cidade: e.cidade ?? undefined,
-      bairro: e.bairro ?? undefined,
-      logradouro: e.logradouro ?? undefined,
-      numero: e.numero ?? undefined,
-      cep: e.cep ?? undefined,
-      email: e.email ?? undefined,
-      telefone: e.telefone ?? undefined,
-      responsaveis,
-      documentos,
-      observacoes,
-      criadoEm: toIso(e.criado_em),
-      atualizadoEm: toIso(e.atualizado_em),
-    });
+  if (empresasRes.error) throw empresasRes.error;
+
+  // Agrupar por empresa_id em memória
+  const retsMap = new Map<string, RetItem[]>();
+  for (const r of allRetsRes.data ?? []) {
+    const list = retsMap.get(r.empresa_id) ?? [];
+    list.push({ id: r.id, numeroPta: r.numero_pta, nome: r.nome, vencimento: r.vencimento, ultimaRenovacao: r.ultima_renovacao });
+    retsMap.set(r.empresa_id, list);
   }
-  return empresas;
+
+  const docsMap = new Map<string, DocumentoEmpresa[]>();
+  for (const d of allDocsRes.data ?? []) {
+    const list = docsMap.get(d.empresa_id) ?? [];
+    list.push({ id: d.id, nome: d.nome, validade: d.validade, arquivoUrl: d.arquivo_url ?? undefined, criadoEm: toIso(d.criado_em), atualizadoEm: toIso(d.atualizado_em) });
+    docsMap.set(d.empresa_id, list);
+  }
+
+  const obsMap = new Map<string, Observacao[]>();
+  for (const o of allObsRes.data ?? []) {
+    const list = obsMap.get(o.empresa_id) ?? [];
+    list.push({ id: o.id, texto: o.texto, autorId: o.autor_id ?? '', autorNome: o.autor_nome, criadoEm: toIso(o.criado_em) });
+    obsMap.set(o.empresa_id, list);
+  }
+
+  const respsMap = new Map<string, Record<UUID, UUID | null>>();
+  for (const r of allRespsRes.data ?? []) {
+    const map = respsMap.get(r.empresa_id) ?? {};
+    map[r.departamento_id] = r.usuario_id;
+    respsMap.set(r.empresa_id, map);
+  }
+
+  return (empresasRes.data ?? []).map((e) => ({
+    id: e.id,
+    cadastrada: e.cadastrada,
+    cnpj: e.cnpj ?? undefined,
+    codigo: e.codigo,
+    razao_social: e.razao_social ?? undefined,
+    apelido: e.apelido ?? undefined,
+    data_abertura: e.data_abertura ?? undefined,
+    tipoEstabelecimento: e.tipo_estabelecimento ?? '',
+    tipoInscricao: e.tipo_inscricao ?? '',
+    servicos: e.servicos ?? [],
+    possuiRet: e.possui_ret,
+    rets: retsMap.get(e.id) ?? [],
+    inscricao_estadual: e.inscricao_estadual ?? undefined,
+    inscricao_municipal: e.inscricao_municipal ?? undefined,
+    regime_federal: e.regime_federal ?? undefined,
+    regime_estadual: e.regime_estadual ?? undefined,
+    regime_municipal: e.regime_municipal ?? undefined,
+    estado: e.estado ?? undefined,
+    cidade: e.cidade ?? undefined,
+    bairro: e.bairro ?? undefined,
+    logradouro: e.logradouro ?? undefined,
+    numero: e.numero ?? undefined,
+    cep: e.cep ?? undefined,
+    email: e.email ?? undefined,
+    telefone: e.telefone ?? undefined,
+    responsaveis: respsMap.get(e.id) ?? {},
+    documentos: docsMap.get(e.id) ?? [],
+    observacoes: obsMap.get(e.id) ?? [],
+    criadoEm: toIso(e.criado_em),
+    atualizadoEm: toIso(e.atualizado_em),
+  }));
 }
 
 export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: UUID[]): Promise<string> {
@@ -466,11 +494,29 @@ export async function deleteEmpresa(id: UUID) {
 export async function insertDocumento(empresaId: UUID, doc: Omit<DocumentoEmpresa, 'id' | 'criadoEm' | 'atualizadoEm'>): Promise<DocumentoEmpresa> {
   const { data, error } = await supabase
     .from('documentos')
-    .insert({ empresa_id: empresaId, nome: doc.nome, validade: doc.validade })
+    .insert({ empresa_id: empresaId, nome: doc.nome, validade: doc.validade, arquivo_url: doc.arquivoUrl || null })
     .select()
     .single();
   if (error) throw error;
-  return { id: data.id, nome: data.nome, validade: data.validade, criadoEm: toIso(data.criado_em), atualizadoEm: toIso(data.atualizado_em) };
+  return { id: data.id, nome: data.nome, validade: data.validade, arquivoUrl: data.arquivo_url ?? undefined, criadoEm: toIso(data.criado_em), atualizadoEm: toIso(data.atualizado_em) };
+}
+
+export async function uploadDocumentoArquivo(empresaId: UUID, file: File): Promise<string> {
+  const BUCKET = 'documentos';
+  const ext = file.name.split('.').pop() ?? 'bin';
+  const path = `empresas/${empresaId}/${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
+  if (error) {
+    if (error.message?.includes('Bucket not found') || error.message?.includes('not found')) {
+      throw new Error(
+        'O bucket "documentos" não existe no Supabase Storage. ' +
+        'Vá em Storage no painel do Supabase e crie um bucket chamado "documentos" com acesso público.'
+      );
+    }
+    throw error;
+  }
+  const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  return urlData.publicUrl;
 }
 
 export async function deleteDocumento(docId: UUID) {
@@ -530,7 +576,11 @@ export async function fetchLixeira(): Promise<LixeiraItem[]> {
   if (error) throw error;
   return (data ?? []).map((l) => ({
     id: l.id,
+    tipo: l.tipo ?? 'empresa',
     empresa: l.empresa_data as Empresa,
+    documento: l.documento_data as DocumentoEmpresa | undefined,
+    observacao: l.observacao_data as Observacao | undefined,
+    empresaId: l.empresa_id ?? undefined,
     excluidoPorId: l.excluido_por_id,
     excluidoPorNome: l.excluido_por_nome,
     excluidoEm: toIso(l.excluido_em),
@@ -541,6 +591,7 @@ export async function insertLixeira(empresa: Empresa, userId: UUID | null, userN
   const { data, error } = await supabase
     .from('lixeira')
     .insert({
+      tipo: 'empresa',
       empresa_data: empresa as unknown as Record<string, unknown>,
       excluido_por_id: userId,
       excluido_por_nome: userName,
@@ -550,11 +601,121 @@ export async function insertLixeira(empresa: Empresa, userId: UUID | null, userN
   if (error) throw error;
   return {
     id: data.id,
+    tipo: 'empresa',
     empresa: data.empresa_data as Empresa,
     excluidoPorId: data.excluido_por_id,
     excluidoPorNome: data.excluido_por_nome,
     excluidoEm: toIso(data.excluido_em),
   };
+}
+
+export async function insertLixeiraDocumento(
+  doc: DocumentoEmpresa,
+  empresa: Empresa,
+  userId: UUID | null,
+  userName: string
+): Promise<LixeiraItem> {
+  const { data, error } = await supabase
+    .from('lixeira')
+    .insert({
+      tipo: 'documento',
+      empresa_data: empresa as unknown as Record<string, unknown>,
+      documento_data: doc as unknown as Record<string, unknown>,
+      empresa_id: empresa.id,
+      excluido_por_id: userId,
+      excluido_por_nome: userName,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return {
+    id: data.id,
+    tipo: 'documento',
+    empresa: data.empresa_data as Empresa,
+    documento: data.documento_data as DocumentoEmpresa,
+    empresaId: data.empresa_id,
+    excluidoPorId: data.excluido_por_id,
+    excluidoPorNome: data.excluido_por_nome,
+    excluidoEm: toIso(data.excluido_em),
+  };
+}
+
+export async function insertLixeiraObservacao(
+  obs: Observacao,
+  empresa: Empresa,
+  userId: UUID | null,
+  userName: string
+): Promise<LixeiraItem> {
+  const { data, error } = await supabase
+    .from('lixeira')
+    .insert({
+      tipo: 'observacao',
+      empresa_data: empresa as unknown as Record<string, unknown>,
+      observacao_data: obs as unknown as Record<string, unknown>,
+      empresa_id: empresa.id,
+      excluido_por_id: userId,
+      excluido_por_nome: userName,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return {
+    id: data.id,
+    tipo: 'observacao',
+    empresa: data.empresa_data as Empresa,
+    observacao: data.observacao_data as Observacao,
+    empresaId: data.empresa_id,
+    excluidoPorId: data.excluido_por_id,
+    excluidoPorNome: data.excluido_por_nome,
+    excluidoEm: toIso(data.excluido_em),
+  };
+}
+
+export async function restoreDocumento(doc: DocumentoEmpresa, empresaId: UUID) {
+  // Verificar se o documento ainda existe (pode não ter sido deletado corretamente)
+  const { data: existing } = await supabase
+    .from('documentos')
+    .select('id')
+    .eq('empresa_id', empresaId)
+    .eq('nome', doc.nome)
+    .eq('validade', doc.validade)
+    .limit(1);
+  if (existing && existing.length > 0) {
+    // Documento já existe — nada a fazer, apenas limpar a lixeira
+    return;
+  }
+  const { error } = await supabase
+    .from('documentos')
+    .insert({
+      empresa_id: empresaId,
+      nome: doc.nome,
+      validade: doc.validade,
+      arquivo_url: doc.arquivoUrl ?? null,
+    });
+  if (error) throw error;
+}
+
+export async function restoreObservacao(obs: Observacao, empresaId: UUID) {
+  // Verificar se a observação ainda existe
+  const { data: existing } = await supabase
+    .from('observacoes')
+    .select('id')
+    .eq('empresa_id', empresaId)
+    .eq('texto', obs.texto)
+    .eq('autor_nome', obs.autorNome)
+    .limit(1);
+  if (existing && existing.length > 0) {
+    return;
+  }
+  const { error } = await supabase
+    .from('observacoes')
+    .insert({
+      empresa_id: empresaId,
+      texto: obs.texto,
+      autor_id: obs.autorId,
+      autor_nome: obs.autorNome,
+    });
+  if (error) throw error;
 }
 
 export async function deleteLixeiraItem(id: UUID) {
@@ -564,6 +725,13 @@ export async function deleteLixeiraItem(id: UUID) {
 
 export async function clearLixeira() {
   const { error } = await supabase.from('lixeira').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  if (error) throw error;
+}
+
+/** Remove itens da lixeira com mais de N dias */
+export async function purgeLixeiraOlderThan(days: number) {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const { error } = await supabase.from('lixeira').delete().lt('excluido_em', cutoff);
   if (error) throw error;
 }
 

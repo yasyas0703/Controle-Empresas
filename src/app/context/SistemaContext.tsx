@@ -72,7 +72,7 @@ interface SistemaContextValue extends SistemaState {
   removerEmpresa: (id: UUID) => Promise<void>;
 
   // Documentos
-  adicionarDocumento: (empresaId: UUID, doc: Omit<DocumentoEmpresa, 'id' | 'criadoEm' | 'atualizadoEm'>) => Promise<void>;
+  adicionarDocumento: (empresaId: UUID, doc: Omit<DocumentoEmpresa, 'id' | 'criadoEm' | 'atualizadoEm'>, file?: File) => Promise<void>;
   removerDocumento: (empresaId: UUID, docId: UUID) => Promise<void>;
 
   // Observações
@@ -81,6 +81,7 @@ interface SistemaContextValue extends SistemaState {
 
   // Lixeira
   restaurarEmpresa: (lixeiraItemId: UUID) => Promise<void>;
+  restaurarItem: (lixeiraItemId: UUID) => Promise<void>;
   excluirDefinitivamente: (lixeiraItemId: UUID) => Promise<void>;
   limparLixeira: () => Promise<void>;
 
@@ -127,6 +128,11 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         isManager ? db.fetchUsuariosAdmin() : Promise.resolve(me ? [me] : []),
       ]);
 
+      // Auto-purge: remover itens da lixeira com mais de 10 dias
+      if (isManager) {
+        db.purgeLixeiraOlderThan(10).catch(() => {});
+      }
+
       setState((prev) => ({
         empresas,
         usuarios,
@@ -154,6 +160,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   // Auth + initial load
   useEffect(() => {
     let mounted = true;
+    let initialLoadDone = false;
 
     supabase.auth
       .getSession()
@@ -163,6 +170,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         const userId = data.session?.user?.id ?? null;
         if (userId) {
           setLoading(true);
+          initialLoadDone = true;
           await loadForUser(userId as UUID).catch((err) => console.error(err));
         } else {
           setState((prev) => ({ ...prev, currentUserId: null }));
@@ -175,6 +183,9 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       });
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Evitar recarregar se getSession já carregou (INITIAL_SESSION duplicado)
+      if (_event === 'INITIAL_SESSION' && initialLoadDone) return;
+
       const userId = session?.user?.id ?? null;
       if (userId) {
         setLoading(true);
@@ -254,8 +265,14 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha });
     if (error || !data.session?.user) return false;
     const userId = data.session.user.id;
-    setState((prev) => ({ ...prev, currentUserId: userId }));
-    await reloadData();
+    setLoading(true);
+    try {
+      await loadForUser(userId as UUID);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
     await pushLog({ action: 'login', entity: 'usuario', entityId: userId, message: `Login` });
     return true;
   };
@@ -513,6 +530,58 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const restaurarItem = async (lixeiraItemId: UUID) => {
+    const item = state.lixeira.find((l) => l.id === lixeiraItemId);
+    if (!item) return;
+    try {
+      if (item.tipo === 'empresa') {
+        await restaurarEmpresa(lixeiraItemId);
+        return;
+      }
+      if (item.tipo === 'documento' && item.documento && item.empresaId) {
+        // Verificar se a empresa-pai ainda existe
+        const empresaExiste = state.empresas.some((e) => e.id === item.empresaId);
+        if (!empresaExiste) {
+          mostrarAlerta('Erro', 'A empresa deste documento não existe mais. Restaure a empresa primeiro.', 'erro');
+          return;
+        }
+        await db.restoreDocumento(item.documento, item.empresaId);
+        await db.deleteLixeiraItem(lixeiraItemId);
+        await pushLog({ action: 'create', entity: 'documento', entityId: item.documento.id, message: `Restaurou documento da lixeira: ${item.documento.nome}` });
+        // Recarregar empresas para pegar o doc com o novo ID gerado pelo banco
+        const freshEmpresas = await db.fetchEmpresas();
+        setState((prev) => ({
+          ...prev,
+          empresas: freshEmpresas,
+          lixeira: prev.lixeira.filter((l) => l.id !== lixeiraItemId),
+        }));
+        mostrarAlerta('Documento restaurado', `"${item.documento.nome}" foi restaurado na empresa ${item.empresa.codigo}`, 'sucesso');
+        return;
+      }
+      if (item.tipo === 'observacao' && item.observacao && item.empresaId) {
+        const empresaExiste = state.empresas.some((e) => e.id === item.empresaId);
+        if (!empresaExiste) {
+          mostrarAlerta('Erro', 'A empresa desta observação não existe mais. Restaure a empresa primeiro.', 'erro');
+          return;
+        }
+        await db.restoreObservacao(item.observacao, item.empresaId);
+        await db.deleteLixeiraItem(lixeiraItemId);
+        await pushLog({ action: 'create', entity: 'empresa', entityId: item.empresaId, message: `Restaurou observação da lixeira` });
+        const freshEmpresas = await db.fetchEmpresas();
+        setState((prev) => ({
+          ...prev,
+          empresas: freshEmpresas,
+          lixeira: prev.lixeira.filter((l) => l.id !== lixeiraItemId),
+        }));
+        mostrarAlerta('Observação restaurada', `Observação restaurada na empresa ${item.empresa.codigo}`, 'sucesso');
+        return;
+      }
+    } catch (err) {
+      console.error(err);
+      mostrarAlerta('Erro', 'Não foi possível restaurar o item.', 'erro');
+    }
+  };
+
   const excluirDefinitivamente = async (lixeiraItemId: UUID) => {
     if (!canManage) return;
     const item = state.lixeira.find((l) => l.id === lixeiraItemId);
@@ -544,9 +613,20 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
   // ── Documentos ──
 
-  const adicionarDocumento = async (empresaId: UUID, doc: Omit<DocumentoEmpresa, 'id' | 'criadoEm' | 'atualizadoEm'>) => {
+  const adicionarDocumento = async (empresaId: UUID, doc: Omit<DocumentoEmpresa, 'id' | 'criadoEm' | 'atualizadoEm'>, file?: File) => {
     try {
-      const novo = await db.insertDocumento(empresaId, doc);
+      let arquivoUrl = doc.arquivoUrl;
+      if (file) {
+        try {
+          arquivoUrl = await db.uploadDocumentoArquivo(empresaId, file);
+        } catch (uploadErr: any) {
+          console.error('Erro no upload:', uploadErr);
+          mostrarAlerta('Erro no upload', uploadErr?.message || 'Não foi possível enviar o arquivo. Verifique se o bucket "documentos" existe no Supabase Storage.', 'erro');
+          // Continua criando o documento sem arquivo
+          arquivoUrl = undefined;
+        }
+      }
+      const novo = await db.insertDocumento(empresaId, { ...doc, arquivoUrl });
       await pushLog({ action: 'create', entity: 'documento', entityId: novo.id, message: `Adicionou documento: ${doc.nome}` });
       setState((prev) => ({
         ...prev,
@@ -554,20 +634,38 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
           e.id === empresaId ? { ...e, documentos: [novo, ...e.documentos], atualizadoEm: isoNow() } : e
         ),
       }));
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      mostrarAlerta('Erro ao adicionar documento', err?.message || 'Falha ao salvar documento.', 'erro');
     }
   };
 
   const removerDocumento = async (empresaId: UUID, docId: UUID) => {
     try {
+      const empresa = state.empresas.find((e) => e.id === empresaId);
+      const doc = empresa?.documentos.find((d) => d.id === docId);
+
+      // 1. Deletar o documento PRIMEIRO para garantir que ele sai da tabela
       await db.deleteDocumento(docId);
-      await pushLog({ action: 'delete', entity: 'documento', entityId: docId, message: `Removeu documento` });
+
+      // 2. Só depois de confirmar a exclusão, inserir na lixeira
+      if (doc && empresa && currentUser) {
+        try {
+          await db.insertLixeiraDocumento(doc, empresa, state.currentUserId, currentUser.nome);
+        } catch (lixErr) {
+          // Se falhar ao inserir na lixeira, o doc já foi deletado — apenas logar
+          console.warn('Documento excluído mas falhou ao inserir na lixeira:', lixErr);
+        }
+      }
+
+      await pushLog({ action: 'delete', entity: 'documento', entityId: docId, message: `Moveu documento para lixeira: ${doc?.nome ?? docId}` });
+      const freshLixeira = await db.fetchLixeira();
       setState((prev) => ({
         ...prev,
         empresas: prev.empresas.map((e) =>
           e.id === empresaId ? { ...e, documentos: e.documentos.filter((d) => d.id !== docId), atualizadoEm: isoNow() } : e
         ),
+        lixeira: freshLixeira,
       }));
     } catch (err) {
       console.error(err);
@@ -596,8 +694,23 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
   const removerObservacao = async (empresaId: UUID, obsId: UUID) => {
     try {
+      const empresa = state.empresas.find((e) => e.id === empresaId);
+      const obs = (empresa?.observacoes ?? []).find((o) => o.id === obsId);
+
+      // 1. Deletar primeiro
       await db.deleteObservacao(obsId);
-      await pushLog({ action: 'delete', entity: 'empresa', entityId: empresaId, message: `Removeu observação da empresa: ${state.empresas.find(e => e.id === empresaId)?.codigo ?? empresaId}` });
+
+      // 2. Só depois inserir na lixeira
+      if (obs && empresa && currentUser) {
+        try {
+          await db.insertLixeiraObservacao(obs, empresa, state.currentUserId, currentUser.nome);
+        } catch (lixErr) {
+          console.warn('Observação excluída mas falhou ao inserir na lixeira:', lixErr);
+        }
+      }
+
+      await pushLog({ action: 'delete', entity: 'empresa', entityId: empresaId, message: `Moveu observação para lixeira da empresa: ${empresa?.codigo ?? empresaId}` });
+      const freshLixeira = await db.fetchLixeira();
       setState((prev) => ({
         ...prev,
         empresas: prev.empresas.map((e) =>
@@ -605,6 +718,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
             ? { ...e, observacoes: (e.observacoes ?? []).filter((o) => o.id !== obsId), atualizadoEm: isoNow() }
             : e
         ),
+        lixeira: freshLixeira,
       }));
     } catch (err) {
       console.error(err);
@@ -678,6 +792,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     adicionarObservacao,
     removerObservacao,
     restaurarEmpresa,
+    restaurarItem,
     excluirDefinitivamente,
     limparLixeira,
     notificacoes: state.notificacoes ?? [],

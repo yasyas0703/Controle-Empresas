@@ -85,6 +85,7 @@ create table documentos (
   empresa_id uuid not null references empresas(id) on delete cascade,
   nome text not null,
   validade date not null,
+  arquivo_url text,
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
@@ -111,10 +112,14 @@ create table logs (
   diff jsonb
 );
 
--- 10. Lixeira (empresas excluídas)
+-- 10. Lixeira (itens excluídos: empresas, documentos, observações)
 create table lixeira (
   id uuid primary key default gen_random_uuid(),
+  tipo text not null default 'empresa' check (tipo in ('empresa', 'documento', 'observacao')),
   empresa_data jsonb not null,
+  documento_data jsonb,
+  observacao_data jsonb,
+  empresa_id uuid,
   excluido_por_id uuid references usuarios(id) on delete set null,
   excluido_por_nome text not null,
   excluido_em timestamptz not null default now()
@@ -158,6 +163,36 @@ create index idx_responsaveis_empresa on responsaveis(empresa_id);
 create index idx_logs_em on logs(em desc);
 create index idx_notificacoes_criado on notificacoes(criado_em desc);
 create index idx_lixeira_excluido on lixeira(excluido_em desc);
+
+-- ============================================================
+-- Storage: Bucket para documentos
+-- OBS: Se preferir criar manualmente, vá em Storage no Supabase
+-- e crie um bucket "documentos" com acesso público.
+-- ============================================================
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('documentos', 'documentos', true, 10485760)
+on conflict (id) do nothing;
+
+-- Policy: qualquer usuário autenticado pode fazer upload
+drop policy if exists "Authenticated users can upload docs" on storage.objects;
+create policy "Authenticated users can upload docs"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'documentos');
+
+-- Policy: qualquer um pode ver (bucket público)
+drop policy if exists "Public read access for docs" on storage.objects;
+create policy "Public read access for docs"
+  on storage.objects for select
+  to public
+  using (bucket_id = 'documentos');
+
+-- Policy: usuários autenticados podem deletar seus uploads
+drop policy if exists "Authenticated users can delete docs" on storage.objects;
+create policy "Authenticated users can delete docs"
+  on storage.objects for delete
+  to authenticated
+  using (bucket_id = 'documentos');
 
 -- ============================================================
 -- RLS (Row Level Security) — desabilitado para simplicidade
