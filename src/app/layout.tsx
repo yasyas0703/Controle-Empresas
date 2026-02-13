@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Controle Triar",
+  title: "Controle de Empresas",
   description: "Filtros e análises de empresas",
   icons: {
     icon: "/triar.png",
