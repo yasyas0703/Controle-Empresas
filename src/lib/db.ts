@@ -338,38 +338,92 @@ export async function fetchEmpresas(): Promise<Empresa[]> {
 }
 
 export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: UUID[]): Promise<string> {
-  const { data, error } = await supabase
-    .from('empresas')
-    .insert({
-      cadastrada: payload.cadastrada ?? false,
-      cnpj: payload.cnpj || null,
-      codigo: payload.codigo ?? '',
-      razao_social: payload.razao_social || null,
-      apelido: payload.apelido || null,
-      data_abertura: payload.data_abertura || null,
-      tipo_estabelecimento: payload.tipoEstabelecimento ?? '',
-      tipo_inscricao: payload.tipoInscricao ?? '',
-      servicos: payload.servicos ?? [],
-      possui_ret: payload.possuiRet ?? false,
-      inscricao_estadual: payload.inscricao_estadual || null,
-      inscricao_municipal: payload.inscricao_municipal || null,
-      regime_federal: payload.regime_federal || null,
-      regime_estadual: payload.regime_estadual || null,
-      regime_municipal: payload.regime_municipal || null,
-      estado: payload.estado || null,
-      cidade: payload.cidade || null,
-      bairro: payload.bairro || null,
-      logradouro: payload.logradouro || null,
-      numero: payload.numero || null,
-      cep: payload.cep || null,
-      email: payload.email || null,
-      telefone: payload.telefone || null,
-    })
-    .select('id')
-    .single();
-  if (error) throw error;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const isRetryableMessage = (msg: string) => /\b429\b|too many requests|rate limit|timed out|timeout|fetch failed|network|connection|econnreset|service unavailable|\b503\b/i.test(msg);
+  const isRetryableSupabaseError = (err: unknown) => {
+    const msg = (err as any)?.message ?? '';
+    const status = (err as any)?.status;
+    if (status === 429 || status === 503) return true;
+    return isRetryableMessage(String(msg));
+  };
 
-  const empresaId = data.id as string;
+  const codigo = String(payload.codigo ?? '').trim();
+
+  // Idempotência: se já existir empresa com o mesmo código, reutiliza para evitar duplicatas em retry/timeouts
+  let empresaId: string | null = null;
+  if (codigo) {
+    const { data: existing, error: existingErr } = await supabase
+      .from('empresas')
+      .select('id')
+      .eq('codigo', codigo)
+      .order('criado_em', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (existingErr) throw existingErr;
+    if (existing?.id) empresaId = existing.id as string;
+  }
+
+  if (!empresaId) {
+    const { data, error } = await supabase
+      .from('empresas')
+      .insert({
+        cadastrada: payload.cadastrada ?? false,
+        cnpj: payload.cnpj || null,
+        codigo,
+        razao_social: payload.razao_social || null,
+        apelido: payload.apelido || null,
+        data_abertura: payload.data_abertura || null,
+        tipo_estabelecimento: payload.tipoEstabelecimento ?? '',
+        tipo_inscricao: payload.tipoInscricao ?? '',
+        servicos: payload.servicos ?? [],
+        possui_ret: payload.possuiRet ?? false,
+        inscricao_estadual: payload.inscricao_estadual || null,
+        inscricao_municipal: payload.inscricao_municipal || null,
+        regime_federal: payload.regime_federal || null,
+        regime_estadual: payload.regime_estadual || null,
+        regime_municipal: payload.regime_municipal || null,
+        estado: payload.estado || null,
+        cidade: payload.cidade || null,
+        bairro: payload.bairro || null,
+        logradouro: payload.logradouro || null,
+        numero: payload.numero || null,
+        cep: payload.cep || null,
+        email: payload.email || null,
+        telefone: payload.telefone || null,
+      })
+      .select('id')
+      .single();
+    if (error) throw error;
+    empresaId = data.id as string;
+  } else {
+    // Mantém os dados sincronizados caso esteja reimportando
+    const row: Record<string, unknown> = { atualizado_em: new Date().toISOString() };
+    if (payload.cadastrada !== undefined) row.cadastrada = payload.cadastrada;
+    if (payload.cnpj !== undefined) row.cnpj = payload.cnpj || null;
+    if (payload.razao_social !== undefined) row.razao_social = payload.razao_social || null;
+    if (payload.apelido !== undefined) row.apelido = payload.apelido || null;
+    if (payload.data_abertura !== undefined) row.data_abertura = payload.data_abertura || null;
+    if (payload.tipoEstabelecimento !== undefined) row.tipo_estabelecimento = payload.tipoEstabelecimento;
+    if (payload.tipoInscricao !== undefined) row.tipo_inscricao = payload.tipoInscricao;
+    if (payload.servicos !== undefined) row.servicos = payload.servicos;
+    if (payload.possuiRet !== undefined) row.possui_ret = payload.possuiRet;
+    if (payload.inscricao_estadual !== undefined) row.inscricao_estadual = payload.inscricao_estadual || null;
+    if (payload.inscricao_municipal !== undefined) row.inscricao_municipal = payload.inscricao_municipal || null;
+    if (payload.regime_federal !== undefined) row.regime_federal = payload.regime_federal || null;
+    if (payload.regime_estadual !== undefined) row.regime_estadual = payload.regime_estadual || null;
+    if (payload.regime_municipal !== undefined) row.regime_municipal = payload.regime_municipal || null;
+    if (payload.estado !== undefined) row.estado = payload.estado || null;
+    if (payload.cidade !== undefined) row.cidade = payload.cidade || null;
+    if (payload.bairro !== undefined) row.bairro = payload.bairro || null;
+    if (payload.logradouro !== undefined) row.logradouro = payload.logradouro || null;
+    if (payload.numero !== undefined) row.numero = payload.numero || null;
+    if (payload.cep !== undefined) row.cep = payload.cep || null;
+    if (payload.email !== undefined) row.email = payload.email || null;
+    if (payload.telefone !== undefined) row.telefone = payload.telefone || null;
+
+    const { error: updErr } = await supabase.from('empresas').update(row).eq('id', empresaId);
+    if (updErr) throw updErr;
+  }
 
   // Responsáveis: unir departamentos do state com os que vêm no payload
   const allDeptIds = new Set(departamentoIds);
@@ -387,25 +441,29 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
       usuario_id: payload.responsaveis?.[depId] || null,
     }));
     console.log(`[DB DEBUG] Responsáveis rows a inserir (${rows.length}):`, rows.map(r => ({ dept: r.departamento_id, user: r.usuario_id })));
-    // delete + insert (upsert com onConflict composto falha silenciosamente no Supabase)
-    const { error: delError } = await supabase.from('responsaveis').delete().eq('empresa_id', empresaId);
-    if (delError) console.error(`[DB DEBUG] Delete responsáveis falhou:`, delError.message);
-    const { data: respData, error: respError } = await supabase
-      .from('responsaveis')
-      .insert(rows)
-      .select();
-    console.log(`[DB DEBUG] Insert responsáveis resultado: data =`, respData?.length ?? 0, 'registros, error =', respError?.message ?? 'nenhum');
-    if (respError) {
-      console.warn('[DB DEBUG] Batch insert de responsáveis falhou, tentando inserts individuais:', respError.message);
-      for (const row of rows) {
-        const { data: indData, error: indErr } = await supabase
+    // Upsert evita 409 (Conflict) no retry/reimport e mantém idempotência
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const { error: respError, data: respData, status: respStatus, statusText } = await supabase
           .from('responsaveis')
-          .insert(row)
+          .upsert(rows, { onConflict: 'empresa_id,departamento_id' })
           .select();
-        console.log(`[DB DEBUG] Insert individual dept=${row.departamento_id}: data =`, indData, 'error =', indErr?.message ?? 'ok');
-        if (indErr) console.error(`Falha ao inserir responsável dept=${row.departamento_id}:`, indErr.message);
+        console.log(`[DB DEBUG] insertEmpresa ${empresaId}: upsert resultado → status=${respStatus} ${statusText}, data=${respData?.length ?? 'null'} rows, error=${respError?.message ?? 'nenhum'}`);
+        if (respError) throw respError;
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        console.warn(`[DB DEBUG] upsert responsáveis falhou (tentativa ${attempt + 1}/3):`, err);
+        if (attempt < 2 && isRetryableSupabaseError(err)) {
+          await sleep(400 * (attempt + 1));
+          continue;
+        }
+        break;
       }
     }
+    if (lastErr) throw lastErr;
   } else {
     console.warn(`[DB DEBUG] insertEmpresa ${empresaId}: NENHUM departamento para inserir responsáveis!`);
   }
@@ -490,28 +548,52 @@ export async function updateEmpresa(id: UUID, patch: Partial<Empresa>) {
     }
   }
 
-  // Atualizar responsáveis se fornecidos (delete + insert é mais confiável que upsert com constraint composta)
+  // Atualizar responsáveis se fornecidos (inserir/atualizar sem apagar os que não vieram no patch)
   if (patch.responsaveis !== undefined) {
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const isRetryableMessage = (msg: string) => /\b429\b|too many requests|rate limit|timed out|timeout|fetch failed|network|connection|econnreset|service unavailable|\b503\b/i.test(msg);
+    const isRetryableSupabaseError = (err: unknown) => {
+      const msg = (err as any)?.message ?? '';
+      const status = (err as any)?.status;
+      if (status === 429 || status === 503) return true;
+      return isRetryableMessage(String(msg));
+    };
+
     const rows = Object.entries(patch.responsaveis).map(([depId, userId]) => ({
       empresa_id: id,
       departamento_id: depId,
       usuario_id: userId || null,
     }));
-    // Sempre limpar e reinserir para garantir consistência
-    await supabase.from('responsaveis').delete().eq('empresa_id', id);
+    console.log(`%c[DB DEBUG] updateEmpresa ${id}: upsert responsáveis (${rows.length} rows)`, 'color: dodgerblue; font-weight: bold');
+    for (const r of rows) {
+      console.log(`  dept=${r.departamento_id} → user=${r.usuario_id ?? 'NULL'}`);
+    }
     if (rows.length > 0) {
-      const { error: respError } = await supabase
-        .from('responsaveis')
-        .insert(rows);
-      if (respError) {
-        console.warn('Batch insert de responsáveis falhou, tentando individuais:', respError.message);
-        for (const row of rows) {
-          const { error: e } = await supabase
+      // Upsert em batch: evita 409 e reduz requests
+      let lastErr: unknown = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const { error: respError, data: respData, status: respStatus, statusText } = await supabase
             .from('responsaveis')
-            .insert(row);
-          if (e) console.error(`Resp insert falhou dept=${row.departamento_id}:`, e.message);
+            .upsert(rows, { onConflict: 'empresa_id,departamento_id' })
+            .select();
+          console.log(`[DB DEBUG] updateEmpresa ${id}: upsert resultado → status=${respStatus} ${statusText}, data=${JSON.stringify(respData?.length ?? 'null')} rows, error=${respError?.message ?? 'nenhum'}`);
+          if (respError) throw respError;
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          console.error(`[DB DEBUG] updateEmpresa ${id}: upsert FALHOU (tentativa ${attempt + 1}/3):`, err);
+          if (attempt < 2 && isRetryableSupabaseError(err)) {
+            await sleep(250 * (attempt + 1));
+            continue;
+          }
+          break;
         }
       }
+      if (lastErr) throw lastErr;
+    } else {
+      console.warn(`[DB DEBUG] updateEmpresa ${id}: patch.responsaveis está vazio, nada para upsert.`);
     }
   }
 }
