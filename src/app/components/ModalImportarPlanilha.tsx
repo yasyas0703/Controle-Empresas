@@ -93,6 +93,10 @@ function parseFile(text: string): ParsedRow[] {
     }
   }
 
+  console.log('[PARSE DEBUG] separator:', JSON.stringify(separator));
+  console.log('[PARSE DEBUG] headerCols (total):', headerCols.length, headerCols.slice(10).map((h, i) => `[${i + 10}]=${JSON.stringify(h)}`));
+  console.log('[PARSE DEBUG] deptColumns:', deptColumns);
+
   const dataLines = lines.slice(1);
 
   return dataLines
@@ -108,6 +112,12 @@ function parseFile(text: string): ParsedRow[] {
       for (const { col, dept } of deptColumns) {
         const val = (cols[col] || '').trim();
         if (val) responsaveis[dept] = val;
+      }
+
+      // DEBUG: log para empresas específicas
+      if (['815', '842', '822', '804', '816'].includes(codigo.trim())) {
+        console.log(`[PARSE DEBUG] Empresa ${codigo}: total cols=${cols.length}, cols[10..26]=`, cols.slice(10).map((c, i) => `[${i + 10}]=${JSON.stringify(c)}`));
+        console.log(`[PARSE DEBUG] Empresa ${codigo}: responsaveis parseadas =`, JSON.stringify(responsaveis));
       }
 
       return {
@@ -129,7 +139,7 @@ interface ModalImportarPlanilhaProps {
 }
 
 export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilhaProps) {
-  const { empresas, criarEmpresa, atualizarEmpresa, departamentos, criarDepartamento, usuarios, criarUsuario, mostrarAlerta } = useSistema();
+  const { empresas, criarEmpresa, atualizarEmpresa, departamentos, criarDepartamento, usuarios, criarUsuario, mostrarAlerta, reloadData } = useSistema();
 
   const [parsed, setParsed] = useState<ParsedRow[]>([]);
   const [fileName, setFileName] = useState('');
@@ -261,29 +271,50 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
       // Delay entre criações para evitar rate-limit do Supabase Auth
       if (pi > 0) await new Promise((r) => setTimeout(r, 250));
 
-      const id = await criarUsuario({
-        nome: personName,
-        email,
-        senha: randomPassword(),
-        role: 'usuario',
-        departamentoId: autoDeptId,
-        ativo: true,
-      });
+      // Tentar criar usuário com retry (rate-limit pode rejeitar na primeira tentativa)
+      let id: string | null = null;
+      for (let attempt = 0; attempt < 3 && !id; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 1000 * attempt)); // backoff: 1s, 2s
+        id = await criarUsuario({
+          nome: personName,
+          email,
+          senha: randomPassword(),
+          role: 'usuario',
+          departamentoId: autoDeptId,
+          ativo: true,
+        });
+      }
       if (id) userIdByName.set(key, id);
     }
 
     let created = 0;
     let enriched = 0;
+    let failedUsers = 0;
+
+    // DEBUG: log dos mapas construídos
+    console.log('[IMPORT DEBUG] deptIdByName:', Object.fromEntries(deptIdByName));
+    console.log('[IMPORT DEBUG] userIdByName:', Object.fromEntries(userIdByName));
+    console.log('[IMPORT DEBUG] newRows:', newRows.length, 'existingRows:', existingRows.length);
+
     for (const row of newRows) {
       const responsaveis: Record<string, string | null> = {};
 
       // Map department names → dept IDs, and person names → user IDs
       for (const [deptName, personName] of Object.entries(row.responsaveis)) {
         const deptId = deptIdByName.get(norm(deptName));
-        if (!deptId) continue;
+        if (!deptId) {
+          console.warn(`[IMPORT DEBUG] Dept não encontrado no mapa: "${deptName}" (norm: "${norm(deptName)}")`);
+          continue;
+        }
         const userId = userIdByName.get(norm(personName));
+        // Para empresas novas, setar null se o userId não foi resolvido — a row é criada para o dept existir
         responsaveis[deptId] = userId ?? null;
+        if (!userId) {
+          console.warn(`[IMPORT DEBUG] User não encontrado: "${personName}" (norm: "${norm(personName)}")`);
+          failedUsers++;
+        }
       }
+      console.log(`[IMPORT DEBUG] Empresa ${row.codigo} - ${row.razao_social}: responsaveis =`, JSON.stringify(responsaveis));
 
       // Buscar dados do CNPJ ANTES de criar a empresa, para já criar com endereço preenchido
       let cnpjData: Partial<{
@@ -339,8 +370,14 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
         rets: [],
       };
 
-      await criarEmpresa(payload);
-      created++;
+      try {
+        console.log(`[IMPORT DEBUG] Chamando criarEmpresa para ${row.codigo}, payload.responsaveis =`, JSON.stringify(payload.responsaveis));
+        await criarEmpresa(payload);
+        created++;
+        console.log(`[IMPORT DEBUG] Empresa ${row.codigo} criada com sucesso`);
+      } catch (err) {
+        console.error(`[IMPORT DEBUG] ERRO ao criar empresa ${row.codigo}:`, err);
+      }
     }
 
     // Atualizar responsáveis das empresas existentes
@@ -353,24 +390,47 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
       let hasAny = false;
       for (const [deptName, personName] of Object.entries(row.responsaveis)) {
         const deptId = deptIdByName.get(norm(deptName));
-        if (!deptId) continue;
+        if (!deptId) {
+          console.warn(`[IMPORT DEBUG UPDATE] Dept não encontrado: "${deptName}"`);
+          continue;
+        }
         const userId = userIdByName.get(norm(personName));
-        responsaveis[deptId] = userId ?? null;
-        hasAny = true;
+        // CORREÇÃO: Só atualizar o responsável se o userId foi resolvido com sucesso.
+        // Não sobrescrever uma atribuição válida existente com null.
+        if (userId) {
+          responsaveis[deptId] = userId;
+          hasAny = true;
+        } else if (!empresa.responsaveis[deptId]) {
+          // Dept sem responsável existente — manter null (apenas registrar que o dept existe)
+          responsaveis[deptId] = null;
+          hasAny = true;
+        }
+        // Se o dept já tem responsável existente e userId é null, não inclui no patch — preserva o existente
       }
+
+      console.log(`[IMPORT DEBUG UPDATE] Empresa ${row.codigo} - responsaveis patch:`, JSON.stringify(responsaveis), 'hasAny:', hasAny);
 
       if (hasAny) {
         try {
           await atualizarEmpresa(empresa.id, { responsaveis });
           updated++;
+          console.log(`[IMPORT DEBUG UPDATE] Empresa ${row.codigo} atualizada`);
         } catch (err) {
-          console.error(`Falha ao atualizar responsáveis da empresa ${row.codigo}:`, err);
+          console.error(`[IMPORT DEBUG UPDATE] ERRO ao atualizar empresa ${row.codigo}:`, err);
         }
       }
     }
 
     const skipped = parsed.length - created - updated;
     setResult({ created, updated, skipped, deptCreated });
+
+    // Recarregar dados do banco para garantir sincronização state ↔ DB
+    try {
+      await reloadData();
+    } catch {
+      // silencioso — dados locais continuam válidos
+    }
+
     setImporting(false);
 
     const parts: string[] = [];
@@ -380,13 +440,16 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
     if (parts.length > 0) {
       mostrarAlerta('Importação concluída', parts.join(' • '), 'sucesso');
     }
+    if (failedUsers > 0) {
+      mostrarAlerta('Atenção', `${failedUsers} vínculo(s) de responsável não puderam ser resolvidos (usuários não criados). Verifique e atribua manualmente.`, 'aviso');
+    }
   };
 
   const newCount = parsed.filter((r) => !existingCodigos.has(r.codigo)).length;
   const skipCount = parsed.length - newCount;
 
   return (
-    <ModalBase isOpen={true} onClose={onClose} dialogClassName="w-full max-w-3xl rounded-2xl bg-white shadow-2xl p-6">
+    <ModalBase isOpen={true} onClose={onClose} dialogClassName="w-full max-w-3xl rounded-2xl bg-white shadow-2xl p-4 sm:p-6">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-bold text-gray-900">Importar Planilha do Domínio</h2>
         <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 transition">

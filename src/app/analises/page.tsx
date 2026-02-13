@@ -154,7 +154,7 @@ export default function AnalisesPage() {
           )}
         </div>
 
-        <div className="mt-4 flex gap-3 flex-wrap">
+        <div className="mt-4 grid grid-cols-2 sm:flex gap-3 flex-wrap">
           <select value={filtroRegime} onChange={(e) => setFiltroRegime(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Todos os regimes</option>
             <option value="Simples Nacional">Simples Nacional</option>
@@ -181,7 +181,7 @@ export default function AnalisesPage() {
       </div>
 
       {/* Resumo rápido */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
         <MiniCard label="Empresas" value={filteredEmpresas.length} gradient="from-blue-500 to-blue-600" icon={<Building2 size={20} />} />
         <MiniCard label="Serviços" value={stats.byServico.length} gradient="from-cyan-500 to-teal-600" icon={<Briefcase size={20} />} />
         <MiniCard label="Estados" value={stats.byEstado.length} gradient="from-emerald-500 to-emerald-600" icon={<MapPin size={20} />} />
@@ -411,7 +411,7 @@ function DonutChart({ rows, statusColors }: { rows: Array<[string, number]>; sta
   const circumference = 2 * Math.PI * radius;
 
   return (
-    <div className="flex items-center gap-6">
+    <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
       <div className="shrink-0">
         <svg width="150" height="150" viewBox="0 0 150 150">
           {segments.map((s, i) => (
@@ -438,7 +438,7 @@ function DonutChart({ rows, statusColors }: { rows: Array<[string, number]>; sta
           <div key={s.label} className="flex items-center gap-2">
             <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
             <div className="text-sm text-gray-800 truncate">{s.label}</div>
-            <div className="text-sm font-bold text-gray-600 ml-auto">{s.n} <span className="text-gray-400 font-normal">({Math.round(s.percent * 100)}%)</span></div>
+            <div className="text-sm font-bold text-gray-600 ml-auto whitespace-nowrap">{s.n} <span className="text-gray-400 font-normal">({Math.round(s.percent * 100)}%)</span></div>
           </div>
         ))}
       </div>

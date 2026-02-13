@@ -222,10 +222,14 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
   const pushLog = async (entry: Omit<LogEntry, 'id' | 'em' | 'userId'> & { diff?: LogEntry['diff'] }) => {
     try {
-      await db.insertLog({
+      const newLog = await db.insertLog({
         userId: state.currentUserId,
         ...entry,
       });
+      setState((prev) => ({
+        ...prev,
+        logs: [newLog, ...prev.logs],
+      }));
     } catch (err) {
       console.error('Erro ao inserir log:', err);
     }

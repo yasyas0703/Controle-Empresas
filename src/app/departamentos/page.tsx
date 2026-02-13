@@ -12,7 +12,7 @@ export default function DepartamentosPage() {
 
   if (!canManage) {
     return (
-      <div className="rounded-2xl bg-white p-6 shadow-sm">
+      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
         <div className="text-lg font-bold text-gray-900">Departamentos</div>
         <div className="mt-2 text-sm text-gray-600">Apenas gerentes têm acesso a esta área.</div>
       </div>
@@ -21,13 +21,13 @@ export default function DepartamentosPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl bg-white p-6 shadow-sm">
-        <div className="text-2xl font-bold text-gray-900">Departamentos</div>
-        <div className="text-sm text-gray-500">Cadastre departamentos e use para vincular usuários/responsáveis</div>
+      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+        <div className="text-xl sm:text-2xl font-bold text-gray-900">Departamentos</div>
+        <div className="text-xs sm:text-sm text-gray-500">Cadastre departamentos e use para vincular usuários/responsáveis</div>
 
-        <div className="mt-6 rounded-2xl bg-cyan-50 p-5">
+        <div className="mt-4 sm:mt-6 rounded-2xl bg-cyan-50 p-4 sm:p-5">
           <div className="font-bold text-cyan-900">Criar Departamento</div>
-          <div className="mt-4 flex gap-3">
+          <div className="mt-4 flex flex-col sm:flex-row gap-3">
             <input
               value={nome}
               onChange={(e) => setNome(e.target.value)}
@@ -53,7 +53,7 @@ export default function DepartamentosPage() {
         </div>
       </div>
 
-      <div className="rounded-2xl bg-white p-6 shadow-sm">
+      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
         <div className="text-lg font-bold text-gray-900">Lista ({departamentos.length})</div>
         <div className="mt-4 space-y-3">
           {departamentos.map((d) => (

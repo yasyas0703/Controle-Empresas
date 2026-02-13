@@ -94,7 +94,7 @@ export default function ConfirmModal({
           <X size={16} />
         </button>
 
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {/* Icon */}
           <div className="flex justify-center mb-4">
             <div className={`h-16 w-16 rounded-2xl ${cfg.iconBg} flex items-center justify-center ring-8 ${cfg.ringColor}`}>
@@ -110,7 +110,7 @@ export default function ConfirmModal({
         </div>
 
         {/* Actions */}
-        <div className="px-6 pb-6 flex gap-3">
+        <div className="px-4 sm:px-6 pb-4 sm:pb-6 flex gap-3">
           <button
             onClick={onCancel}
             className="flex-1 rounded-xl px-4 py-3 bg-gray-100 hover:bg-gray-200 text-sm font-bold text-gray-700 transition"

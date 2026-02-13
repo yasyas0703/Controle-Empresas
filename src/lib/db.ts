@@ -296,6 +296,7 @@ export async function fetchEmpresas(): Promise<Empresa[]> {
   }
 
   const respsMap = new Map<string, Record<UUID, UUID | null>>();
+  console.log(`[DB DEBUG] fetchEmpresas: responsaveis carregados do banco: ${allRespsRes.data?.length ?? 0} registros, error: ${allRespsRes.error?.message ?? 'nenhum'}`);
   for (const r of allRespsRes.data ?? []) {
     const map = respsMap.get(r.empresa_id) ?? {};
     map[r.departamento_id] = r.usuario_id;
@@ -377,14 +378,36 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
       allDeptIds.add(depId);
     }
   }
+  console.log(`[DB DEBUG] insertEmpresa ${empresaId}: departamentoIds recebidos:`, departamentoIds.length, ', payload.responsaveis keys:', Object.keys(payload.responsaveis || {}));
+  console.log(`[DB DEBUG] allDeptIds (${allDeptIds.size}):`, Array.from(allDeptIds));
   if (allDeptIds.size > 0) {
     const rows = Array.from(allDeptIds).map((depId) => ({
       empresa_id: empresaId,
       departamento_id: depId,
       usuario_id: payload.responsaveis?.[depId] || null,
     }));
-    const { error: respError } = await supabase.from('responsaveis').insert(rows);
-    if (respError) console.error('Erro ao inserir responsáveis:', respError);
+    console.log(`[DB DEBUG] Responsáveis rows a inserir (${rows.length}):`, rows.map(r => ({ dept: r.departamento_id, user: r.usuario_id })));
+    // delete + insert (upsert com onConflict composto falha silenciosamente no Supabase)
+    const { error: delError } = await supabase.from('responsaveis').delete().eq('empresa_id', empresaId);
+    if (delError) console.error(`[DB DEBUG] Delete responsáveis falhou:`, delError.message);
+    const { data: respData, error: respError } = await supabase
+      .from('responsaveis')
+      .insert(rows)
+      .select();
+    console.log(`[DB DEBUG] Insert responsáveis resultado: data =`, respData?.length ?? 0, 'registros, error =', respError?.message ?? 'nenhum');
+    if (respError) {
+      console.warn('[DB DEBUG] Batch insert de responsáveis falhou, tentando inserts individuais:', respError.message);
+      for (const row of rows) {
+        const { data: indData, error: indErr } = await supabase
+          .from('responsaveis')
+          .insert(row)
+          .select();
+        console.log(`[DB DEBUG] Insert individual dept=${row.departamento_id}: data =`, indData, 'error =', indErr?.message ?? 'ok');
+        if (indErr) console.error(`Falha ao inserir responsável dept=${row.departamento_id}:`, indErr.message);
+      }
+    }
+  } else {
+    console.warn(`[DB DEBUG] insertEmpresa ${empresaId}: NENHUM departamento para inserir responsáveis!`);
   }
 
   // RETs
@@ -467,24 +490,27 @@ export async function updateEmpresa(id: UUID, patch: Partial<Empresa>) {
     }
   }
 
-  // Atualizar responsáveis se fornecidos
+  // Atualizar responsáveis se fornecidos (delete + insert é mais confiável que upsert com constraint composta)
   if (patch.responsaveis !== undefined) {
-    for (const [depId, userId] of Object.entries(patch.responsaveis)) {
-      const { data: existing } = await supabase
+    const rows = Object.entries(patch.responsaveis).map(([depId, userId]) => ({
+      empresa_id: id,
+      departamento_id: depId,
+      usuario_id: userId || null,
+    }));
+    // Sempre limpar e reinserir para garantir consistência
+    await supabase.from('responsaveis').delete().eq('empresa_id', id);
+    if (rows.length > 0) {
+      const { error: respError } = await supabase
         .from('responsaveis')
-        .select('id')
-        .eq('empresa_id', id)
-        .eq('departamento_id', depId)
-        .maybeSingle();
-
-      if (existing) {
-        await supabase.from('responsaveis').update({ usuario_id: userId || null }).eq('id', existing.id);
-      } else {
-        await supabase.from('responsaveis').insert({
-          empresa_id: id,
-          departamento_id: depId,
-          usuario_id: userId || null,
-        });
+        .insert(rows);
+      if (respError) {
+        console.warn('Batch insert de responsáveis falhou, tentando individuais:', respError.message);
+        for (const row of rows) {
+          const { error: e } = await supabase
+            .from('responsaveis')
+            .insert(row);
+          if (e) console.error(`Resp insert falhou dept=${row.departamento_id}:`, e.message);
+        }
       }
     }
   }
@@ -565,15 +591,26 @@ export async function fetchLogs(): Promise<LogEntry[]> {
   }));
 }
 
-export async function insertLog(entry: Omit<LogEntry, 'id' | 'em'>) {
-  await supabase.from('logs').insert({
+export async function insertLog(entry: Omit<LogEntry, 'id' | 'em'>): Promise<LogEntry> {
+  const { data, error } = await supabase.from('logs').insert({
     user_id: entry.userId,
     action: entry.action,
     entity: entry.entity,
     entity_id: entry.entityId,
     message: entry.message,
     diff: entry.diff ?? null,
-  });
+  }).select().single();
+  if (error) throw error;
+  return {
+    id: data.id,
+    em: toIso(data.em),
+    userId: data.user_id,
+    action: data.action,
+    entity: data.entity,
+    entityId: data.entity_id,
+    message: data.message,
+    diff: data.diff ?? undefined,
+  };
 }
 
 // ─── Lixeira ────────────────────────────────────────────────

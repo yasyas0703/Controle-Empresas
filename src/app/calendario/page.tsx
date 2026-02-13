@@ -94,7 +94,7 @@ export default function CalendarioPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl bg-white p-6 shadow-sm">
+      <div className="rounded-2xl bg-white p-3 sm:p-6 shadow-sm">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center shadow-md">
@@ -108,7 +108,7 @@ export default function CalendarioPage() {
 
           <div className="flex items-center gap-2">
             {/* Legenda de cores */}
-            <div className="flex items-center gap-3 mr-4 text-xs flex-wrap">
+            <div className="hidden sm:flex items-center gap-3 mr-4 text-xs flex-wrap">
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-red-500" /> Vencido</span>
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-orange-500" /> Crítico (≤15d)</span>
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> Atenção (≤60d)</span>
@@ -137,13 +137,13 @@ export default function CalendarioPage() {
           </div>
         </div>
 
-        <div className="flex gap-6 mt-6">
+        <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 mt-4 sm:mt-6">
           {/* Calendar Grid */}
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             {/* Weekday headers */}
             <div className="grid grid-cols-7 gap-1">
               {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((w) => (
-                <div key={w} className="text-center text-xs font-bold text-gray-400 uppercase tracking-wider py-2">
+                <div key={w} className="text-center text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-wider py-1 sm:py-2">
                   {w}
                 </div>
               ))}
@@ -186,7 +186,7 @@ export default function CalendarioPage() {
                     key={iso}
                     onClick={() => events.length > 0 && setSelectedDate(isSelected ? null : iso)}
                     className={
-                      'min-h-[100px] rounded-xl p-2 transition cursor-pointer ' +
+                      'min-h-[60px] sm:min-h-[100px] rounded-lg sm:rounded-xl p-1 sm:p-2 transition cursor-pointer ' +
                       (!isCurrentMonth ? 'bg-gray-50/50 opacity-40' : 'bg-white hover:bg-gray-50') +
                       (today ? ' ring-2 ring-cyan-500 bg-cyan-50/30' : '') +
                       (isSelected ? ' ring-2 ring-blue-500 bg-blue-50/30' : '')
@@ -194,8 +194,8 @@ export default function CalendarioPage() {
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className={
-                        'text-sm font-bold ' +
-                        (today ? 'bg-cyan-600 text-white rounded-full h-7 w-7 flex items-center justify-center' : 'text-gray-700')
+                        'text-xs sm:text-sm font-bold ' +
+                        (today ? 'bg-cyan-600 text-white rounded-full h-5 w-5 sm:h-7 sm:w-7 flex items-center justify-center text-[10px] sm:text-sm' : 'text-gray-700')
                       }>
                         {d.getDate()}
                       </span>
@@ -207,7 +207,7 @@ export default function CalendarioPage() {
                       )}
                     </div>
 
-                    <div className="space-y-1">
+                    <div className="space-y-1 hidden sm:block">
                       {events.slice(0, 2).map((ev, idx) => (
                         <div
                           key={`${iso}:${idx}`}
@@ -230,7 +230,7 @@ export default function CalendarioPage() {
 
           {/* Side Panel - Selected Day Details */}
           {selectedDate && byDate[selectedDate] && (
-            <div className="w-[320px] flex-shrink-0">
+            <div className="w-full lg:w-[320px] flex-shrink-0">
               <div className="rounded-2xl border border-gray-200 bg-white shadow-sm sticky top-24 overflow-hidden">
                 <div className="bg-gradient-to-r from-teal-500 to-cyan-600 p-4 text-white">
                   <div className="flex items-center justify-between">

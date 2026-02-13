@@ -307,7 +307,7 @@ export default function ModalImportarResponsabilidadesFiscal({ onClose }: ModalI
   const [expandedBlock, setExpandedBlock] = useState<string | null>(null);
 
   return (
-    <ModalBase isOpen={true} onClose={onClose} dialogClassName="w-full max-w-4xl rounded-2xl bg-white shadow-2xl p-6">
+    <ModalBase isOpen={true} onClose={onClose} dialogClassName="w-full max-w-4xl rounded-2xl bg-white shadow-2xl p-4 sm:p-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-md">
