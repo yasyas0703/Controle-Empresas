@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Building2, Plus, Search, Pencil, Trash2, Eye, FileText, CalendarClock, Upload, Users } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { Building2, Plus, Search, Pencil, Trash2, Eye, FileText, CalendarClock, Upload, Users, Globe, Loader2 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import type { Empresa, UUID } from '@/app/types';
 import { detectTipoEstabelecimento, formatarDocumento, getTipoInscricaoDisplay } from '@/app/utils/validation';
@@ -10,6 +10,7 @@ import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import ModalImportarPlanilha from '@/app/components/ModalImportarPlanilha';
 import ModalImportarResponsabilidadesFiscal from '@/app/components/ModalImportarResponsabilidadesFiscal';
 import ConfirmModal from '@/app/components/ConfirmModal';
+import { api } from '@/app/utils/api';
 
 function canEditEmpresa(currentUserId: UUID | null, canManage: boolean, empresa: Empresa): boolean {
   if (canManage) return true;
@@ -29,7 +30,7 @@ const DEPT_COLORS: Record<number, { bg: string; text: string; border: string }> 
 };
 
 export default function EmpresasPage() {
-  const { empresas, currentUserId, canManage, removerEmpresa, departamentos, usuarios } = useSistema();
+  const { empresas, currentUserId, canManage, removerEmpresa, atualizarEmpresa, departamentos, usuarios, mostrarAlerta } = useSistema();
 
   const getDepName = (dId: string) => departamentos.find(d => d.id === dId)?.nome ?? '';
   const getDepIndex = (dId: string) => departamentos.findIndex(d => d.id === dId);
@@ -38,7 +39,62 @@ export default function EmpresasPage() {
     return usuarios.find(u => u.id === uId)?.nome ?? '';
   };
 
+  // ── Diagnóstico: loga estado dos responsáveis quando dados mudam ──
+  useEffect(() => {
+    if (empresas.length === 0) return;
+    const comResp = empresas.filter((e) => {
+      const uids = Object.values(e.responsaveis || {}).filter(Boolean);
+      return uids.length > 0;
+    });
+
+    // Contar quantas empresas renderizam badges visíveis
+    let comBadgeVisivel = 0;
+    let semBadgeMasTêmResp = 0;
+    const exemplosProblemas: string[] = [];
+
+    for (const e of empresas) {
+      const entries = Object.entries(e.responsaveis || {}).filter(([, uid]) => uid);
+      if (entries.length === 0) continue;
+      const resolvidos = entries
+        .map(([dId, uid]) => ({
+          dep: departamentos.find(d => d.id === dId)?.nome ?? '',
+          user: uid ? (usuarios.find(u => u.id === uid)?.nome ?? '') : '',
+          dId,
+          uid,
+        }))
+        .filter(r => r.dep && r.user);
+      if (resolvidos.length > 0) {
+        comBadgeVisivel++;
+      } else {
+        semBadgeMasTêmResp++;
+        if (exemplosProblemas.length < 5) {
+          const firstEntry = entries[0];
+          const deptFound = departamentos.find(d => d.id === firstEntry[0]);
+          const userFound = usuarios.find(u => u.id === firstEntry[1]);
+          exemplosProblemas.push(
+            `cod=${e.codigo} | dept_id=${firstEntry[0].slice(0,8)}… → ${deptFound ? `"${deptFound.nome}"` : '❌ NÃO ENCONTRADO'} | ` +
+            `user_id=${String(firstEntry[1]).slice(0,8)}… → ${userFound ? `"${userFound.nome}"` : '❌ NÃO ENCONTRADO'}`
+          );
+        }
+      }
+    }
+
+    console.log(
+      `%c[EMPRESAS PAGE] Render: ${empresas.length} empresas | ${comResp.length} com resp no state | ${comBadgeVisivel} com badges visíveis | ${semBadgeMasTêmResp} com resp MAS SEM badge`,
+      'color: dodgerblue; font-weight: bold',
+    );
+    if (semBadgeMasTêmResp > 0) {
+      console.warn(`%c[EMPRESAS PAGE] ⚠️ ${semBadgeMasTêmResp} empresas TÊM responsáveis no state mas badges NÃO aparecem!`, 'color: red; font-weight: bold');
+      for (const ex of exemplosProblemas) {
+        console.warn(`  → ${ex}`);
+      }
+      console.warn(`  Departamentos no state (${departamentos.length}):`, departamentos.map(d => `${d.id.slice(0,8)}="${d.nome}"`).join(', '));
+      console.warn(`  Usuários no state (${usuarios.length}):`, usuarios.slice(0, 10).map(u => `${u.id.slice(0,8)}="${u.nome}"`).join(', '), usuarios.length > 10 ? `... +${usuarios.length - 10}` : '');
+    }
+  }, [empresas, departamentos, usuarios]);
+
   const [search, setSearch] = useState('');
+  const [searchCodigo, setSearchCodigo] = useState('');
   const [modalCreate, setModalCreate] = useState(false);
   const [modalImport, setModalImport] = useState(false);
   const [modalImportFiscal, setModalImportFiscal] = useState(false);
@@ -50,9 +106,13 @@ export default function EmpresasPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const qCod = searchCodigo.trim();
     return empresas
       .filter((e) => {
         if (!canManage && !canEditEmpresa(currentUserId, canManage, e)) return false;
+        if (qCod) {
+          if (e.codigo !== qCod) return false;
+        }
         if (q) {
           const hay = [e.codigo, e.cnpj, e.razao_social, e.apelido].filter(Boolean).join(' ').toLowerCase();
           if (!hay.includes(q)) return false;
@@ -60,7 +120,7 @@ export default function EmpresasPage() {
         return true;
       })
       .sort((a, b) => (a.codigo || '').localeCompare(b.codigo || ''));
-  }, [empresas, search, canManage, currentUserId]);
+  }, [empresas, search, searchCodigo, canManage, currentUserId]);
 
   const selectableIds = useMemo(() => {
     return filtered.filter((e) => canEditEmpresa(currentUserId, canManage, e)).map((e) => e.id);
@@ -111,6 +171,86 @@ export default function EmpresasPage() {
     setConfirmBulk(false);
   };
 
+  // ── Enriquecer CNPJ em lote ──
+  const [enriching, setEnriching] = useState(false);
+  const [enrichProgress, setEnrichProgress] = useState({ done: 0, total: 0, success: 0, skipped: 0 });
+  const enrichAbortRef = useRef(false);
+
+  const empresasSemEndereco = useMemo(() => {
+    return empresas.filter((e) => {
+      const digits = (e.cnpj || '').replace(/\D/g, '');
+      if (digits.length !== 14) return false;
+      // Se já tem cidade preenchida, já foi enriquecida
+      if (e.cidade) return false;
+      return true;
+    });
+  }, [empresas]);
+
+  const handleEnrichCnpj = useCallback(async () => {
+    if (enriching) {
+      enrichAbortRef.current = true;
+      return;
+    }
+    enrichAbortRef.current = false;
+    const pending = empresasSemEndereco;
+    if (pending.length === 0) {
+      mostrarAlerta('CNPJ', 'Todas as empresas já possuem endereço preenchido.', 'aviso');
+      return;
+    }
+    setEnriching(true);
+    setEnrichProgress({ done: 0, total: pending.length, success: 0, skipped: 0 });
+
+    let success = 0;
+    let skipped = 0;
+    const DELAY_MS = 1500; // 1.5s entre consultas (~40/min — dentro do limite da BrasilAPI)
+
+    for (let i = 0; i < pending.length; i++) {
+      if (enrichAbortRef.current) break;
+      const emp = pending[i];
+      const digits = (emp.cnpj || '').replace(/\D/g, '');
+
+      try {
+        const data = await api.consultarCnpj(digits);
+        if (data?.cidade || data?.estado || data?.logradouro) {
+          await atualizarEmpresa(emp.id, {
+            apelido: data.nome_fantasia || emp.apelido || undefined,
+            data_abertura: data.data_abertura || emp.data_abertura || undefined,
+            estado: data.estado || emp.estado || undefined,
+            cidade: data.cidade || emp.cidade || undefined,
+            bairro: data.bairro || emp.bairro || undefined,
+            logradouro: data.logradouro || emp.logradouro || undefined,
+            numero: data.numero || emp.numero || undefined,
+            cep: data.cep || emp.cep || undefined,
+            email: data.email || emp.email || undefined,
+            telefone: data.telefone || emp.telefone || undefined,
+          });
+          success++;
+        } else {
+          skipped++;
+        }
+      } catch (err: unknown) {
+        skipped++;
+        // rate-limited — esperar mais tempo (30s se 429, senão 3s)
+        const isRateLimit = err instanceof Error && err.message.toLowerCase().includes('limite');
+        await new Promise((r) => setTimeout(r, isRateLimit ? 30000 : 3000));
+      }
+
+      setEnrichProgress({ done: i + 1, total: pending.length, success, skipped });
+
+      // Delay entre consultas
+      if (i < pending.length - 1 && !enrichAbortRef.current) {
+        await new Promise((r) => setTimeout(r, DELAY_MS));
+      }
+    }
+
+    setEnriching(false);
+    mostrarAlerta(
+      'Enriquecimento CNPJ',
+      `${success} empresa(s) atualizadas, ${skipped} sem dados. ${enrichAbortRef.current ? '(interrompido)' : ''}`,
+      success > 0 ? 'sucesso' : 'aviso'
+    );
+  }, [enriching, empresasSemEndereco, atualizarEmpresa, mostrarAlerta]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -127,6 +267,20 @@ export default function EmpresasPage() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            {canManage && empresasSemEndereco.length > 0 && (
+              <button
+                onClick={handleEnrichCnpj}
+                className={
+                  'inline-flex items-center gap-2 rounded-xl border-2 px-3 sm:px-4 py-2 sm:py-2.5 text-sm font-bold transition ' +
+                  (enriching
+                    ? 'border-orange-300 text-orange-700 bg-orange-50'
+                    : 'border-violet-200 text-violet-700 hover:bg-violet-50')
+                }
+              >
+                {enriching ? <Loader2 size={18} className="animate-spin" /> : <Globe size={18} />}
+                {enriching ? 'Parar' : `Enriquecer CNPJ (${empresasSemEndereco.length})`}
+              </button>
+            )}
             {canManage && (
               <button
                 onClick={() => setModalImportFiscal(true)}
@@ -157,14 +311,47 @@ export default function EmpresasPage() {
           </div>
         </div>
 
-        <div className="mt-5 relative max-w-lg">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por código, CNPJ/CPF ou razão social..."
-            className="w-full rounded-xl bg-gray-50 pl-10 pr-4 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
-          />
+        {/* Barra de progresso do enriquecimento CNPJ */}
+        {enriching && enrichProgress.total > 0 && (
+          <div className="mt-4 rounded-xl bg-violet-50 border border-violet-200 p-4">
+            <div className="flex items-center justify-between text-sm font-semibold text-violet-700 mb-2">
+              <span className="flex items-center gap-2">
+                <Loader2 size={16} className="animate-spin" />
+                Consultando CNPJs... {enrichProgress.done}/{enrichProgress.total}
+              </span>
+              <span className="text-xs text-violet-500">
+                {enrichProgress.success} atualizadas • {enrichProgress.skipped} sem dados
+              </span>
+            </div>
+            <div className="h-2 rounded-full bg-violet-200 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-violet-500 transition-all duration-300"
+                style={{ width: `${(enrichProgress.done / enrichProgress.total) * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="mt-5 flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1 max-w-lg">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por CNPJ/CPF, razão social..."
+              className="w-full rounded-xl bg-gray-50 pl-10 pr-4 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+            />
+          </div>
+          <div className="relative w-full sm:w-44">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">#</span>
+            <input
+              value={searchCodigo}
+              onChange={(e) => setSearchCodigo(e.target.value.replace(/\D/g, ''))}
+              placeholder="Buscar por código"
+              className="w-full rounded-xl bg-gray-50 pl-8 pr-4 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-teal-400 focus:bg-white transition"
+              inputMode="numeric"
+            />
+          </div>
         </div>
 
         {canManage && (filtered.length > 0 || selectedVisibleIds.length > 0) && (
