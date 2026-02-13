@@ -135,7 +135,7 @@ export default function UsuariosPage() {
 
         <div className="mt-4 space-y-3">
           {usuarios.map((u) => (
-            <div key={u.id} className="rounded-2xl bg-gray-50 p-4 flex items-center justify-between gap-4 hover:shadow-sm transition-shadow">
+            <div key={u.id} className="rounded-2xl bg-gray-50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 hover:shadow-sm transition-shadow">
               <div className="min-w-0 flex items-center gap-3">
                 <div className={'h-10 w-10 rounded-xl flex items-center justify-center ' + (u.role === 'gerente' ? 'bg-cyan-100' : 'bg-gray-200')}>
                   {u.role === 'gerente' ? <Shield size={18} className="text-cyan-600" /> : <User size={18} className="text-gray-500" />}
@@ -150,7 +150,7 @@ export default function UsuariosPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 self-end sm:self-auto">
                 <span className={"rounded-full px-3 py-1 text-xs font-bold " + (u.ativo ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-500')}>
                   {u.ativo ? 'Ativo' : 'Inativo'}
                 </span>

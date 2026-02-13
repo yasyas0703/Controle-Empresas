@@ -31,7 +31,7 @@ export default function ModalBase({
 
   return createPortal(
     <div
-      className="fixed inset-0 flex items-center justify-center p-4"
+      className="fixed inset-0 flex items-center justify-center p-2 sm:p-4"
       style={{ zIndex }}
       role="dialog"
       aria-modal="true"
@@ -41,7 +41,7 @@ export default function ModalBase({
       }}
     >
       <div className="absolute inset-0 bg-black/40" />
-      <div className={(dialogClassName ?? 'w-full max-w-2xl rounded-2xl bg-white shadow-2xl') + ' relative'}>
+      <div className={(dialogClassName ?? 'w-full max-w-2xl rounded-2xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto') + ' relative'}>
         {children}
       </div>
     </div>,

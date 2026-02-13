@@ -79,15 +79,33 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <header className="sticky top-0 z-50 bg-white shadow-sm">
-        <div className="mx-auto max-w-7xl px-4 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="h-14 w-14 rounded-2xl bg-cyan-50 flex items-center justify-center overflow-hidden shadow-sm ring-1 ring-cyan-100">
-              <Image src="/triar.png" alt="Triar" width={56} height={56} priority />
+      <header className="sticky top-0 z-50 bg-white shadow-lg border-b border-gray-200">
+        <div className="mx-auto max-w-7xl px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-4">
+            <div className="bg-gradient-to-br from-cyan-400 to-blue-600 p-[2px] rounded-2xl shadow-xl">
+              <div className="w-14 h-14 md:w-20 md:h-20 rounded-[14px] overflow-hidden bg-white/90 backdrop-blur flex items-center justify-center transition-transform duration-200 hover:scale-[1.02]">
+                <Image
+                  src="/triar.png"
+                  alt="Logo Triar"
+                  width={64}
+                  height={64}
+                  priority
+                  className="w-10 h-10 md:w-16 md:h-16 object-contain"
+                />
+              </div>
             </div>
-            <div>
-              <div className="text-xl font-bold text-gray-900 tracking-tight">Controle Triar</div>
-              <div className="text-xs text-gray-400">Gerenciamento de Empresas</div>
+            <div className="min-w-0">
+              <h1 className="leading-[1.05] tracking-tight">
+                <span className="block text-base md:text-lg font-bold text-gray-700 whitespace-nowrap">
+                  Controle de
+                </span>
+                <span className="block -mt-0.5 text-xl md:text-2xl font-extrabold text-gray-900 whitespace-nowrap">
+                  Empresas
+                </span>
+              </h1>
+              <p className="text-gray-600 text-sm leading-snug hidden sm:block">
+                Gestão Empresarial
+              </p>
             </div>
           </div>
 
@@ -116,7 +134,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   {showNotifs && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setShowNotifs(false)} />
-                      <div className="absolute right-0 top-12 z-50 w-[400px] max-h-[480px] overflow-hidden rounded-2xl bg-white shadow-2xl border border-gray-200">
+                      <div className="absolute right-0 top-12 z-50 w-[calc(100vw-2rem)] sm:w-[400px] max-h-[480px] overflow-hidden rounded-2xl bg-white shadow-2xl border border-gray-200">
                         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-cyan-50 to-teal-50">
                           <div className="font-bold text-gray-900 text-sm">Notificações</div>
                           <div className="flex items-center gap-2">
@@ -199,7 +217,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        <nav className="mx-auto max-w-7xl px-4 pb-2 flex gap-1 overflow-x-auto border-t border-gray-100 pt-2">
+        <nav className="mx-auto max-w-7xl px-2 sm:px-4 pb-2 flex gap-1 overflow-x-auto border-t border-gray-100 pt-2 scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
           {nav
             .filter((i) => (canManage ? true : !['/usuarios', '/departamentos', '/servicos', '/historico', '/lixeira'].includes(i.href)))
             .map((i) => {
@@ -212,7 +230,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   key={i.href}
                   href={i.href}
                   className={
-                    'whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold transition flex items-center gap-2 relative ' +
+                    'whitespace-nowrap rounded-lg px-2 sm:px-3 py-2 text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 sm:gap-2 relative ' +
                     (active
                       ? i.href === '/vencimentos' && vencidosCount > 0
                         ? 'text-red-700 bg-red-50 border-b-2 border-red-600'
@@ -240,7 +258,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
+      <main className="mx-auto max-w-7xl px-2 sm:px-4 py-4 sm:py-6">{children}</main>
 
       {showLogin && (
         <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4" onMouseDown={(e) => e.currentTarget === e.target && setShowLogin(false)}>
@@ -253,7 +271,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
                 <div>
                   <div className="text-lg font-bold text-white">Entrar no Sistema</div>
-                  <div className="text-xs text-cyan-200 mt-0.5">Controle Triar</div>
+                  <div className="text-xs text-cyan-200 mt-0.5">Controle de Empresas</div>
                 </div>
               </div>
             </div>

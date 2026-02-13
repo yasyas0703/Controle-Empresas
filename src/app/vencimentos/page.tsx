@@ -218,8 +218,8 @@ export default function VencimentosPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="rounded-2xl bg-white p-6 shadow-sm">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center shadow-md">
               <Shield className="text-white" size={22} />
@@ -240,7 +240,7 @@ export default function VencimentosPage() {
       </div>
 
       {/* Status Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
         {[
           { key: 'vencido' as const, label: 'Vencidos', count: counts.vencido, dotColor: 'bg-red-500', textColor: 'text-red-700', ring: 'ring-red-400', activeBg: 'bg-red-50' },
           { key: 'critico' as const, label: 'Críticos (≤15d)', count: counts.critico, dotColor: 'bg-orange-500', textColor: 'text-orange-700', ring: 'ring-orange-400', activeBg: 'bg-orange-50' },
@@ -257,9 +257,9 @@ export default function VencimentosPage() {
           >
             <div className="flex items-center gap-2 mb-2">
               <span className={`h-2.5 w-2.5 rounded-full ${c.dotColor} ${c.key === 'vencido' && c.count > 0 ? 'animate-pulse' : ''}`} />
-              <span className={`text-xs font-bold uppercase tracking-wide ${filtroStatus === c.key ? c.textColor : 'text-gray-500'}`}>{c.label}</span>
+              <span className={`text-[10px] sm:text-xs font-bold uppercase tracking-wide ${filtroStatus === c.key ? c.textColor : 'text-gray-500'}`}>{c.label}</span>
             </div>
-            <div className={`text-3xl font-black ${filtroStatus === c.key ? c.textColor : 'text-gray-800'}`}>{c.count}</div>
+            <div className={`text-2xl sm:text-3xl font-black ${filtroStatus === c.key ? c.textColor : 'text-gray-800'}`}>{c.count}</div>
           </button>
         ))}
       </div>
@@ -281,7 +281,7 @@ export default function VencimentosPage() {
             </button>
           )}
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
@@ -307,9 +307,10 @@ export default function VencimentosPage() {
         </div>
       </div>
 
-      {/* Tabela */}
+      {/* Tabela Desktop / Cards Mobile */}
       <div className="rounded-2xl bg-white shadow-sm overflow-hidden border border-gray-100">
-        <div className="overflow-x-auto">
+        {/* Desktop table */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-200 text-gray-800">
@@ -438,10 +439,68 @@ export default function VencimentosPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Mobile cards */}
+        <div className="md:hidden divide-y divide-gray-100">
+          {filtered.slice(0, 200).map((item, idx) => {
+            const sc = statusConfig[item.status];
+            const responsaveis = Object.entries(item.responsaveis)
+              .filter(([, uid]) => uid)
+              .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid), depIdx: getDepIndex(dId) }))
+              .filter((r) => r.dep && r.user);
+            return (
+              <div key={`mobile-${item.empresaId}-${item.nome}-${idx}`} className={`p-4 ${item.status === 'vencido' ? 'bg-red-50/70' : item.status === 'critico' ? 'bg-orange-50/50' : ''}`}>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold border ${sc.bg} ${sc.text} ${sc.border}`}>
+                    <span className={`h-2 w-2 rounded-full ${sc.dot} ${item.status === 'vencido' ? 'animate-pulse' : ''}`} />
+                    {sc.label}
+                  </span>
+                  <span className={`font-black text-lg tabular-nums ${item.status === 'vencido' ? 'text-red-700' : item.status === 'critico' ? 'text-orange-700' : item.status === 'atencao' ? 'text-amber-600' : 'text-emerald-600'}`}>
+                    {item.dias < 0 ? `${Math.abs(item.dias)}d atrás` : `${item.dias}d`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-bold text-gray-900">{item.empresaCodigo}</span>
+                  <span className="text-xs text-gray-500 truncate">{item.empresaNome}</span>
+                </div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-bold ${item.tipo === 'Documento' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                    {item.tipo === 'Documento' ? <FileText size={12} /> : <CalendarClock size={12} />}
+                    {item.tipo === 'Documento' ? 'DOC' : 'RET'}
+                  </span>
+                  <span className="text-sm font-semibold text-gray-800 truncate">{item.nome}</span>
+                  <span className="text-xs text-gray-500 ml-auto whitespace-nowrap">{formatBR(item.vencimento)}</span>
+                </div>
+                {responsaveis.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {responsaveis.map((r) => {
+                      const c = DEPT_COLORS[r.depIdx % 8];
+                      return (
+                        <span key={r.dep} className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-semibold border ${c.bg} ${c.text} ${c.border}`}>
+                          <span className="font-bold">{r.dep}:</span> {r.user}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {filtered.length === 0 && (
+            <div className="px-5 py-16 text-center">
+              <div className="text-gray-400">
+                <Shield className="mx-auto mb-3 text-gray-300" size={40} />
+                <div className="font-semibold text-gray-500">Nenhum item encontrado</div>
+                <div className="text-sm">{allItems.length === 0 ? 'Nenhum documento ou RET com data de vencimento cadastrado.' : 'Tente ajustar os filtros.'}</div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {filtered.length > 0 && (
-          <div className="px-5 py-3.5 bg-gray-50 border-t border-gray-100 text-xs text-gray-500 flex items-center justify-between">
+          <div className="px-3 sm:px-5 py-3 sm:py-3.5 bg-gray-50 border-t border-gray-100 text-xs text-gray-500 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
             <span>Exibindo {Math.min(filtered.length, 200)} de {filtered.length} itens</span>
-            <div className="flex items-center gap-3 font-bold">
+            <div className="flex items-center gap-3 font-bold flex-wrap">
               <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" /> {filtered.filter((i) => i.status === 'vencido').length} vencido(s)</span>
               <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-orange-500" /> {filtered.filter((i) => i.status === 'critico').length} crítico(s)</span>
               <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400" /> {filtered.filter((i) => i.status === 'atencao').length} atenção</span>

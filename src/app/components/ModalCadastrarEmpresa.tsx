@@ -320,7 +320,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
       zIndex={1400}
     >
       <div className="rounded-2xl">
-        <div className="bg-gradient-to-r from-green-500 to-green-600 p-6 rounded-t-2xl sticky top-0 z-10">
+        <div className="bg-gradient-to-r from-green-500 to-green-600 p-4 sm:p-6 rounded-t-2xl sticky top-0 z-10">
           <div className="flex justify-between items-center">
             <h3 id="empresa-title" className="text-xl font-bold text-white">
               {empresa ? 'Editar Empresa' : 'Cadastrar Nova Empresa'}
@@ -333,7 +333,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
 
         <form
           onSubmit={handleSubmit}
-          className="p-6 space-y-6"
+          className="p-4 sm:p-6 space-y-6"
           onKeyDown={(e) => {
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
               e.preventDefault();

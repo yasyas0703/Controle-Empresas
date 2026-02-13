@@ -16,6 +16,15 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Mobile-friendly tap targets */
+@media (max-width: 640px) {
+  button, a, select, input {
+    min-height: 40px;
+  }
 }
 
 /* Fix: garante texto escuro em inputs/selects */
@@ -42,6 +51,15 @@ select option {
 ::-webkit-scrollbar-thumb {
   background: #67e8f9;
   border-radius: 3px;
+}
+
+/* Ocultar scrollbar horizontal em nav mobile */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* Toast animations */

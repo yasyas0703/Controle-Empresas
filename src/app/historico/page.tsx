@@ -308,8 +308,8 @@ export default function HistoricoPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl bg-white p-6 shadow-sm">
-        <div className="flex items-start justify-between gap-4">
+      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
           <div className="flex items-center gap-3">
             <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center shadow">
               <ClipboardList className="text-white" size={24} />
@@ -321,8 +321,8 @@ export default function HistoricoPage() {
           </div>
         </div>
 
-        <div className="mt-5 flex gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
+        <div className="mt-5 flex flex-col sm:flex-row gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-0 sm:min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
               value={search}
@@ -347,7 +347,8 @@ export default function HistoricoPage() {
       </div>
 
       <div className="rounded-2xl bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop table */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gradient-to-r from-teal-50 to-cyan-50 text-gray-600">
               <tr>
@@ -415,6 +416,48 @@ export default function HistoricoPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile cards */}
+        <div className="md:hidden divide-y divide-gray-100">
+          {filtered.slice(0, 200).map((l) => {
+            const hasDiff = l.diff && Object.keys(l.diff).filter(k => !IGNORED_FIELDS.has(k)).length > 0;
+            const isExpanded = expandedIds.has(l.id);
+            const isUpdate = l.action === 'update';
+            return (
+              <div
+                key={`mobile-${l.id}`}
+                className={`p-4 ${isUpdate ? 'cursor-pointer' : ''}`}
+                onClick={() => isUpdate && toggleExpand(l.id)}
+              >
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${actionColors[l.action] || 'bg-gray-100 text-gray-600'}`}>
+                    {actionLabels[l.action] || l.action}
+                  </span>
+                  <span className="text-[11px] text-gray-400 whitespace-nowrap">{new Date(l.em).toLocaleString('pt-BR')}</span>
+                </div>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <UserCircle size={13} className="text-teal-500 shrink-0" />
+                  <span className="text-xs font-semibold text-teal-700">{getUserName(l.userId)}</span>
+                </div>
+                <div className="text-sm text-gray-700">{l.message}</div>
+                {isUpdate && hasDiff && (
+                  <div className="flex items-center gap-1 text-xs text-blue-500 font-semibold mt-2">
+                    {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    {isExpanded ? 'Ocultar detalhes' : 'Ver detalhes'}
+                  </div>
+                )}
+                {isExpanded && isUpdate && (
+                  <div className="mt-2 border-t border-blue-100 pt-2">
+                    {renderDiff(l)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {filtered.length === 0 && (
+            <div className="px-5 py-10 text-center text-gray-400">Sem registros de atividade.</div>
+          )}
         </div>
       </div>
     </div>

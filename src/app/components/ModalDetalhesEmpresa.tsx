@@ -65,7 +65,7 @@ export default function ModalDetalhesEmpresa({
         zIndex={1350}
       >
         <div className="rounded-2xl">
-          <div className="bg-gradient-to-r from-green-500 to-green-600 p-6 rounded-t-2xl sticky top-0 z-10">
+          <div className="bg-gradient-to-r from-green-500 to-green-600 p-4 sm:p-6 rounded-t-2xl sticky top-0 z-10">
             <div className="flex justify-between items-center">
               <h3 id="empresa-detalhes" className="text-xl font-bold text-white">
                 Detalhes da Empresa
@@ -85,7 +85,7 @@ export default function ModalDetalhesEmpresa({
             </div>
           </div>
 
-          <div className="p-6 space-y-6">
+          <div className="p-4 sm:p-6 space-y-6">
             <Section title="Informações Principais" tone="green">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Info label="Razão Social" value={nome} />

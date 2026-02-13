@@ -114,8 +114,8 @@ export default function EmpresasPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="rounded-2xl bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
+      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center shadow-md">
               <Building2 className="text-white" size={22} />
@@ -126,29 +126,29 @@ export default function EmpresasPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             {canManage && (
               <button
                 onClick={() => setModalImportFiscal(true)}
-                className="inline-flex items-center gap-2 rounded-xl border-2 border-emerald-200 text-emerald-700 px-4 py-2.5 font-bold hover:bg-emerald-50 transition"
+                className="inline-flex items-center gap-2 rounded-xl border-2 border-emerald-200 text-emerald-700 px-3 sm:px-4 py-2 sm:py-2.5 text-sm font-bold hover:bg-emerald-50 transition"
               >
                 <Users size={18} />
-                Importar Resp. Fiscal
+                <span className="hidden sm:inline">Importar</span> Resp. Fiscal
               </button>
             )}
             {canManage && (
               <button
                 onClick={() => setModalImport(true)}
-                className="inline-flex items-center gap-2 rounded-xl border-2 border-cyan-200 text-cyan-700 px-4 py-2.5 font-bold hover:bg-cyan-50 transition"
+                className="inline-flex items-center gap-2 rounded-xl border-2 border-cyan-200 text-cyan-700 px-3 sm:px-4 py-2 sm:py-2.5 text-sm font-bold hover:bg-cyan-50 transition"
               >
                 <Upload size={18} />
-                Importar Planilha
+                <span className="hidden sm:inline">Importar</span> Planilha
               </button>
             )}
             {canManage && (
               <button
                 onClick={() => setModalCreate(true)}
-                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-500 text-white px-5 py-3 font-bold hover:from-cyan-700 hover:to-teal-600 shadow-md transition"
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-500 text-white px-4 sm:px-5 py-2.5 sm:py-3 text-sm font-bold hover:from-cyan-700 hover:to-teal-600 shadow-md transition"
               >
                 <Plus size={18} />
                 Nova Empresa

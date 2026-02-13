@@ -14,7 +14,7 @@ export default function ServicosPage() {
 
   if (!canManage) {
     return (
-      <div className="rounded-2xl bg-white p-6 shadow-sm">
+      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
         <div className="text-lg font-bold text-gray-900">Serviços</div>
         <div className="mt-2 text-sm text-gray-600">Apenas gerentes têm acesso a esta área.</div>
       </div>
@@ -57,20 +57,20 @@ export default function ServicosPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl bg-white p-6 shadow-sm">
+      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="rounded-xl bg-teal-50 p-2">
             <Briefcase className="text-teal-600" size={24} />
           </div>
           <div>
-            <div className="text-2xl font-bold text-gray-900">Serviços</div>
-            <div className="text-sm text-gray-500">Cadastre serviços e vincule às empresas</div>
+            <div className="text-xl sm:text-2xl font-bold text-gray-900">Serviços</div>
+            <div className="text-xs sm:text-sm text-gray-500">Cadastre serviços e vincule às empresas</div>
           </div>
         </div>
 
-        <div className="mt-6 rounded-2xl bg-teal-50 p-5">
+        <div className="mt-4 sm:mt-6 rounded-2xl bg-teal-50 p-4 sm:p-5">
           <div className="font-bold text-teal-900">Criar Serviço</div>
-          <div className="mt-4 flex gap-3">
+          <div className="mt-4 flex flex-col sm:flex-row gap-3">
             <input
               value={nome}
               onChange={(e) => setNome(e.target.value)}
@@ -113,7 +113,7 @@ export default function ServicosPage() {
         </div>
       </div>
 
-      <div className="rounded-2xl bg-white p-6 shadow-sm">
+      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
         <div className="text-lg font-bold text-gray-900">Lista ({servicos.length})</div>
         <div className="mt-4 space-y-3">
           {servicos.map((s) => {

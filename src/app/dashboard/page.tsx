@@ -158,19 +158,20 @@ export default function DashboardPage() {
           </div>
           <div className="space-y-2">
             {vencidos.slice(0, 10).map((r, idx) => (
-              <div key={idx} className="flex items-center gap-3 bg-white/15 rounded-xl px-4 py-3 backdrop-blur-sm">
-                <Clock size={16} className="text-red-200" />
-                <span className="font-bold text-white">{r.empresaCodigo}</span>
-                <span className="text-red-200">—</span>
-                <span className="font-bold text-white truncate">{r.empresaNome}</span>
-                <span className="text-red-200">•</span>
-                <span className="text-red-100">{r.nome}</span>
-                <span className="ml-auto flex items-center gap-2 shrink-0">
-                  <span className="px-2.5 py-1 rounded-full text-xs font-black bg-white text-red-700">
+              <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 bg-white/15 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 backdrop-blur-sm">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Clock size={16} className="text-red-200 shrink-0" />
+                  <span className="font-bold text-white shrink-0">{r.empresaCodigo}</span>
+                  <span className="text-red-200 hidden sm:inline">—</span>
+                  <span className="font-bold text-white truncate">{r.empresaNome}</span>
+                </div>
+                <div className="flex items-center gap-2 pl-6 sm:pl-0 sm:ml-auto shrink-0">
+                  <span className="text-red-100 truncate text-sm">{r.nome}</span>
+                  <span className="px-2.5 py-1 rounded-full text-xs font-black bg-white text-red-700 whitespace-nowrap">
                     VENCIDO HÁ {Math.abs(r.dias)}d
                   </span>
-                  <span className="text-xs text-red-200">{formatBR(r.vencimento)}</span>
-                </span>
+                  <span className="text-xs text-red-200 whitespace-nowrap">{formatBR(r.vencimento)}</span>
+                </div>
               </div>
             ))}
             {vencidos.length > 10 && (
@@ -198,19 +199,20 @@ export default function DashboardPage() {
           </div>
           <div className="space-y-2">
             {[...criticos, ...atencao].slice(0, 8).map((r, idx) => (
-              <div key={idx} className="flex items-center gap-3 bg-white/70 rounded-xl px-4 py-3">
-                <Clock size={16} className={r.dias <= 15 ? 'text-red-500' : 'text-amber-500'} />
-                <span className="font-bold text-gray-800">{r.empresaCodigo}</span>
-                <span className="text-gray-500">—</span>
-                <span className="font-bold text-gray-800 truncate">{r.empresaNome}</span>
-                <span className="text-gray-400">•</span>
-                <span className="text-gray-700">{r.nome}</span>
-                <span className="ml-auto text-sm font-bold whitespace-nowrap">
-                  <span className={`px-2 py-0.5 rounded-full text-xs ${r.dias <= 15 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+              <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 bg-white/70 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Clock size={16} className={`shrink-0 ${r.dias <= 15 ? 'text-red-500' : 'text-amber-500'}`} />
+                  <span className="font-bold text-gray-800 shrink-0">{r.empresaCodigo}</span>
+                  <span className="text-gray-500 hidden sm:inline">—</span>
+                  <span className="font-bold text-gray-800 truncate">{r.empresaNome}</span>
+                </div>
+                <div className="flex items-center gap-2 pl-6 sm:pl-0 sm:ml-auto shrink-0">
+                  <span className="text-gray-700 truncate text-sm">{r.nome}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap ${r.dias <= 15 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
                     {r.dias}d restantes
                   </span>
-                </span>
-                <span className="text-xs text-gray-400">{formatBR(r.vencimento)}</span>
+                  <span className="text-xs text-gray-400 whitespace-nowrap">{formatBR(r.vencimento)}</span>
+                </div>
               </div>
             ))}
             {(criticos.length + atencao.length) > 8 && (
@@ -221,7 +223,7 @@ export default function DashboardPage() {
       )}
 
       {/* Cards de Resumo */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
         <StatCard icon={<Building2 size={24} />} gradient="from-blue-500 to-blue-600" label="Total Empresas" value={totals.empresas} />
         <StatCard icon={<FileText size={24} />} gradient="from-orange-400 to-orange-500" label="Documentos" value={totals.documentos} />
         <StatCard icon={<CalendarClock size={24} />} gradient="from-emerald-500 to-emerald-600" label="RETs" value={totals.rets} />
@@ -242,7 +244,7 @@ export default function DashboardPage() {
             </button>
           )}
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-3">
           <div className="md:col-span-2 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
@@ -447,13 +449,13 @@ export default function DashboardPage() {
 
 function StatCard({ icon, gradient, label, value, pulse }: { icon: React.ReactNode; gradient: string; label: string; value: number; pulse?: boolean }) {
   return (
-    <div className={`rounded-2xl bg-white p-5 shadow-sm ${pulse ? 'ring-2 ring-red-300 ring-offset-2' : ''}`}>
+    <div className={`rounded-2xl bg-white p-3 sm:p-5 shadow-sm ${pulse ? 'ring-2 ring-red-300 ring-offset-2' : ''}`}>
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-sm font-semibold text-gray-500">{label}</div>
-          <div className={`text-3xl font-bold mt-1 ${pulse ? 'text-red-700' : 'text-gray-900'}`}>{value}</div>
+          <div className="text-xs sm:text-sm font-semibold text-gray-500">{label}</div>
+          <div className={`text-2xl sm:text-3xl font-bold mt-1 ${pulse ? 'text-red-700' : 'text-gray-900'}`}>{value}</div>
         </div>
-        <div className={`h-12 w-12 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-md ${pulse ? 'animate-pulse' : ''}`}>
+        <div className={`h-10 w-10 sm:h-12 sm:w-12 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-md ${pulse ? 'animate-pulse' : ''}`}>
           {icon}
         </div>
       </div>

@@ -83,8 +83,8 @@ export default function LixeiraPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="rounded-2xl bg-white p-6 shadow-sm">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center shadow-md">
               <Trash2 className="text-white" size={22} />
@@ -111,8 +111,8 @@ export default function LixeiraPage() {
 
         {/* Filtros */}
         {allItems.length > 0 && (
-          <div className="mt-4 flex items-center gap-3 flex-wrap">
-            <div className="relative flex-1 min-w-[200px] max-w-md">
+          <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-0 sm:min-w-[200px] max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               <input
                 value={search}
@@ -197,7 +197,7 @@ export default function LixeiraPage() {
                 key={item.id}
                 className={`rounded-2xl bg-white shadow-sm p-5 hover:shadow-md transition-shadow border-l-4 ${colors.border}`}
               >
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
                   <div className="min-w-0 flex-1">
                     {/* Tipo badge */}
                     <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -270,7 +270,7 @@ export default function LixeiraPage() {
                     )}
 
                     {/* Quem excluiu e quando */}
-                    <div className="mt-3 flex items-center gap-3 text-xs">
+                    <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 text-xs">
                       <div className="flex items-center gap-1.5 rounded-lg bg-red-50 px-2.5 py-1.5 text-red-600 font-semibold">
                         <Trash2 size={12} />
                         Excluído por <span className="font-bold">{item.excluidoPorNome}</span>
@@ -285,7 +285,7 @@ export default function LixeiraPage() {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-start">
                     {tipo === 'empresa' && (
                       <button
                         onClick={() => setEmpresaView(item.empresa)}
