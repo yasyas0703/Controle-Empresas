@@ -128,6 +128,44 @@ export async function insertUsuario(payload: Omit<Usuario, 'id' | 'criadoEm' | '
   } as Usuario;
 }
 
+export type BatchUserPayload = {
+  nome: string;
+  email: string;
+  senha: string;
+  role: 'gerente' | 'usuario';
+  departamentoId: string | null;
+  ativo: boolean;
+};
+
+export type BatchUserResult = {
+  nome: string;
+  email: string;
+  id: string | null;
+  error: string | null;
+  status: 'created' | 'existing' | 'failed';
+};
+
+/**
+ * Cria múltiplos usuários em uma única chamada ao servidor.
+ * Apenas 1 verificação de permissão — o servidor faz os delays internamente.
+ */
+export async function insertUsuariosBatch(
+  users: BatchUserPayload[]
+): Promise<{ results: BatchUserResult[]; summary: { total: number; created: number; existing: number; failed: number } }> {
+  const token = await getAccessToken();
+  const resp = await fetch('/api/admin/users/batch', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ users }),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(json?.error ?? 'Falha ao criar usuários em batch');
+  return json;
+}
+
 export async function updateUsuario(id: UUID, patch: Partial<Usuario>) {
   const token = await getAccessToken();
 
@@ -260,50 +298,73 @@ async function fetchResponsaveisForEmpresa(empresaId: UUID): Promise<Record<UUID
   return map;
 }
 
+/**
+ * Busca TODOS os registros de uma tabela paginando em blocos de PAGE_SIZE,
+ * pois o PostgREST do Supabase limita cada request a ~1000 linhas (max-rows).
+ */
+async function fetchAllRows<T extends Record<string, unknown>>(
+  table: string,
+  opts?: { order?: { column: string; ascending: boolean } }
+): Promise<T[]> {
+  const PAGE_SIZE = 1000;
+  const all: T[] = [];
+  let from = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    let q = supabase.from(table).select('*').range(from, from + PAGE_SIZE - 1);
+    if (opts?.order) q = q.order(opts.order.column, { ascending: opts.order.ascending });
+    const { data, error } = await q;
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...(data as T[]));
+    if (data.length < PAGE_SIZE) break; // última página
+    from += PAGE_SIZE;
+  }
+  return all;
+}
+
 export async function fetchEmpresas(): Promise<Empresa[]> {
   // Batch-load: busca empresas e todos os relacionamentos em paralelo (evita N+1)
-  // .limit(10000) para garantir que não caia no limite padrão de 1000 do Supabase
-  const [empresasRes, allRetsRes, allDocsRes, allObsRes, allRespsRes] = await Promise.all([
-    supabase.from('empresas').select('*').order('criado_em', { ascending: false }).limit(10000),
-    supabase.from('rets').select('*').limit(10000),
-    supabase.from('documentos').select('*').order('criado_em', { ascending: false }).limit(10000),
-    supabase.from('observacoes').select('*').order('criado_em', { ascending: true }).limit(10000),
-    supabase.from('responsaveis').select('*').limit(10000),
+  // Usa fetchAllRows para paginar além do limite de 1000 do PostgREST
+  const [empresas, allRets, allDocs, allObs, allResps] = await Promise.all([
+    fetchAllRows<Record<string, any>>('empresas', { order: { column: 'criado_em', ascending: false } }),
+    fetchAllRows<Record<string, any>>('rets'),
+    fetchAllRows<Record<string, any>>('documentos', { order: { column: 'criado_em', ascending: false } }),
+    fetchAllRows<Record<string, any>>('observacoes', { order: { column: 'criado_em', ascending: true } }),
+    fetchAllRows<Record<string, any>>('responsaveis'),
   ]);
-
-  if (empresasRes.error) throw empresasRes.error;
 
   // Agrupar por empresa_id em memória
   const retsMap = new Map<string, RetItem[]>();
-  for (const r of allRetsRes.data ?? []) {
+  for (const r of allRets) {
     const list = retsMap.get(r.empresa_id) ?? [];
     list.push({ id: r.id, numeroPta: r.numero_pta, nome: r.nome, vencimento: r.vencimento, ultimaRenovacao: r.ultima_renovacao });
     retsMap.set(r.empresa_id, list);
   }
 
   const docsMap = new Map<string, DocumentoEmpresa[]>();
-  for (const d of allDocsRes.data ?? []) {
+  for (const d of allDocs) {
     const list = docsMap.get(d.empresa_id) ?? [];
     list.push({ id: d.id, nome: d.nome, validade: d.validade, arquivoUrl: d.arquivo_url ?? undefined, criadoEm: toIso(d.criado_em), atualizadoEm: toIso(d.atualizado_em) });
     docsMap.set(d.empresa_id, list);
   }
 
   const obsMap = new Map<string, Observacao[]>();
-  for (const o of allObsRes.data ?? []) {
+  for (const o of allObs) {
     const list = obsMap.get(o.empresa_id) ?? [];
     list.push({ id: o.id, texto: o.texto, autorId: o.autor_id ?? '', autorNome: o.autor_nome, criadoEm: toIso(o.criado_em) });
     obsMap.set(o.empresa_id, list);
   }
 
   const respsMap = new Map<string, Record<UUID, UUID | null>>();
-  console.log(`[DB DEBUG] fetchEmpresas: responsaveis carregados do banco: ${allRespsRes.data?.length ?? 0} registros, error: ${allRespsRes.error?.message ?? 'nenhum'}`);
-  for (const r of allRespsRes.data ?? []) {
+  console.log(`[DB DEBUG] fetchEmpresas: responsaveis carregados do banco: ${allResps.length} registros (paginado)`);
+  for (const r of allResps) {
     const map = respsMap.get(r.empresa_id) ?? {};
     map[r.departamento_id] = r.usuario_id;
     respsMap.set(r.empresa_id, map);
   }
 
-  return (empresasRes.data ?? []).map((e) => ({
+  return empresas.map((e) => ({
     id: e.id,
     cadastrada: e.cadastrada,
     cnpj: e.cnpj ?? undefined,
