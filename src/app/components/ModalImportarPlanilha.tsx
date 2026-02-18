@@ -353,7 +353,7 @@ interface ModalImportarPlanilhaProps {
 }
 
 export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilhaProps) {
-  const { empresas, departamentos, criarDepartamento, usuarios, criarUsuario, mostrarAlerta, reloadData } = useSistema();
+  const { empresas, departamentos, criarDepartamento, usuarios, mostrarAlerta, reloadData } = useSistema();
 
   const [parsed, setParsed] = useState<ParsedRow[]>([]);
   const [fileName, setFileName] = useState('');
@@ -517,8 +517,9 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
     const failedUserCreations: Array<{ name: string; key: string; reason: string }> = [];
 
     const peopleArray = Array.from(allPeople);
-    for (let pi = 0; pi < peopleArray.length; pi++) {
-      const personName = peopleArray[pi];
+    // ── Separar quem já existe de quem precisa criar ──
+    const usersToCreate: Array<{ nome: string; key: string; email: string; autoDeptId: string | null }> = [];
+    for (const personName of peopleArray) {
       const key = norm(personName);
       if (userIdByName.has(key)) {
         existingUserNames.add(personName);
@@ -533,39 +534,101 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
         i++;
       }
       usedEmails.add(email.toLowerCase());
-
-      // Auto-vincular o usuário ao departamento onde mais aparece
       const autoDeptId = personBestDept.get(key) ?? null;
+      usersToCreate.push({ nome: personName, key, email, autoDeptId });
+    }
 
-      console.log(`[IMPORT][USER] Criando usuário "${personName}" (key="${key}") email=${email} dept=${autoDeptId || 'nenhum'}`);
+    console.log(`[IMPORT][USER] Já existem: ${existingUserNames.size} | A criar via batch: ${usersToCreate.length}`);
 
-      // Delay entre criações para evitar rate-limit do Supabase Auth
-      if (pi > 0) await new Promise((r) => setTimeout(r, 250));
-
-      // Tentar criar usuário com retry (rate-limit pode rejeitar na primeira tentativa)
-      let id: string | null = null;
-      for (let attempt = 0; attempt < 3 && !id; attempt++) {
-        if (attempt > 0) {
-          console.warn(`[IMPORT][USER] Retry ${attempt + 1}/3 para "${personName}"...`);
-          await new Promise((r) => setTimeout(r, 1000 * attempt)); // backoff: 1s, 2s
-        }
-        id = await criarUsuario({
-          nome: personName,
-          email,
+    // ── BATCH: criar todos os usuários de uma vez no servidor ──
+    if (usersToCreate.length > 0) {
+      setImportProgress({ done: 0, total: 1, phase: `Criando ${usersToCreate.length} usuários...` });
+      try {
+        const batchPayload = usersToCreate.map((u) => ({
+          nome: u.nome,
+          email: u.email,
           senha: randomPassword(),
-          role: 'usuario',
-          departamentoId: autoDeptId,
+          role: 'usuario' as const,
+          departamentoId: u.autoDeptId,
           ativo: true,
-        });
+        }));
+
+        const batchResult = await db.insertUsuariosBatch(batchPayload);
+        console.log('%c[IMPORT][USER] Resultado do batch:', 'color: cyan; font-weight: bold', batchResult.summary);
+
+        for (const r of batchResult.results) {
+          const key = norm(r.nome);
+          if (r.id) {
+            userIdByName.set(key, r.id);
+            newUserNames.push(r.nome);
+            console.log(`  ✅ ${r.status === 'created' ? 'Criado' : 'Existente'}: "${r.nome}" → ID ${r.id}`);
+          } else {
+            failedUserCreations.push({ name: r.nome, key, reason: r.error || 'Falha desconhecida' });
+            console.error(`  ❌ FALHOU: "${r.nome}" — ${r.error}`);
+          }
+        }
+      } catch (batchErr) {
+        console.error('%c[IMPORT][USER] BATCH FALHOU! Tentando criação individual...', 'color: red; font-weight: bold', batchErr);
+
+        // Fallback: criar um a um (para os que ainda não estão no mapa)
+        for (let pi = 0; pi < usersToCreate.length; pi++) {
+          const { nome: personName, key, email, autoDeptId } = usersToCreate[pi];
+          if (userIdByName.has(key)) continue; // já criou no batch parcial
+
+          if (pi > 0) await new Promise((r) => setTimeout(r, 800));
+
+          let id: string | null = null;
+          for (let attempt = 0; attempt < 5 && !id; attempt++) {
+            if (attempt > 0) {
+              await new Promise((r) => setTimeout(r, Math.min(1000 * Math.pow(2, attempt - 1), 8000)));
+            }
+            try {
+              const user = await db.insertUsuario({
+                nome: personName,
+                email,
+                senha: randomPassword(),
+                role: 'usuario' as const,
+                departamentoId: autoDeptId,
+                ativo: true,
+              });
+              id = user.id;
+            } catch {
+              id = null;
+            }
+          }
+          if (id) {
+            userIdByName.set(key, id);
+            newUserNames.push(personName);
+          } else {
+            failedUserCreations.push({ name: personName, key, reason: 'Fallback individual falhou após 5 tentativas' });
+          }
+        }
       }
-      if (id) {
-        userIdByName.set(key, id);
-        newUserNames.push(personName);
-        console.log(`  ✅ Usuário criado: "${personName}" → ID ${id}`);
-      } else {
-        failedUserCreations.push({ name: personName, key, reason: 'criarUsuario retornou null após 3 tentativas' });
-        console.error(`  ❌ FALHOU ao criar usuário: "${personName}" (key="${key}")`);
+    }
+
+    // ── FETCH FRESCO: recapturar TODOS os usuários do banco ──
+    // Pega qualquer usuário criado no Auth+DB que não voltou corretamente na resposta.
+    console.log('%c[IMPORT][USER] 🔄 Fazendo fetch fresco de todos os usuários...', 'color: cyan; font-weight: bold');
+    try {
+      const freshUsers = await db.fetchUsuariosAdmin();
+      let recovered = 0;
+      for (const u of freshUsers) {
+        const uKey = norm(u.nome);
+        if (!userIdByName.has(uKey)) {
+          userIdByName.set(uKey, u.id);
+          recovered++;
+        }
       }
+      console.log(`[IMPORT][USER] Fetch fresco: ${freshUsers.length} usuários no DB. Recuperados ${recovered} que faltavam no mapa.`);
+      if (recovered > 0) {
+        for (let fi = failedUserCreations.length - 1; fi >= 0; fi--) {
+          if (userIdByName.has(failedUserCreations[fi].key)) {
+            failedUserCreations.splice(fi, 1);
+          }
+        }
+      }
+    } catch (fetchErr) {
+      console.error('[IMPORT][USER] Erro no fetch fresco de usuários (continuando com mapa parcial):', fetchErr);
     }
 
     console.log(`[IMPORT][USER] Resumo: ${existingUserNames.size} já existiam, ${newUserNames.length} criados, ${failedUserCreations.length} FALHARAM`);
@@ -686,7 +749,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
       setImportProgress({ done: i + 1, total: totalOps, phase: `Criando empresas... (${i + 1}/${newRows.length})` });
 
       // Delay entre inserts para evitar rate-limit do Supabase
-      if (i < newRows.length - 1) await new Promise((r) => setTimeout(r, 100));
+      if (i < newRows.length - 1) await new Promise((r) => setTimeout(r, 200));
     }
 
     // ── ATUALIZAR responsáveis das empresas existentes ──
@@ -756,10 +819,69 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
 
       setImportProgress({ done: newRows.length + i + 1, total: totalOps, phase: `Atualizando existentes... (${i + 1}/${existingRows.length})` });
 
-      if (i < existingRows.length - 1) await new Promise((r) => setTimeout(r, 100));
+      if (i < existingRows.length - 1) await new Promise((r) => setTimeout(r, 200));
     }
 
+    // ── RE-LINK PASS: re-vincular responsáveis que falharam na primeira passada ──
+    // Após criar TODAS as empresas e usuários, faz uma segunda passada para garantir
+    // que nenhuma empresa ficou sem responsáveis por timing/rate-limit.
+    console.log('%c═══════════════════════════════════════════════════════════', 'color: hotpink; font-weight: bold');
+    console.log('%c[RELINK] 🔗 RE-VINCULAÇÃO DE RESPONSÁVEIS', 'color: hotpink; font-weight: bold; font-size: 14px');
+    console.log('%c═══════════════════════════════════════════════════════════', 'color: hotpink; font-weight: bold');
+    setImportProgress((prev) => ({ ...prev, phase: 'Re-vinculando responsáveis...' }));
+
+    let relinked = 0;
+    for (const row of parsed) {
+      const { resolved: responsaveis, issues } = debugResolution(row, deptIdByName, userIdByName, norm);
+      const hasAnyUser = Object.values(responsaveis).some((v) => !!v);
+      if (!hasAnyUser) continue; // nada para vincular
+
+      try {
+        // Buscar a empresa no banco pelo código
+        const { data: empData } = await (await import('@/lib/supabase')).supabase
+          .from('empresas')
+          .select('id')
+          .eq('codigo', row.codigo)
+          .maybeSingle();
+        if (!empData?.id) continue;
+
+        // Verificar se os responsáveis atuais já estão corretos
+        const { data: currentResps } = await (await import('@/lib/supabase')).supabase
+          .from('responsaveis')
+          .select('departamento_id, usuario_id')
+          .eq('empresa_id', empData.id);
+
+        const currentMap = new Map((currentResps || []).map((r: any) => [r.departamento_id, r.usuario_id]));
+        let needsUpdate = false;
+        for (const [depId, userId] of Object.entries(responsaveis)) {
+          if (userId && currentMap.get(depId) !== userId) {
+            needsUpdate = true;
+            break;
+          }
+        }
+
+        if (needsUpdate) {
+          await withRetry(
+            () => db.updateEmpresa(empData.id, { responsaveis }),
+            `Relink ${row.codigo}`
+          );
+          relinked++;
+          console.log(`[RELINK] ✅ ${row.codigo} — responsáveis re-vinculados`);
+        }
+      } catch (relinkErr) {
+        console.warn(`[RELINK] ⚠️ Falha ao re-vincular ${row.codigo}:`, relinkErr);
+      }
+
+      // Pequeno delay para não sobrecarregar
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    console.log(`[RELINK] Total re-vinculados: ${relinked} de ${parsed.length} empresas`);
+
     // Recarregar tudo do banco (sincroniza state completo de uma vez)
+    // Delay de 2s para dar tempo ao Supabase propagar escritas recentes (replication lag)
+    setImportProgress((prev) => ({ ...prev, phase: 'Aguardando sincronização do banco...' }));
+    await new Promise((r) => setTimeout(r, 2000));
+
     setImportProgress((prev) => ({ ...prev, phase: 'Sincronizando...' }));
     try {
       await reloadData();
@@ -767,6 +889,50 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
     } catch (reloadErr) {
       console.error('%c[IMPORT] ❌❌❌ reloadData() FALHOU! Os dados podem estar desatualizados na tela!', 'color: red; font-weight: bold; font-size: 14px');
       console.error('[IMPORT] Erro do reloadData:', reloadErr);
+      // Tentar reloadData novamente após 3s
+      await new Promise((r) => setTimeout(r, 3000));
+      try {
+        await reloadData();
+        console.log('%c[IMPORT] ✅ reloadData() segunda tentativa OK', 'color: green; font-weight: bold');
+      } catch (reloadErr2) {
+        console.error('[IMPORT] reloadData segunda tentativa também falhou:', reloadErr2);
+      }
+    }
+
+    // ═══ DIAGNÓSTICO PÓS-RELOAD: verificar se o state está correto ═══
+    // Fazemos um fetch fresco DIRETO (não dependemos do React state que pode ser stale)
+    console.log('%c═══════════════════════════════════════════════════════════', 'color: lime; font-weight: bold');
+    console.log('%c[DIAG] 🔍 DIAGNÓSTICO PÓS-RELOAD (fetch direto)', 'color: lime; font-weight: bold; font-size: 14px');
+    console.log('%c═══════════════════════════════════════════════════════════', 'color: lime; font-weight: bold');
+    try {
+      const diagUsers = await db.fetchUsuariosAdmin();
+      const diagDepts = await db.fetchDepartamentos();
+      const diagEmpresas = await db.fetchEmpresas();
+      console.log(`[DIAG] Usuários no DB: ${diagUsers.length}`);
+      console.log(`[DIAG] Departamentos no DB: ${diagDepts.length}`);
+      console.log(`[DIAG] Empresas no DB: ${diagEmpresas.length}`);
+
+      const diagUserMap = new Map(diagUsers.map(u => [u.id, u.nome]));
+      const diagDeptMap = new Map(diagDepts.map(d => [d.id, d.nome]));
+
+      // Checar TROPICAL GAS e outras empresas do CSV
+      const checkCodes = ['382', '195', '224']; // Tropical Gas codes + primeiros do CSV
+      const parsedCodes = parsed.slice(0, 5).map(r => r.codigo);
+      const allChecks = [...new Set([...checkCodes, ...parsedCodes])];
+
+      for (const code of allChecks) {
+        const emp = diagEmpresas.find(e => e.codigo === code);
+        if (!emp) continue;
+        const respEntries = Object.entries(emp.responsaveis || {}).filter(([, uid]) => uid);
+        const resolved = respEntries.map(([dId, uid]) => ({
+          dept: diagDeptMap.get(dId) || `❌ DEPT ${dId.slice(0,8)} NÃO ENCONTRADO`,
+          user: diagUserMap.get(uid!) || `❌ USER ${String(uid).slice(0,8)} NÃO ENCONTRADO`,
+        }));
+        console.log(`[DIAG] Cod=${code} | ${emp.razao_social?.slice(0,30)} | ${respEntries.length} resps → `,
+          resolved.length > 0 ? resolved.map(r => `${r.dept}:${r.user}`).join(', ') : '⚠️ SEM RESPONSÁVEIS');
+      }
+    } catch (diagErr) {
+      console.error('[DIAG] Erro no diagnóstico:', diagErr);
     }
 
     // ═══ VERIFICAÇÃO PÓS-IMPORT: consultar o banco diretamente ═══
