@@ -85,7 +85,7 @@ export default function UsuariosPage() {
               <Field label="Tipo">
                 <select value={role} onChange={(e) => setRole(e.target.value as any)} className="w-full rounded-xl bg-white px-4 py-3 text-gray-900">
                   <option value="usuario">Usuário</option>
-                  <option value="gerente">Gerente</option>
+                  <option value="gerente">Administrador</option>
                 </select>
               </Field>
               <Field label="Departamento">
@@ -218,7 +218,7 @@ export default function UsuariosPage() {
                 <Field label="Tipo">
                   <select value={editRole} onChange={(e) => setEditRole(e.target.value as any)} className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900">
                     <option value="usuario">Usuário</option>
-                    <option value="gerente">Gerente</option>
+                    <option value="gerente">Administrador</option>
                   </select>
                 </Field>
                 <Field label="Departamento">
