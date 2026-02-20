@@ -1,18 +1,18 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { ClipboardList, UserCircle, Search, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
+import { ClipboardList, UserCircle, Search, ChevronDown, ChevronUp, ArrowRight, Calendar, Trash2, CheckSquare, Square } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { formatBR } from '@/app/utils/date';
 import type { LogEntry } from '@/app/types';
 
-/** Formata número do RET no padrão XX.XXXXXXXX-XX */
+/** Formata número do RET no padrão XX.XXXXXXXXX-XX (13 dígitos) */
 function formatRetNumber(value: string): string {
   if (!value) return '';
-  const digits = value.replace(/\D/g, '').slice(0, 12);
+  const digits = value.replace(/\D/g, '').slice(0, 13);
   if (digits.length <= 2) return digits;
-  if (digits.length <= 10) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}.${digits.slice(2, 10)}-${digits.slice(10)}`;
+  if (digits.length <= 11) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 11)}-${digits.slice(11)}`;
 }
 
 /** Labels amigáveis para os campos da empresa */
@@ -56,13 +56,23 @@ const FIELD_LABELS: Record<string, string> = {
 const IGNORED_FIELDS = new Set(['id', 'atualizadoEm', 'criadoEm']);
 
 export default function HistoricoPage() {
-  const { logs, usuarios, departamentos, canManage } = useSistema();
+  const { logs, usuarios, departamentos, canManage, canAdmin, limparHistorico, removerLogsSelecionados, mostrarAlerta } = useSistema();
   const [search, setSearch] = useState('');
   const [filtroAction, setFiltroAction] = useState('');
+  const [filtroEntity, setFiltroEntity] = useState('');
+  const [filtroUser, setFiltroUser] = useState('');
+  const [dataDe, setDataDe] = useState('');
+  const [dataAte, setDataAte] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [qtdExibir, setQtdExibir] = useState(100);
+  const [confirmExcluir, setConfirmExcluir] = useState(false);
+  const [textoConfirm, setTextoConfirm] = useState('');
+  const [excluindo, setExcluindo] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [excluindoSelecionados, setExcluindoSelecionados] = useState(false);
 
-  // Controle de permissão: somente gerentes podem ver
-  if (!canManage) {
+  // Controle de permissão: somente admins podem ver
+  if (!canAdmin) {
     return (
       <div className="space-y-6">
         <div className="rounded-2xl bg-white p-12 shadow-sm text-center">
@@ -71,7 +81,7 @@ export default function HistoricoPage() {
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">Acesso Restrito</h2>
           <p className="text-gray-500 text-sm">
-            Apenas gerentes têm acesso ao histórico de alterações do sistema.
+            Apenas administradores têm acesso ao histórico de alterações do sistema.
           </p>
           <p className="text-gray-400 text-xs mt-2">
             Entre em contato com o administrador caso precise consultar o histórico.
@@ -81,10 +91,10 @@ export default function HistoricoPage() {
     );
   }
 
-  const getUserName = (userId: string | null | undefined) => {
-    if (!userId) return 'Sistema';
+  const getUserName = (userId: string | null | undefined, userNome?: string | null) => {
+    if (!userId) return userNome || 'Sistema';
     const user = usuarios.find((u) => u.id === userId);
-    return user ? user.nome : 'Desconhecido';
+    return user ? user.nome : (userNome || 'Desconhecido');
   };
 
   const getDeptName = (deptId: string) => {
@@ -101,17 +111,82 @@ export default function HistoricoPage() {
     });
   };
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const exibidosIds = exibidos.map((l) => l.id);
+    const allSelected = exibidosIds.every((id) => selectedIds.has(id));
+    if (allSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of exibidosIds) next.delete(id);
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of exibidosIds) next.add(id);
+        return next;
+      });
+    }
+  };
+
+  const handleExcluirSelecionados = async () => {
+    if (selectedIds.size === 0) return;
+    setExcluindoSelecionados(true);
+    try {
+      await removerLogsSelecionados(Array.from(selectedIds));
+      mostrarAlerta('Registros excluídos', `${selectedIds.size} registro(s) excluído(s) do histórico.`, 'sucesso');
+      setSelectedIds(new Set());
+    } catch (err: any) {
+      mostrarAlerta('Erro', err?.message || 'Não foi possível excluir os registros.', 'erro');
+    } finally {
+      setExcluindoSelecionados(false);
+    }
+  };
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const deMs = dataDe ? new Date(dataDe + 'T00:00:00').getTime() : 0;
+    const ateMs = dataAte ? new Date(dataAte + 'T23:59:59').getTime() : Infinity;
     return logs.filter((l) => {
       if (filtroAction && l.action !== filtroAction) return false;
+      if (filtroEntity && l.entity !== filtroEntity) return false;
+      if (filtroUser && l.userId !== filtroUser) return false;
+      if (deMs || ateMs < Infinity) {
+        const logMs = new Date(l.em).getTime();
+        if (logMs < deMs || logMs > ateMs) return false;
+      }
       if (q) {
-        const hay = [l.action, l.message, getUserName(l.userId)].join(' ').toLowerCase();
+        const hay = [l.action, l.entity, l.message, getUserName(l.userId, l.userNome)].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [logs, search, filtroAction, usuarios]);
+  }, [logs, search, filtroAction, filtroEntity, filtroUser, dataDe, dataAte, usuarios]);
+
+  // Unique users that appear in logs
+  const logUsers = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const l of logs) {
+      if (l.userId && !map.has(l.userId)) {
+        const user = usuarios.find((u) => u.id === l.userId);
+        map.set(l.userId, user ? user.nome : (l.userNome || 'Desconhecido'));
+      }
+    }
+    return Array.from(map.entries()).map(([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [logs, usuarios]);
+
+  const hasFilters = search || filtroAction || filtroEntity || filtroUser || dataDe || dataAte;
+  const exibidos = filtered.slice(0, qtdExibir);
+  const temMais = filtered.length > qtdExibir;
 
   /** Formata um valor do diff para exibição legível */
   const formatValue = (key: string, val: unknown): string => {
@@ -306,6 +381,26 @@ export default function HistoricoPage() {
     alert: 'bg-amber-100 text-amber-700',
   };
 
+  const entityLabels: Record<string, string> = {
+    empresa: 'Empresa',
+    usuario: 'Usuário',
+    departamento: 'Departamento',
+    documento: 'Documento',
+    ret: 'RET',
+    notificacao: 'Notificação',
+    servico: 'Serviço',
+  };
+
+  const entityColors: Record<string, string> = {
+    empresa: 'bg-blue-50 text-blue-600',
+    usuario: 'bg-purple-50 text-purple-600',
+    departamento: 'bg-cyan-50 text-cyan-600',
+    documento: 'bg-orange-50 text-orange-600',
+    ret: 'bg-emerald-50 text-emerald-600',
+    notificacao: 'bg-gray-50 text-gray-500',
+    servico: 'bg-pink-50 text-pink-600',
+  };
+
   return (
     <div className="space-y-6">
       <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
@@ -319,6 +414,27 @@ export default function HistoricoPage() {
               <div className="text-sm text-gray-500">Todas as ações registradas no sistema ({filtered.length} registros)</div>
             </div>
           </div>
+          {canAdmin && logs.length > 0 && (
+            <div className="flex items-center gap-2 self-start flex-wrap">
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={handleExcluirSelecionados}
+                  disabled={excluindoSelecionados}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl font-semibold text-sm hover:shadow-lg transition disabled:opacity-50"
+                >
+                  <Trash2 size={16} />
+                  {excluindoSelecionados ? 'Excluindo...' : `Excluir ${selectedIds.size} selecionado(s)`}
+                </button>
+              )}
+              <button
+                onClick={() => { setConfirmExcluir(true); setTextoConfirm(''); }}
+                className="inline-flex items-center gap-2 px-4 py-2.5 border-2 border-red-200 text-red-600 rounded-xl font-semibold text-sm hover:bg-red-50 transition"
+              >
+                <Trash2 size={16} />
+                Excluir histórico
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="mt-5 flex flex-col sm:flex-row gap-3 flex-wrap">
@@ -332,6 +448,14 @@ export default function HistoricoPage() {
             />
           </div>
           <select
+            value={filtroUser}
+            onChange={(e) => setFiltroUser(e.target.value)}
+            className="rounded-xl bg-gray-50 px-4 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400"
+          >
+            <option value="">Todos os usuários</option>
+            {logUsers.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+          </select>
+          <select
             value={filtroAction}
             onChange={(e) => setFiltroAction(e.target.value)}
             className="rounded-xl bg-gray-50 px-4 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400"
@@ -343,6 +467,50 @@ export default function HistoricoPage() {
             <option value="login">Login</option>
             <option value="logout">Logout</option>
           </select>
+          <select
+            value={filtroEntity}
+            onChange={(e) => setFiltroEntity(e.target.value)}
+            className="rounded-xl bg-gray-50 px-4 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400"
+          >
+            <option value="">Todos os tipos</option>
+            <option value="empresa">Empresa</option>
+            <option value="documento">Documento</option>
+            <option value="ret">RET</option>
+            <option value="usuario">Usuário</option>
+            <option value="departamento">Departamento</option>
+            <option value="servico">Serviço</option>
+          </select>
+        </div>
+
+        {/* Filtro por data */}
+        <div className="mt-3 flex flex-col sm:flex-row gap-3 items-end flex-wrap">
+          <div className="flex items-center gap-2">
+            <Calendar size={16} className="text-gray-400" />
+            <label className="text-xs font-semibold text-gray-600">De:</label>
+            <input
+              type="date"
+              value={dataDe}
+              onChange={(e) => { setDataDe(e.target.value); setQtdExibir(100); }}
+              className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-semibold text-gray-600">Até:</label>
+            <input
+              type="date"
+              value={dataAte}
+              onChange={(e) => { setDataAte(e.target.value); setQtdExibir(100); }}
+              className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400"
+            />
+          </div>
+          {hasFilters && (
+            <button
+              onClick={() => { setSearch(''); setFiltroAction(''); setFiltroEntity(''); setFiltroUser(''); setDataDe(''); setDataAte(''); setQtdExibir(100); }}
+              className="inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-bold px-3 py-2.5"
+            >
+              Limpar filtros
+            </button>
+          )}
         </div>
       </div>
 
@@ -352,14 +520,24 @@ export default function HistoricoPage() {
           <table className="w-full text-sm">
             <thead className="bg-gradient-to-r from-teal-50 to-cyan-50 text-gray-600">
               <tr>
+                {canAdmin && (
+                  <th className="px-3 py-4 w-10">
+                    <button onClick={toggleSelectAll} className="text-gray-400 hover:text-teal-600 transition">
+                      {exibidos.length > 0 && exibidos.every((l) => selectedIds.has(l.id))
+                        ? <CheckSquare size={18} className="text-teal-600" />
+                        : <Square size={18} />}
+                    </button>
+                  </th>
+                )}
                 <th className="text-left px-5 py-4 font-semibold">Quando</th>
                 <th className="text-left px-5 py-4 font-semibold">Quem</th>
                 <th className="text-left px-5 py-4 font-semibold">Ação</th>
+                <th className="text-left px-5 py-4 font-semibold">Tipo</th>
                 <th className="text-left px-5 py-4 font-semibold">Detalhe</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.slice(0, 200).map((l, idx) => {
+              {exibidos.map((l, idx) => {
                 const hasDiff = l.diff && Object.keys(l.diff).filter(k => !IGNORED_FIELDS.has(k)).length > 0;
                 const isExpanded = expandedIds.has(l.id);
                 const isUpdate = l.action === 'update';
@@ -367,19 +545,33 @@ export default function HistoricoPage() {
                 return (
                   <React.Fragment key={l.id}>
                     <tr
-                      className={`${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} ${isUpdate ? 'cursor-pointer hover:bg-blue-50/50' : ''}`}
+                      className={`${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} ${isUpdate ? 'cursor-pointer hover:bg-blue-50/50' : ''} ${canAdmin && selectedIds.has(l.id) ? 'bg-red-50/40' : ''}`}
                       onClick={() => isUpdate && toggleExpand(l.id)}
                     >
+                      {canAdmin && (
+                        <td className="px-3 py-3.5" onClick={(e) => e.stopPropagation()}>
+                          <button onClick={() => toggleSelect(l.id)} className="text-gray-400 hover:text-teal-600 transition">
+                            {selectedIds.has(l.id)
+                              ? <CheckSquare size={18} className="text-teal-600" />
+                              : <Square size={18} />}
+                          </button>
+                        </td>
+                      )}
                       <td className="px-5 py-3.5 text-gray-500 whitespace-nowrap text-xs">{new Date(l.em).toLocaleString('pt-BR')}</td>
                       <td className="px-5 py-3.5">
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-50 text-teal-700 px-2.5 py-1 text-xs font-semibold">
                           <UserCircle size={13} />
-                          {getUserName(l.userId)}
+                          {getUserName(l.userId, l.userNome)}
                         </span>
                       </td>
                       <td className="px-5 py-3.5">
                         <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${actionColors[l.action] || 'bg-gray-100 text-gray-600'}`}>
                           {actionLabels[l.action] || l.action}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${entityColors[l.entity] || 'bg-gray-50 text-gray-500'}`}>
+                          {entityLabels[l.entity] || l.entity}
                         </span>
                       </td>
                       <td className="px-5 py-3.5 text-gray-700">
@@ -399,7 +591,7 @@ export default function HistoricoPage() {
                     </tr>
                     {isExpanded && isUpdate && (
                       <tr className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-                        <td colSpan={4} className="border-t border-blue-100 bg-blue-50/30">
+                        <td colSpan={canAdmin ? 6 : 5} className="border-t border-blue-100 bg-blue-50/30">
                           {renderDiff(l)}
                         </td>
                       </tr>
@@ -409,7 +601,7 @@ export default function HistoricoPage() {
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-5 py-10 text-center text-gray-400">
+                  <td colSpan={canAdmin ? 6 : 5} className="px-5 py-10 text-center text-gray-400">
                     Sem registros de atividade.
                   </td>
                 </tr>
@@ -420,25 +612,40 @@ export default function HistoricoPage() {
 
         {/* Mobile cards */}
         <div className="md:hidden divide-y divide-gray-100">
-          {filtered.slice(0, 200).map((l) => {
+          {exibidos.map((l) => {
             const hasDiff = l.diff && Object.keys(l.diff).filter(k => !IGNORED_FIELDS.has(k)).length > 0;
             const isExpanded = expandedIds.has(l.id);
             const isUpdate = l.action === 'update';
             return (
               <div
                 key={`mobile-${l.id}`}
-                className={`p-4 ${isUpdate ? 'cursor-pointer' : ''}`}
+                className={`p-4 ${isUpdate ? 'cursor-pointer' : ''} ${canAdmin && selectedIds.has(l.id) ? 'bg-red-50/40' : ''}`}
                 onClick={() => isUpdate && toggleExpand(l.id)}
               >
                 <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${actionColors[l.action] || 'bg-gray-100 text-gray-600'}`}>
-                    {actionLabels[l.action] || l.action}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {canAdmin && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleSelect(l.id); }}
+                        className="text-gray-400 hover:text-teal-600 transition"
+                      >
+                        {selectedIds.has(l.id)
+                          ? <CheckSquare size={16} className="text-teal-600" />
+                          : <Square size={16} />}
+                      </button>
+                    )}
+                    <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${actionColors[l.action] || 'bg-gray-100 text-gray-600'}`}>
+                      {actionLabels[l.action] || l.action}
+                    </span>
+                    <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${entityColors[l.entity] || 'bg-gray-50 text-gray-500'}`}>
+                      {entityLabels[l.entity] || l.entity}
+                    </span>
+                  </div>
                   <span className="text-[11px] text-gray-400 whitespace-nowrap">{new Date(l.em).toLocaleString('pt-BR')}</span>
                 </div>
                 <div className="flex items-center gap-1.5 mb-1">
                   <UserCircle size={13} className="text-teal-500 shrink-0" />
-                  <span className="text-xs font-semibold text-teal-700">{getUserName(l.userId)}</span>
+                  <span className="text-xs font-semibold text-teal-700">{getUserName(l.userId, l.userNome)}</span>
                 </div>
                 <div className="text-sm text-gray-700">{l.message}</div>
                 {isUpdate && hasDiff && (
@@ -459,7 +666,89 @@ export default function HistoricoPage() {
             <div className="px-5 py-10 text-center text-gray-400">Sem registros de atividade.</div>
           )}
         </div>
+
+        {/* Carregar mais + contador */}
+        <div className="p-4 border-t border-gray-100 text-center space-y-2">
+          <div className="text-xs text-gray-500">
+            Exibindo {exibidos.length} de {filtered.length} registros
+            {logs.length !== filtered.length && ` (total no sistema: ${logs.length})`}
+          </div>
+          {temMais && (
+            <button
+              onClick={() => setQtdExibir((prev) => prev + 100)}
+              className="inline-flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-teal-500 to-cyan-500 text-white rounded-xl font-semibold text-sm hover:shadow-lg transition-all"
+            >
+              Carregar mais 100 registros
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Modal de confirmação para excluir histórico */}
+      {confirmExcluir && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4" onMouseDown={(e) => e.currentTarget === e.target && setConfirmExcluir(false)}>
+          <div className="absolute inset-0 bg-black/50" />
+          <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-red-500 to-red-600 p-5">
+              <div className="text-lg font-bold text-white">Excluir todo o histórico</div>
+              <div className="text-sm text-red-100 mt-1">Esta ação é irreversível.</div>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="bg-red-50 rounded-xl p-4 border border-red-200">
+                <p className="text-sm text-red-800 font-semibold">
+                  Todos os {logs.length} registros de histórico serão excluídos permanentemente.
+                </p>
+                <p className="text-sm text-red-700 mt-2">
+                  Recomendação: faça um backup antes de excluir.
+                </p>
+                <p className="text-sm text-red-700 mt-2">
+                  Digite <strong>EXCLUIR</strong> para confirmar:
+                </p>
+              </div>
+              <input
+                type="text"
+                value={textoConfirm}
+                onChange={(e) => setTextoConfirm(e.target.value)}
+                placeholder="Digite EXCLUIR"
+                className="w-full px-4 py-3 border border-red-300 rounded-xl text-center text-lg font-bold tracking-widest uppercase"
+                disabled={excluindo}
+              />
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmExcluir(false)}
+                  disabled={excluindo}
+                  className="flex-1 rounded-xl bg-gray-100 px-4 py-3 font-semibold text-gray-700 hover:bg-gray-200 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={async () => {
+                    if (textoConfirm !== 'EXCLUIR') {
+                      mostrarAlerta('Confirmação necessária', 'Digite EXCLUIR em maiúsculas para confirmar.', 'aviso');
+                      return;
+                    }
+                    setExcluindo(true);
+                    try {
+                      await limparHistorico();
+                      setConfirmExcluir(false);
+                      setTextoConfirm('');
+                      mostrarAlerta('Histórico excluído', 'Todo o histórico foi excluído permanentemente.', 'sucesso');
+                    } catch (err: any) {
+                      mostrarAlerta('Erro', err?.message || 'Não foi possível excluir o histórico.', 'erro');
+                    } finally {
+                      setExcluindo(false);
+                    }
+                  }}
+                  disabled={excluindo || textoConfirm !== 'EXCLUIR'}
+                  className="flex-1 rounded-xl bg-gradient-to-r from-red-500 to-red-600 text-white px-4 py-3 font-bold hover:from-red-600 hover:to-red-700 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {excluindo ? 'Excluindo...' : 'Excluir tudo'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,13 +3,16 @@
 import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle, Clock, Shield, Search, Download, ChevronDown, ChevronUp,
-  FileText, CalendarClock, Building2, Users, Filter, XCircle, Eye
+  FileText, CalendarClock, Building2, Users, Filter, XCircle, Eye, User, Settings
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR } from '@/app/utils/date';
-import type { UUID } from '@/app/types';
+import type { UUID, Limiares } from '@/app/types';
+import { LIMIARES_DEFAULTS } from '@/app/types';
+import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
+import ModalLimiares from '@/app/components/ModalLimiares';
 
-type StatusVenc = 'vencido' | 'critico' | 'atencao' | 'ok';
+type StatusVenc = 'vencido' | 'critico' | 'atencao' | 'proximo' | 'ok';
 
 interface VencimentoItem {
   empresaId: UUID;
@@ -21,12 +24,14 @@ interface VencimentoItem {
   dias: number;
   status: StatusVenc;
   responsaveis: Record<string, string | null>;
+  departamentosIds: UUID[]; // departamentos responsáveis pelo documento (vazio = todos)
 }
 
-function getStatus(dias: number): StatusVenc {
+function getStatus(dias: number, lim: Limiares): StatusVenc {
   if (dias < 0) return 'vencido';
-  if (dias <= 15) return 'critico';
-  if (dias <= 60) return 'atencao';
+  if (dias <= lim.critico) return 'critico';
+  if (dias <= lim.atencao) return 'atencao';
+  if (dias <= lim.proximo) return 'proximo';
   return 'ok';
 }
 
@@ -34,6 +39,7 @@ const statusConfig: Record<StatusVenc, { label: string; bg: string; text: string
   vencido: { label: 'VENCIDO', bg: 'bg-red-50', text: 'text-red-700', dot: 'bg-red-500', border: 'border-red-200' },
   critico: { label: 'CRÍTICO', bg: 'bg-orange-50', text: 'text-orange-700', dot: 'bg-orange-500', border: 'border-orange-200' },
   atencao: { label: 'ATENÇÃO', bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-400', border: 'border-amber-200' },
+  proximo: { label: 'PRÓXIMO', bg: 'bg-green-50', text: 'text-green-700', dot: 'bg-green-500', border: 'border-green-200' },
   ok: { label: 'EM DIA', bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500', border: 'border-emerald-200' },
 };
 
@@ -49,13 +55,17 @@ const DEPT_COLORS: Record<number, { bg: string; text: string; border: string }> 
 };
 
 export default function VencimentosPage() {
-  const { empresas, departamentos, usuarios } = useSistema();
+  const { empresas, departamentos, usuarios, currentUserId, canManage } = useSistema();
+
+  const [limiares, setLimiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
+  const [showLimiares, setShowLimiares] = useState(false);
 
   const [search, setSearch] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<string>('todos-risco');
   const [filtroDep, setFiltroDep] = useState('');
   const [filtroResp, setFiltroResp] = useState('');
   const [filtroTipo, setFiltroTipo] = useState('');
+  const [meusVencimentos, setMeusVencimentos] = useState(false);
   const [orderBy, setOrderBy] = useState<'dias' | 'empresa' | 'tipo'>('dias');
   const [orderDir, setOrderDir] = useState<'asc' | 'desc'>('asc');
 
@@ -83,8 +93,9 @@ export default function VencimentosPage() {
           nome: d.nome,
           vencimento: d.validade,
           dias,
-          status: getStatus(dias),
+          status: getStatus(dias, limiares),
           responsaveis: e.responsaveis,
+          departamentosIds: d.departamentosIds ?? [],
         });
       }
       for (const r of e.rets) {
@@ -98,13 +109,14 @@ export default function VencimentosPage() {
           nome: r.nome,
           vencimento: r.vencimento,
           dias,
-          status: getStatus(dias),
+          status: getStatus(dias, limiares),
           responsaveis: e.responsaveis,
+          departamentosIds: [],
         });
       }
     }
     return items;
-  }, [empresas]);
+  }, [empresas, limiares]);
 
   // Filtered
   const filtered = useMemo(() => {
@@ -120,6 +132,8 @@ export default function VencimentosPage() {
           if (item.status !== 'critico') return false;
         } else if (filtroStatus === 'atencao') {
           if (item.status !== 'atencao') return false;
+        } else if (filtroStatus === 'proximo') {
+          if (item.status !== 'proximo') return false;
         }
         // filtroStatus === 'todos' → show all
 
@@ -142,6 +156,20 @@ export default function VencimentosPage() {
           if (!anyResp) return false;
         }
 
+        // Meus vencimentos
+        if (meusVencimentos && currentUserId) {
+          if (item.departamentosIds.length > 0) {
+            // Documento com departamentos específicos: verificar se o usuário é responsável
+            // por algum dos departamentos selecionados no documento
+            const isResponsavel = item.departamentosIds.some((depId) => item.responsaveis[depId] === currentUserId);
+            if (!isResponsavel) return false;
+          } else {
+            // RET ou documento sem departamento específico: usa responsáveis gerais da empresa
+            const isResponsavel = Object.values(item.responsaveis).some((uid) => uid === currentUserId);
+            if (!isResponsavel) return false;
+          }
+        }
+
         return true;
       })
       .sort((a, b) => {
@@ -151,11 +179,11 @@ export default function VencimentosPage() {
         else if (orderBy === 'tipo') cmp = a.tipo.localeCompare(b.tipo);
         return orderDir === 'desc' ? -cmp : cmp;
       });
-  }, [allItems, search, filtroStatus, filtroDep, filtroResp, filtroTipo, orderBy, orderDir]);
+  }, [allItems, search, filtroStatus, filtroDep, filtroResp, filtroTipo, meusVencimentos, currentUserId, orderBy, orderDir]);
 
   // Counts
   const counts = useMemo(() => {
-    const c = { vencido: 0, critico: 0, atencao: 0, ok: 0, total: allItems.length };
+    const c = { vencido: 0, critico: 0, atencao: 0, proximo: 0, ok: 0, total: allItems.length };
     for (const item of allItems) c[item.status]++;
     return c;
   }, [allItems]);
@@ -182,7 +210,7 @@ export default function VencimentosPage() {
     return orderDir === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
   };
 
-  const hasFilters = search || filtroStatus !== 'todos-risco' || filtroDep || filtroResp || filtroTipo;
+  const hasFilters = search || filtroStatus !== 'todos-risco' || filtroDep || filtroResp || filtroTipo || meusVencimentos;
 
   // Export CSV
   const exportCSV = () => {
@@ -215,6 +243,73 @@ export default function VencimentosPage() {
     URL.revokeObjectURL(url);
   };
 
+  // Export PDF
+  const exportPDF = async () => {
+    const { default: jsPDF } = await import('jspdf');
+    const autoTable = (await import('jspdf-autotable')).default;
+
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+    // Title
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Controle de Vencimentos', 14, 15);
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 14, 21);
+    doc.text(`Total: ${filtered.length} itens`, 14, 26);
+
+    const header = [['Status', 'Dias', 'Código', 'Empresa', 'Tipo', 'Nome', 'Vencimento', 'Responsáveis']];
+    const rows = filtered.map((item) => {
+      const responsaveis = Object.entries(item.responsaveis)
+        .filter(([, uid]) => uid)
+        .map(([dId, uid]) => `${getDepName(dId)}: ${getUserName(uid)}`)
+        .join(' | ');
+      return [
+        statusConfig[item.status].label,
+        item.dias < 0 ? `${Math.abs(item.dias)}d atrás` : `${item.dias}d`,
+        item.empresaCodigo,
+        item.empresaNome,
+        item.tipo,
+        item.nome,
+        formatBR(item.vencimento),
+        responsaveis,
+      ];
+    });
+
+    autoTable(doc, {
+      head: header,
+      body: rows,
+      startY: 30,
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [30, 58, 95], textColor: 255, fontStyle: 'bold' },
+      columnStyles: {
+        0: { cellWidth: 22 },
+        1: { cellWidth: 18, halign: 'center' },
+        2: { cellWidth: 20 },
+        3: { cellWidth: 45 },
+        4: { cellWidth: 15 },
+        5: { cellWidth: 50 },
+        6: { cellWidth: 25 },
+        7: { cellWidth: 55 },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      didParseCell: (data: any) => {
+        if (data.section === 'body' && data.column.index === 0) {
+          const status = (data.row.raw as string[])[0];
+          if (status === 'VENCIDO') { data.cell.styles.textColor = [185, 28, 28]; data.cell.styles.fontStyle = 'bold'; }
+          else if (status === 'CRÍTICO') { data.cell.styles.textColor = [194, 65, 12]; data.cell.styles.fontStyle = 'bold'; }
+          else if (status === 'ATENÇÃO') { data.cell.styles.textColor = [161, 98, 7]; }
+          else if (status === 'PRÓXIMO') { data.cell.styles.textColor = [21, 128, 61]; }
+          else { data.cell.styles.textColor = [5, 150, 105]; }
+        }
+      },
+    });
+
+    doc.save(`vencimentos_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -225,26 +320,46 @@ export default function VencimentosPage() {
               <Shield className="text-white" size={22} />
             </div>
             <div>
-              <div className="text-2xl font-bold text-gray-900">Controle de Vencimentos</div>
+              <div className="text-xl sm:text-2xl font-bold text-gray-900">Controle de Vencimentos</div>
               <div className="text-sm text-gray-500">Monitoramento completo de documentos e RETs com prazos</div>
             </div>
           </div>
-          <button
-            onClick={exportCSV}
-            className="inline-flex items-center gap-2 rounded-xl border-2 border-emerald-200 text-emerald-700 px-4 py-2.5 font-bold hover:bg-emerald-50 transition"
-          >
-            <Download size={18} />
-            Exportar CSV
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {canManage && (
+              <button
+                onClick={() => setShowLimiares(true)}
+                className="inline-flex items-center gap-2 rounded-xl border-2 border-violet-200 text-violet-700 px-3 sm:px-4 py-2 sm:py-2.5 font-bold hover:bg-violet-50 transition"
+                title="Configurar limiares de vencimento"
+              >
+                <Settings size={18} />
+                <span className="hidden sm:inline">Limiares</span>
+              </button>
+            )}
+            <button
+              onClick={exportPDF}
+              className="inline-flex items-center gap-2 rounded-xl border-2 border-red-200 text-red-700 px-3 sm:px-4 py-2 sm:py-2.5 font-bold hover:bg-red-50 transition"
+            >
+              <FileText size={18} />
+              <span className="hidden sm:inline">Exportar</span> PDF
+            </button>
+            <button
+              onClick={exportCSV}
+              className="inline-flex items-center gap-2 rounded-xl border-2 border-emerald-200 text-emerald-700 px-3 sm:px-4 py-2 sm:py-2.5 font-bold hover:bg-emerald-50 transition"
+            >
+              <Download size={18} />
+              <span className="hidden sm:inline">Exportar</span> CSV
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Status Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 sm:gap-4">
         {[
           { key: 'vencido' as const, label: 'Vencidos', count: counts.vencido, dotColor: 'bg-red-500', textColor: 'text-red-700', ring: 'ring-red-400', activeBg: 'bg-red-50' },
-          { key: 'critico' as const, label: 'Críticos (≤15d)', count: counts.critico, dotColor: 'bg-orange-500', textColor: 'text-orange-700', ring: 'ring-orange-400', activeBg: 'bg-orange-50' },
-          { key: 'atencao' as const, label: 'Atenção (≤60d)', count: counts.atencao, dotColor: 'bg-amber-400', textColor: 'text-amber-700', ring: 'ring-amber-400', activeBg: 'bg-amber-50' },
+          { key: 'critico' as const, label: `Críticos (≤${limiares.critico}d)`, count: counts.critico, dotColor: 'bg-orange-500', textColor: 'text-orange-700', ring: 'ring-orange-400', activeBg: 'bg-orange-50' },
+          { key: 'atencao' as const, label: `Atenção (≤${limiares.atencao}d)`, count: counts.atencao, dotColor: 'bg-amber-400', textColor: 'text-amber-700', ring: 'ring-amber-400', activeBg: 'bg-amber-50' },
+          { key: 'proximo' as const, label: `Próximo (≤${limiares.proximo}d)`, count: counts.proximo, dotColor: 'bg-green-500', textColor: 'text-green-700', ring: 'ring-green-400', activeBg: 'bg-green-50' },
           { key: 'todos' as const, label: 'Em Dia', count: counts.ok, dotColor: 'bg-emerald-500', textColor: 'text-emerald-700', ring: 'ring-emerald-400', activeBg: 'bg-emerald-50' },
           { key: 'todos-risco' as const, label: 'Total Geral', count: counts.total, dotColor: 'bg-gray-400', textColor: 'text-gray-700', ring: 'ring-gray-400', activeBg: 'bg-gray-50' },
         ].map((c) => (
@@ -273,7 +388,7 @@ export default function VencimentosPage() {
           </div>
           {hasFilters && (
             <button
-              onClick={() => { setSearch(''); setFiltroStatus('todos-risco'); setFiltroDep(''); setFiltroResp(''); setFiltroTipo(''); }}
+              onClick={() => { setSearch(''); setFiltroStatus('todos-risco'); setFiltroDep(''); setFiltroResp(''); setFiltroTipo(''); setMeusVencimentos(false); }}
               className="inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-bold"
             >
               <XCircle size={14} />
@@ -281,7 +396,7 @@ export default function VencimentosPage() {
             </button>
           )}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
@@ -304,11 +419,22 @@ export default function VencimentosPage() {
             <option value="Documento">Documentos</option>
             <option value="RET">RETs</option>
           </select>
+          <button
+            onClick={() => setMeusVencimentos((v) => !v)}
+            className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold border-2 transition ${
+              meusVencimentos
+                ? 'bg-cyan-50 border-cyan-400 text-cyan-700'
+                : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-cyan-300'
+            }`}
+          >
+            <User size={16} />
+            {meusVencimentos ? 'Mostrando meus' : 'Meus vencimentos'}
+          </button>
         </div>
       </div>
 
       {/* Tabela Desktop / Cards Mobile */}
-      <div className="rounded-2xl bg-white shadow-sm overflow-hidden border border-gray-100">
+      <div className="rounded-2xl bg-white shadow-sm border border-gray-100">
         {/* Desktop table */}
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
@@ -347,6 +473,8 @@ export default function VencimentosPage() {
                     className={`transition-colors ${
                       item.status === 'vencido' ? 'bg-red-50/70 hover:bg-red-100/60' :
                       item.status === 'critico' ? 'bg-orange-50/50 hover:bg-orange-100/40' :
+                      item.status === 'atencao' ? 'bg-amber-50/40 hover:bg-amber-100/30' :
+                      item.status === 'proximo' ? 'bg-green-50/40 hover:bg-green-100/30' :
                       'hover:bg-gray-50'
                     }`}
                   >
@@ -361,6 +489,7 @@ export default function VencimentosPage() {
                         item.status === 'vencido' ? 'text-red-700' :
                         item.status === 'critico' ? 'text-orange-700' :
                         item.status === 'atencao' ? 'text-amber-600' :
+                        item.status === 'proximo' ? 'text-green-600' :
                         'text-emerald-600'
                       }`}>
                         {item.dias < 0 ? `${Math.abs(item.dias)}d` : `${item.dias}d`}
@@ -381,8 +510,8 @@ export default function VencimentosPage() {
                         {item.tipo === 'Documento' ? 'DOC' : 'RET'}
                       </span>
                     </td>
-                    <td className="px-5 py-4">
-                      <span className="font-semibold text-gray-800 max-w-[180px] truncate block" title={item.nome}>{item.nome}</span>
+                    <td className="px-5 py-4" style={{ overflow: 'visible', textOverflow: 'clip' }}>
+                      <div className="font-semibold text-gray-800" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflow: 'visible', textOverflow: 'clip' }}>{item.nome}</div>
                     </td>
                     <td className="px-5 py-4 text-gray-700 whitespace-nowrap font-medium">{formatBR(item.vencimento)}</td>
                     <td className="px-5 py-4">
@@ -449,13 +578,13 @@ export default function VencimentosPage() {
               .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid), depIdx: getDepIndex(dId) }))
               .filter((r) => r.dep && r.user);
             return (
-              <div key={`mobile-${item.empresaId}-${item.nome}-${idx}`} className={`p-4 ${item.status === 'vencido' ? 'bg-red-50/70' : item.status === 'critico' ? 'bg-orange-50/50' : ''}`}>
+              <div key={`mobile-${item.empresaId}-${item.nome}-${idx}`} className={`p-4 ${item.status === 'vencido' ? 'bg-red-50/70' : item.status === 'critico' ? 'bg-orange-50/50' : item.status === 'atencao' ? 'bg-amber-50/40' : item.status === 'proximo' ? 'bg-green-50/40' : ''}`}>
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold border ${sc.bg} ${sc.text} ${sc.border}`}>
                     <span className={`h-2 w-2 rounded-full ${sc.dot} ${item.status === 'vencido' ? 'animate-pulse' : ''}`} />
                     {sc.label}
                   </span>
-                  <span className={`font-black text-lg tabular-nums ${item.status === 'vencido' ? 'text-red-700' : item.status === 'critico' ? 'text-orange-700' : item.status === 'atencao' ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  <span className={`font-black text-lg tabular-nums ${item.status === 'vencido' ? 'text-red-700' : item.status === 'critico' ? 'text-orange-700' : item.status === 'atencao' ? 'text-amber-600' : item.status === 'proximo' ? 'text-green-600' : 'text-emerald-600'}`}>
                     {item.dias < 0 ? `${Math.abs(item.dias)}d atrás` : `${item.dias}d`}
                   </span>
                 </div>
@@ -468,7 +597,7 @@ export default function VencimentosPage() {
                     {item.tipo === 'Documento' ? <FileText size={12} /> : <CalendarClock size={12} />}
                     {item.tipo === 'Documento' ? 'DOC' : 'RET'}
                   </span>
-                  <span className="text-sm font-semibold text-gray-800 truncate">{item.nome}</span>
+                  <span className="text-sm font-semibold text-gray-800 break-words">{item.nome}</span>
                   <span className="text-xs text-gray-500 ml-auto whitespace-nowrap">{formatBR(item.vencimento)}</span>
                 </div>
                 {responsaveis.length > 0 && (
@@ -504,10 +633,19 @@ export default function VencimentosPage() {
               <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" /> {filtered.filter((i) => i.status === 'vencido').length} vencido(s)</span>
               <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-orange-500" /> {filtered.filter((i) => i.status === 'critico').length} crítico(s)</span>
               <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400" /> {filtered.filter((i) => i.status === 'atencao').length} atenção</span>
+              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-green-500" /> {filtered.filter((i) => i.status === 'proximo').length} próximo(s)</span>
             </div>
           </div>
         )}
       </div>
+
+      {showLimiares && (
+        <ModalLimiares
+          limiares={limiares}
+          onSave={setLimiares}
+          onClose={() => setShowLimiares(false)}
+        />
+      )}
     </div>
   );
 }

@@ -16,7 +16,7 @@ create table usuarios (
   id uuid primary key default gen_random_uuid(),
   nome text not null,
   email text not null unique,
-  role text not null default 'usuario' check (role in ('gerente', 'usuario')),
+  role text not null default 'usuario' check (role in ('admin', 'gerente', 'usuario')),
   departamento_id uuid references departamentos(id) on delete set null,
   ativo boolean not null default true,
   criado_em timestamptz not null default now(),
@@ -67,7 +67,7 @@ create table rets (
   numero_pta text not null,
   nome text not null,
   vencimento date not null,
-  ultima_renovacao date not null
+  ultima_renovacao date
 );
 
 -- 6. Responsáveis (empresa <-> departamento -> usuário)
@@ -86,6 +86,7 @@ create table documentos (
   nome text not null,
   validade date not null,
   arquivo_url text,
+  departamentos_ids uuid[] not null default '{}',
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
@@ -105,8 +106,9 @@ create table logs (
   id uuid primary key default gen_random_uuid(),
   em timestamptz not null default now(),
   user_id uuid references usuarios(id) on delete set null,
+  user_nome text,
   action text not null check (action in ('login', 'logout', 'create', 'update', 'delete', 'alert')),
-  entity text not null check (entity in ('empresa', 'usuario', 'departamento', 'documento', 'ret')),
+  entity text not null check (entity in ('empresa', 'usuario', 'departamento', 'documento', 'ret', 'notificacao')),
   entity_id uuid,
   message text not null,
   diff jsonb
@@ -125,13 +127,16 @@ create table lixeira (
   excluido_em timestamptz not null default now()
 );
 
--- 11. Notificações
+-- 11. Notificações (lidas_por: array de user IDs que já leram)
 create table notificacoes (
   id uuid primary key default gen_random_uuid(),
   titulo text not null,
   mensagem text not null,
   tipo text not null default 'info' check (tipo in ('info', 'sucesso', 'aviso', 'erro')),
   lida boolean not null default false,
+  lidas_por uuid[] not null default '{}',
+  empresa_id uuid references empresas(id) on delete set null,
+  destinatarios uuid[] not null default '{}',
   criado_em timestamptz not null default now(),
   autor_id uuid references usuarios(id) on delete set null,
   autor_nome text
@@ -245,7 +250,7 @@ as $$
     select 1 from public.usuarios u
     where u.id = auth.uid()
       and u.ativo = true
-      and u.role = 'gerente'
+      and (u.role = 'gerente' or u.role = 'admin')
   );
 $$;
 
@@ -331,13 +336,13 @@ drop policy if exists usuarios_self_select on usuarios;
 create policy usuarios_self_select on usuarios
   for select using (auth.uid() = id);
 
--- Empresas: gerente ou responsável pode ler/editar; criar/excluir só gerente
+-- Empresas: qualquer usuário ativo pode visualizar; editar só gerente/responsável; criar/excluir só gerente
 drop policy if exists empresas_select on empresas;
 drop policy if exists empresas_insert on empresas;
 drop policy if exists empresas_update on empresas;
 drop policy if exists empresas_delete on empresas;
 create policy empresas_select on empresas
-  for select using (public.can_access_empresa(id));
+  for select using (public.is_active_user());
 create policy empresas_insert on empresas
   for insert with check (public.is_manager());
 create policy empresas_update on empresas
@@ -346,11 +351,11 @@ create policy empresas_update on empresas
 create policy empresas_delete on empresas
   for delete using (public.is_manager());
 
--- Responsáveis: gerente gerencia; responsável pode ler para empresas que acessa
+-- Responsáveis: qualquer usuário ativo pode ler; gerente gerencia escrita
 drop policy if exists responsaveis_select on responsaveis;
 drop policy if exists responsaveis_write on responsaveis;
 create policy responsaveis_select on responsaveis
-  for select using (public.can_access_empresa(empresa_id));
+  for select using (public.is_active_user());
 create policy responsaveis_insert on responsaveis
   for insert with check (public.is_manager());
 create policy responsaveis_update on responsaveis
@@ -358,29 +363,41 @@ create policy responsaveis_update on responsaveis
 create policy responsaveis_delete on responsaveis
   for delete using (public.is_manager());
 
--- RETs / Documentos / Observações: acessíveis apenas para quem acessa a empresa
+-- RETs: qualquer usuário ativo pode ler; escrita apenas para quem acessa a empresa
 drop policy if exists rets_all on rets;
-create policy rets_all on rets
+drop policy if exists rets_select on rets;
+drop policy if exists rets_write on rets;
+create policy rets_select on rets
+  for select using (public.is_active_user());
+create policy rets_write on rets
   for all using (public.can_access_empresa(empresa_id))
   with check (public.can_access_empresa(empresa_id));
 
 drop policy if exists documentos_all on documentos;
-create policy documentos_all on documentos
+drop policy if exists documentos_select on documentos;
+drop policy if exists documentos_write on documentos;
+create policy documentos_select on documentos
+  for select using (public.is_active_user());
+create policy documentos_write on documentos
   for all using (public.can_access_empresa(empresa_id))
   with check (public.can_access_empresa(empresa_id));
 
 drop policy if exists observacoes_all on observacoes;
-create policy observacoes_all on observacoes
+drop policy if exists observacoes_select on observacoes;
+drop policy if exists observacoes_write on observacoes;
+create policy observacoes_select on observacoes
+  for select using (public.is_active_user());
+create policy observacoes_write on observacoes
   for all using (public.can_access_empresa(empresa_id))
   with check (public.can_access_empresa(empresa_id));
 
--- Logs: qualquer autenticado pode inserir; apenas gerente pode ler
+-- Logs: qualquer autenticado pode inserir e ler (filtro de visível é no app)
 drop policy if exists logs_insert on logs;
 drop policy if exists logs_select on logs;
 create policy logs_insert on logs
   for insert with check (public.is_active_user());
 create policy logs_select on logs
-  for select using (public.is_manager());
+  for select using (public.is_active_user());
 
 -- Lixeira: somente gerente
 drop policy if exists lixeira_all on lixeira;

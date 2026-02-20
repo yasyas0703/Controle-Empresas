@@ -1,42 +1,81 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { X, Upload, FileText } from 'lucide-react';
+import { X, Upload, FileText, Globe, Building2, Lock, Users } from 'lucide-react';
 import ModalBase from '@/app/components/ModalBase';
+import { useSistema } from '@/app/context/SistemaContext';
+import type { Departamento, Usuario, UUID, Visibilidade } from '@/app/types';
 
 export default function ModalAdicionarDocumento({
   isOpen,
   onClose,
   onSubmit,
+  departamentos,
+  usuarios = [],
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (doc: { nome: string; validade: string; arquivoUrl?: string }, file?: File) => void;
+  onSubmit: (doc: { nome: string; validade: string; arquivoUrl?: string; departamentosIds: UUID[]; visibilidade: Visibilidade; usuariosPermitidos: UUID[] }, file?: File) => void;
+  departamentos: Departamento[];
+  usuarios?: Usuario[];
 }) {
   const [nome, setNome] = useState('');
   const [validade, setValidade] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [selectedDepts, setSelectedDepts] = useState<UUID[]>([]);
+  const [visibilidade, setVisibilidade] = useState<Visibilidade>('publico');
+  const [selectedUsers, setSelectedUsers] = useState<UUID[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const toggleDept = (id: UUID) => {
+    setSelectedDepts((prev) =>
+      prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]
+    );
+  };
+
+  const toggleUser = (id: UUID) => {
+    setSelectedUsers((prev) =>
+      prev.includes(id) ? prev.filter((u) => u !== id) : [...prev, id]
+    );
+  };
 
   const handleRemoveFile = () => {
     setFile(null);
     if (fileRef.current) fileRef.current.value = '';
   };
 
-  const handleClose = () => {
+  const resetForm = () => {
     setNome('');
     setValidade('');
     setFile(null);
+    setSelectedDepts([]);
+    setVisibilidade('publico');
+    setSelectedUsers([]);
     if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const handleClose = () => {
+    resetForm();
     onClose();
   };
+
+  const visOptions: { value: Visibilidade; label: string; desc: string; icon: React.ReactNode; color: string; border: string; bg: string }[] = [
+    { value: 'publico', label: 'Público', desc: 'Todos os usuários podem ver', icon: <Globe size={16} />, color: 'text-green-700', border: 'border-green-300', bg: 'bg-green-50' },
+    { value: 'departamento', label: 'Departamento', desc: 'Apenas departamentos selecionados', icon: <Building2 size={16} />, color: 'text-blue-700', border: 'border-blue-300', bg: 'bg-blue-50' },
+    { value: 'usuarios', label: 'Por Usuários', desc: 'Apenas os usuários selecionados podem ver', icon: <Users size={16} />, color: 'text-purple-700', border: 'border-purple-300', bg: 'bg-purple-50' },
+    { value: 'confidencial', label: 'Confidencial', desc: 'Somente você pode ver', icon: <Lock size={16} />, color: 'text-red-700', border: 'border-red-300', bg: 'bg-red-50' },
+  ];
+
+  // Usuários ativos para o seletor (sem o usuário logado — ele é incluído automaticamente)
+  const { currentUserId, currentUser } = useSistema();
+  const activeUsers = usuarios.filter((u) => u.ativo && u.id !== currentUserId);
 
   return (
     <ModalBase
       isOpen={isOpen}
       onClose={handleClose}
       labelledBy="doc-title"
-      dialogClassName="w-full max-w-lg bg-white rounded-2xl shadow-2xl outline-none"
+      dialogClassName="w-full max-w-lg bg-white rounded-2xl shadow-2xl outline-none max-h-[90vh] overflow-y-auto"
       zIndex={1400}
     >
       <div className="rounded-2xl">
@@ -55,16 +94,24 @@ export default function ModalAdicionarDocumento({
           className="p-5 space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
-            onSubmit({ nome: nome.trim(), validade }, file ?? undefined);
-            setNome('');
-            setValidade('');
-            setFile(null);
-            if (fileRef.current) fileRef.current.value = '';
+            onSubmit(
+              {
+                nome: nome.trim(),
+                validade,
+                departamentosIds: selectedDepts,
+                visibilidade,
+                usuariosPermitidos: visibilidade === 'usuarios' ? selectedUsers : [],
+              },
+              file ?? undefined
+            );
+            resetForm();
             onClose();
           }}
         >
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Nome do documento</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Nome do documento <span className="text-red-500">*</span>
+            </label>
             <input
               value={nome}
               onChange={(e) => setNome(e.target.value)}
@@ -75,15 +122,122 @@ export default function ModalAdicionarDocumento({
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Validade</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Validade <span className="text-xs text-gray-400 font-normal">(opcional)</span>
+            </label>
             <input
               type="date"
               value={validade}
               onChange={(e) => setValidade(e.target.value)}
               className="w-full rounded-xl border px-4 py-3"
-              required
             />
           </div>
+
+          {/* Visibilidade */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Visibilidade</label>
+            <div className="grid grid-cols-2 gap-2">
+              {visOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setVisibilidade(opt.value)}
+                  className={`flex flex-col items-center gap-1.5 rounded-xl border-2 px-3 py-3 transition text-center ${
+                    visibilidade === opt.value
+                      ? `${opt.bg} ${opt.border} ${opt.color}`
+                      : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  {opt.icon}
+                  <span className="text-xs font-bold">{opt.label}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-1.5">
+              {visOptions.find((o) => o.value === visibilidade)?.desc}
+            </p>
+          </div>
+
+          {/* Departamentos responsáveis — visível para público e departamento */}
+          {(visibilidade === 'publico' || visibilidade === 'departamento') && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Departamentos responsáveis
+              </label>
+              <p className="text-xs text-gray-500 mb-2">
+                {visibilidade === 'departamento'
+                  ? 'Apenas usuários dos departamentos selecionados poderão ver este documento.'
+                  : 'Selecione quais departamentos devem acompanhar este documento. Se nenhum for selecionado, todos verão o vencimento.'}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {departamentos.map((d) => (
+                  <label
+                    key={d.id}
+                    className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 cursor-pointer transition ${
+                      selectedDepts.includes(d.id)
+                        ? 'bg-orange-50 border-orange-300'
+                        : 'bg-white border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedDepts.includes(d.id)}
+                      onChange={() => toggleDept(d.id)}
+                      className="h-4 w-4 rounded"
+                    />
+                    <span className="text-sm font-semibold text-gray-800">{d.nome}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Seletor de usuários — visível quando visibilidade = 'usuarios' */}
+          {visibilidade === 'usuarios' && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Selecione os usuários que podem ver
+              </label>
+              <p className="text-xs text-gray-500 mb-2">
+                Apenas os usuários marcados abaixo terão acesso a este documento.
+              </p>
+              <div className="rounded-lg bg-purple-50 border border-purple-200 px-3 py-2 mb-2 text-xs text-purple-700 font-semibold">
+                {currentUser?.nome ?? 'Você'} — incluído automaticamente
+              </div>
+              {activeUsers.length === 0 ? (
+                <div className="text-sm text-gray-500 py-2">Nenhum usuário ativo encontrado.</div>
+              ) : (
+                <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
+                  {activeUsers.map((u) => (
+                    <label
+                      key={u.id}
+                      className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 cursor-pointer transition ${
+                        selectedUsers.includes(u.id)
+                          ? 'bg-purple-50 border-purple-300'
+                          : 'bg-white border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedUsers.includes(u.id)}
+                        onChange={() => toggleUser(u.id)}
+                        className="h-4 w-4 rounded"
+                      />
+                      <div className="min-w-0">
+                        <span className="text-sm font-semibold text-gray-800 block truncate">{u.nome}</span>
+                        <span className="text-xs text-gray-500">{u.email}</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+              {selectedUsers.length > 0 && (
+                <div className="text-xs text-purple-600 font-semibold mt-1.5">
+                  {selectedUsers.length} usuário(s) selecionado(s)
+                </div>
+              )}
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Arquivo (opcional)</label>
@@ -104,7 +258,7 @@ export default function ModalAdicionarDocumento({
                 >
                   <Upload size={24} className="mx-auto text-gray-400 mb-2" />
                   <div className="text-sm font-semibold text-gray-600">Clique para selecionar arquivo</div>
-                  <div className="text-xs text-gray-400 mt-1">PDF, DOC, XLS, imagens (máx. 10MB)</div>
+                  <div className="text-xs text-gray-400 mt-1">PDF, DOC, XLS, imagens, TXT (max. 10MB)</div>
                 </button>
               ) : (
                 <div className="flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3">
@@ -135,8 +289,8 @@ export default function ModalAdicionarDocumento({
             </button>
             <button
               type="submit"
-              className="flex-1 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white px-4 py-3 font-semibold"
-              disabled={!nome.trim() || !validade}
+              className="flex-1 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white px-4 py-3 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!nome.trim() || (visibilidade === 'usuarios' && selectedUsers.length === 0)}
             >
               Adicionar
             </button>

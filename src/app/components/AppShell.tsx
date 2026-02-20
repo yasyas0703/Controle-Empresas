@@ -3,10 +3,11 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import React, { useMemo, useState } from 'react';
-import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Trash2, Bell, CheckCircle, XCircle, Info, X } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil } from '@/app/utils/date';
+import AutoBackup from '@/app/components/AutoBackup';
 
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -19,22 +20,42 @@ const nav = [
   { href: '/analises', label: 'Análises', icon: BarChart3 },
   { href: '/historico', label: 'Histórico', icon: ClipboardList },
   { href: '/lixeira', label: 'Lixeira', icon: Trash2 },
+  { href: '/backup', label: 'Backup', icon: HardDrive },
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { currentUser, canManage, logout, login, mostrarAlerta, empresas, notificacoes, marcarNotificacaoLida, marcarTodasLidas, limparNotificacoes, lixeira, loading, authReady } = useSistema();
+  const { currentUser, canManage, canAdmin, logout, login, mostrarAlerta, empresas, notificacoes, marcarNotificacaoLida, marcarTodasLidas, limparNotificacoes, lixeira, loading, authReady } = useSistema();
   const [showLogin, setShowLogin] = useState(false);
   const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
   const [showNotifs, setShowNotifs] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Só mostra login quando auth terminou de carregar e não há usuário
+  // Persiste estado da sidebar (desktop only)
+  useEffect(() => {
+    const stored = localStorage.getItem('sidebar-open');
+    if (stored !== null) setSidebarOpen(stored === 'true');
+  }, []);
+
+  const toggleSidebar = () => {
+    setSidebarOpen((v) => {
+      localStorage.setItem('sidebar-open', String(!v));
+      return !v;
+    });
+  };
+
+  // Fechar menu mobile ao navegar
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
   React.useEffect(() => {
     if (authReady && !currentUser) setShowLogin(true);
     if (currentUser) setShowLogin(false);
   }, [authReady, currentUser]);
 
-  // Count expired items for badge
   const vencidosCount = useMemo(() => {
     let count = 0;
     for (const e of empresas) {
@@ -49,7 +70,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
     return count;
   }, [empresas]);
-  const [senha, setSenha] = useState('');
 
   const notifsNaoLidas = (notificacoes ?? []).filter((n) => !n.lida).length;
   const lixeiraCount = (lixeira ?? []).length;
@@ -63,7 +83,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     setShowLogin(false);
   };
 
-  // Enquanto verifica sessão, mostra loading
   if (!authReady) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -77,189 +96,351 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="sticky top-0 z-50 bg-white shadow-lg border-b border-gray-200">
-        <div className="mx-auto max-w-7xl px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2 sm:gap-4">
-          <div className="flex items-center gap-4">
-            <div className="bg-gradient-to-br from-cyan-400 to-blue-600 p-[2px] rounded-2xl shadow-xl">
-              <div className="w-14 h-14 md:w-20 md:h-20 rounded-[14px] overflow-hidden bg-white/90 backdrop-blur flex items-center justify-center transition-transform duration-200 hover:scale-[1.02]">
-                <Image
-                  src="/triar.png"
-                  alt="Logo Triar"
-                  width={64}
-                  height={64}
-                  priority
-                  className="w-10 h-10 md:w-16 md:h-16 object-contain"
-                />
-              </div>
-            </div>
-            <div className="min-w-0">
-              <h1 className="leading-[1.05] tracking-tight">
-                <span className="block text-base md:text-lg font-bold text-gray-700 whitespace-nowrap">
-                  Controle de
-                </span>
-                <span className="block -mt-0.5 text-xl md:text-2xl font-extrabold text-gray-900 whitespace-nowrap">
-                  Empresas
-                </span>
-              </h1>
-              <p className="text-gray-600 text-sm leading-snug hidden sm:block">
-                Gestão Empresarial
-              </p>
-            </div>
+  const navItems = nav.filter((i) => {
+    if (i.href === '/usuarios' || i.href === '/backup' || i.href === '/historico') return canAdmin;
+    if (['/departamentos', '/servicos', '/lixeira'].includes(i.href)) return canManage;
+    return true;
+  });
+
+  const notifPanel = (
+    <div className="overflow-hidden rounded-2xl bg-white shadow-2xl border border-gray-200">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-cyan-50 to-teal-50">
+        <div className="font-bold text-gray-900 text-sm">Notificações</div>
+        <div className="flex items-center gap-2">
+          {notifsNaoLidas > 0 && (
+            <button onClick={marcarTodasLidas} className="text-[11px] text-cyan-600 hover:text-cyan-700 font-bold">
+              Marcar todas como lidas
+            </button>
+          )}
+          {(notificacoes ?? []).length > 0 && notifsNaoLidas === 0 && (
+            <button onClick={limparNotificacoes} className="text-[11px] text-gray-400 hover:text-red-500 font-bold">
+              Limpar
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="overflow-y-auto max-h-[400px]">
+        {(notificacoes ?? []).length === 0 ? (
+          <div className="p-8 text-center">
+            <Bell size={32} className="text-gray-200 mx-auto mb-2" />
+            <div className="text-sm text-gray-400">Nenhuma notificação</div>
           </div>
-
-          <div className="flex items-center gap-2">
-            {currentUser ? (
-              <div className="flex items-center gap-2">
-                {/* Notification Bell */}
-                <div className="relative">
-                  <button
-                    onClick={() => setShowNotifs(!showNotifs)}
-                    className="relative rounded-xl p-2.5 bg-gray-50 hover:bg-gray-100 transition"
-                    title="Notificações"
-                  >
-                    <Bell size={18} className={notifsNaoLidas > 0 ? 'text-cyan-600' : 'text-gray-500'} />
-                    {notifsNaoLidas > 0 && (
-                      <span
-                        className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-black px-1"
-                        style={{ animation: 'notifPulse 2s infinite' }}
-                      >
-                        {notifsNaoLidas > 9 ? '9+' : notifsNaoLidas}
-                      </span>
-                    )}
-                  </button>
-
-                  {/* Dropdown */}
-                  {showNotifs && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setShowNotifs(false)} />
-                      <div className="absolute right-0 top-12 z-50 w-[calc(100vw-2rem)] sm:w-[400px] max-h-[480px] overflow-hidden rounded-2xl bg-white shadow-2xl border border-gray-200">
-                        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-cyan-50 to-teal-50">
-                          <div className="font-bold text-gray-900 text-sm">Notificações</div>
-                          <div className="flex items-center gap-2">
-                            {notifsNaoLidas > 0 && (
-                              <button onClick={marcarTodasLidas} className="text-[11px] text-cyan-600 hover:text-cyan-700 font-bold">
-                                Marcar todas como lidas
-                              </button>
-                            )}
-                            {(notificacoes ?? []).length > 0 && (
-                              <button onClick={limparNotificacoes} className="text-[11px] text-gray-400 hover:text-red-500 font-bold">
-                                Limpar
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        <div className="overflow-y-auto max-h-[400px]">
-                          {(notificacoes ?? []).length === 0 ? (
-                            <div className="p-8 text-center">
-                              <Bell size={32} className="text-gray-200 mx-auto mb-2" />
-                              <div className="text-sm text-gray-400">Nenhuma notificação</div>
-                            </div>
-                          ) : (
-                            (notificacoes ?? []).slice(0, 30).map((n) => {
-                              const NotifIcon = n.tipo === 'sucesso' ? CheckCircle : n.tipo === 'erro' ? XCircle : n.tipo === 'aviso' ? AlertTriangle : Info;
-                              const iconColor = n.tipo === 'sucesso' ? 'text-emerald-500' : n.tipo === 'erro' ? 'text-red-500' : n.tipo === 'aviso' ? 'text-amber-500' : 'text-blue-500';
-                              const dt = new Date(n.criadoEm);
-                              const timeStr = dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-                              const dateStr = dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-                              return (
-                                <div
-                                  key={n.id}
-                                  onClick={() => { if (!n.lida) marcarNotificacaoLida(n.id); }}
-                                  className={`px-4 py-3 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition ${!n.lida ? 'bg-cyan-50/40' : ''}`}
-                                >
-                                  <div className="flex items-start gap-3">
-                                    <NotifIcon size={16} className={`${iconColor} mt-0.5 shrink-0`} />
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2">
-                                        <span className={`text-sm font-bold ${!n.lida ? 'text-gray-900' : 'text-gray-600'}`}>{n.titulo}</span>
-                                        {!n.lida && <span className="h-2 w-2 rounded-full bg-cyan-500 shrink-0" />}
-                                      </div>
-                                      <div className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.mensagem}</div>
-                                      <div className="text-[10px] text-gray-400 mt-1">{dateStr} às {timeStr}</div>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      </div>
-                    </>
-                  )}
+        ) : (
+          (notificacoes ?? []).slice(0, 30).map((n) => {
+            const NotifIcon = n.tipo === 'sucesso' ? CheckCircle : n.tipo === 'erro' ? XCircle : n.tipo === 'aviso' ? AlertTriangle : Info;
+            const iconColor = n.tipo === 'sucesso' ? 'text-emerald-500' : n.tipo === 'erro' ? 'text-red-500' : n.tipo === 'aviso' ? 'text-amber-500' : 'text-blue-500';
+            const dt = new Date(n.criadoEm);
+            const timeStr = dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            const dateStr = dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+            return (
+              <div
+                key={n.id}
+                onClick={() => { if (!n.lida) marcarNotificacaoLida(n.id); }}
+                className={`px-4 py-3 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition ${!n.lida ? 'bg-cyan-50/40' : ''}`}
+              >
+                <div className="flex items-start gap-3">
+                  <NotifIcon size={16} className={`${iconColor} mt-0.5 shrink-0`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm font-bold ${!n.lida ? 'text-gray-900' : 'text-gray-600'}`}>{n.titulo}</span>
+                      {!n.lida && <span className="h-2 w-2 rounded-full bg-cyan-500 shrink-0" />}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.mensagem}</div>
+                    <div className="text-[10px] text-gray-400 mt-1">{dateStr} às {timeStr}</div>
+                  </div>
                 </div>
-
-                <div className="hidden sm:flex items-center gap-2 rounded-xl px-3 py-2 bg-gray-50">
-                  {canManage ? <Shield size={15} className="text-amber-500" /> : <User size={15} className="text-gray-400" />}
-                  <div className="text-sm font-semibold text-gray-700">{currentUser.nome}</div>
-                  <span className="text-[10px] bg-cyan-100 text-cyan-700 font-bold px-1.5 py-0.5 rounded-md uppercase">
-                    {currentUser.role === 'gerente' ? 'Admin' : 'User'}
-                  </span>
-                </div>
-                <button
-                  onClick={() => { logout(); setShowLogin(true); }}
-                  className="rounded-xl px-3 py-2 bg-gray-50 hover:bg-gray-100 text-sm text-gray-600 flex items-center gap-2 font-semibold transition"
-                  title="Sair"
-                >
-                  <LogOut size={16} />
-                  <span className="hidden sm:inline">Sair</span>
-                </button>
               </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex">
+      {/* ── Mobile Top Bar ── */}
+      <div className="fixed top-0 left-0 right-0 z-50 md:hidden bg-white border-b border-gray-200 shadow-sm">
+        <div className="flex items-center justify-between px-3 py-2">
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            className="p-2 rounded-lg hover:bg-gray-100 text-gray-700"
+          >
+            <Menu size={22} />
+          </button>
+          <Link href="/dashboard" className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg overflow-hidden">
+              <Image src="/triar.png" alt="Triar" width={32} height={32} priority className="w-8 h-8 object-contain" />
+            </div>
+            <span className="text-sm font-bold text-gray-900">Controle de Empresas</span>
+          </Link>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowNotifs(!showNotifs)}
+              className="p-2 rounded-lg hover:bg-gray-100 relative"
+            >
+              <Bell size={20} className={notifsNaoLidas > 0 ? 'text-cyan-600' : 'text-gray-400'} />
+              {notifsNaoLidas > 0 && (
+                <span className="absolute top-1 right-1 min-w-[14px] h-[14px] rounded-full bg-red-500 text-white text-[8px] font-black flex items-center justify-center px-0.5">
+                  {notifsNaoLidas > 9 ? '9+' : notifsNaoLidas}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Mobile Sidebar Overlay ── */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-[60] md:hidden" onClick={() => setMobileMenuOpen(false)}>
+          <div className="absolute inset-0 bg-black/50" />
+        </div>
+      )}
+      <aside
+        className={`fixed top-0 left-0 h-full z-[70] bg-white border-r border-gray-200 shadow-lg flex flex-col transition-transform duration-300 ease-in-out w-72 md:hidden ${
+          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100">
+          <Link href="/dashboard" className="flex items-center gap-3" onClick={() => setMobileMenuOpen(false)}>
+            <div className="w-10 h-10 rounded-xl overflow-hidden">
+              <Image src="/triar.png" alt="Logo Triar" width={40} height={40} priority className="w-10 h-10 object-contain" />
+            </div>
+            <div className="leading-tight">
+              <span className="block text-[10px] font-bold text-gray-400 tracking-widest uppercase">Controle de</span>
+              <span className="block text-lg font-extrabold text-gray-900 leading-none">Empresas</span>
+            </div>
+          </Link>
+          <button onClick={() => setMobileMenuOpen(false)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500">
+            <X size={20} />
+          </button>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
+          {navItems.map((i) => {
+            const active = pathname === i.href;
+            const Icon = i.icon;
+            const showBadge = (i as any).badge && vencidosCount > 0;
+            const showLixeiraBadge = i.href === '/lixeira' && lixeiraCount > 0;
+            const isVenc = i.href === '/vencimentos' && vencidosCount > 0;
+            return (
+              <Link
+                key={i.href}
+                href={i.href}
+                onClick={() => setMobileMenuOpen(false)}
+                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition-all
+                  ${active
+                    ? isVenc ? 'text-red-700 bg-red-50' : 'text-cyan-700 bg-cyan-50'
+                    : isVenc ? 'text-red-500 hover:bg-red-50 hover:text-red-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                  }`}
+              >
+                <Icon size={18} className="shrink-0" />
+                <span className="flex-1">{i.label}</span>
+                {showBadge && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-red-600 text-white text-[9px] font-black px-1 animate-pulse">
+                    {vencidosCount}
+                  </span>
+                )}
+                {showLixeiraBadge && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-gray-500 text-white text-[9px] font-bold px-1">
+                    {lixeiraCount}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="border-t border-gray-100 p-2 space-y-1">
+          {currentUser && (
+            <div className="flex items-center gap-2 rounded-lg px-3 py-2 bg-gray-50">
+              {canAdmin
+                ? <Shield size={13} className="text-red-500 shrink-0" />
+                : canManage
+                  ? <Shield size={13} className="text-amber-500 shrink-0" />
+                  : <User size={13} className="text-gray-400 shrink-0" />}
+              <span className="text-xs font-semibold text-gray-700 truncate flex-1">{currentUser.nome}</span>
+              <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase leading-none shrink-0 ${
+                canAdmin ? 'bg-red-100 text-red-700' : canManage ? 'bg-amber-100 text-amber-700' : 'bg-cyan-100 text-cyan-700'
+              }`}>
+                {currentUser.role === 'admin' ? 'Admin' : currentUser.role === 'gerente' ? 'Gerente' : 'User'}
+              </span>
+            </div>
+          )}
+          {currentUser ? (
+            <button
+              onClick={() => { logout(); setShowLogin(true); setMobileMenuOpen(false); }}
+              className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-100 transition"
+            >
+              <LogOut size={16} />
+              Sair
+            </button>
+          ) : (
+            <button
+              onClick={() => { setShowLogin(true); setMobileMenuOpen(false); }}
+              className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-cyan-600 hover:bg-cyan-50 transition"
+            >
+              <User size={16} />
+              Entrar
+            </button>
+          )}
+        </div>
+      </aside>
+
+      {/* ── Desktop Sidebar ── */}
+      <aside
+        className={`fixed top-0 left-0 h-full z-40 bg-white border-r border-gray-200 shadow-lg flex-col transition-all duration-200 ease-in-out hidden md:flex ${
+          sidebarOpen ? 'w-64' : 'w-[72px]'
+        }`}
+      >
+        {/* Logo + Nome */}
+        <div className={`flex items-center border-b border-gray-100 py-5 ${sidebarOpen ? 'px-4 gap-4' : 'justify-center px-0'}`}>
+          <Link href="/dashboard" className="flex items-center gap-4 min-w-0">
+            <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0">
+              <Image src="/triar.png" alt="Logo Triar" width={64} height={64} priority className="w-16 h-16 object-contain" />
+            </div>
+            {sidebarOpen && (
+              <div className="leading-tight min-w-0 overflow-hidden">
+                <span className="block text-xs font-bold text-gray-400 tracking-widest uppercase whitespace-nowrap">Controle de</span>
+                <span className="block text-2xl font-extrabold text-gray-900 tracking-tight leading-none whitespace-nowrap">Empresas</span>
+              </div>
+            )}
+          </Link>
+        </div>
+
+        {/* Itens de navegação */}
+        <nav className="flex-1 overflow-y-auto py-2 px-1.5 space-y-0.5">
+          {navItems.map((i) => {
+            const active = pathname === i.href;
+            const Icon = i.icon;
+            const showBadge = (i as any).badge && vencidosCount > 0;
+            const showLixeiraBadge = i.href === '/lixeira' && lixeiraCount > 0;
+            const isVenc = i.href === '/vencimentos' && vencidosCount > 0;
+            return (
+              <Link
+                key={i.href}
+                href={i.href}
+                title={!sidebarOpen ? i.label : undefined}
+                className={`flex items-center rounded-lg px-2.5 py-2 text-sm font-semibold transition-all relative
+                  ${sidebarOpen ? 'gap-3' : 'justify-center gap-0'}
+                  ${active
+                    ? isVenc ? 'text-red-700 bg-red-50' : 'text-cyan-700 bg-cyan-50'
+                    : isVenc ? 'text-red-500 hover:bg-red-50 hover:text-red-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                  }`}
+              >
+                <Icon size={18} className="shrink-0" />
+                {sidebarOpen && <span className="truncate flex-1">{i.label}</span>}
+                {showBadge && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-red-600 text-white text-[9px] font-black px-1 animate-pulse">
+                    {vencidosCount}
+                  </span>
+                )}
+                {showLixeiraBadge && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-gray-500 text-white text-[9px] font-bold px-1">
+                    {lixeiraCount}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Rodapé: usuário + notif + toggle + logout */}
+        <div className="border-t border-gray-100 p-1.5 space-y-1">
+          {currentUser && sidebarOpen && (
+            <div className="flex items-center gap-2 rounded-lg px-2.5 py-2 bg-gray-50">
+              {canAdmin
+                ? <Shield size={13} className="text-red-500 shrink-0" />
+                : canManage
+                  ? <Shield size={13} className="text-amber-500 shrink-0" />
+                  : <User size={13} className="text-gray-400 shrink-0" />}
+              <span className="text-xs font-semibold text-gray-700 truncate flex-1">{currentUser.nome}</span>
+              <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase leading-none shrink-0 ${
+                canAdmin ? 'bg-red-100 text-red-700' : canManage ? 'bg-amber-100 text-amber-700' : 'bg-cyan-100 text-cyan-700'
+              }`}>
+                {currentUser.role === 'admin' ? 'Admin' : currentUser.role === 'gerente' ? 'Gerente' : 'User'}
+              </span>
+            </div>
+          )}
+
+          <div className={`flex items-center gap-0.5 ${!sidebarOpen ? 'flex-col' : ''}`}>
+            <button
+              onClick={toggleSidebar}
+              className="flex-1 flex items-center justify-center rounded-lg p-2 hover:bg-gray-100 text-gray-500 transition"
+              title={sidebarOpen ? 'Recolher menu' : 'Expandir menu'}
+            >
+              {sidebarOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+            </button>
+
+            {/* Notificações (desktop) */}
+            <div className="relative">
+              <button
+                onClick={() => setShowNotifs(!showNotifs)}
+                className="flex items-center justify-center rounded-lg p-2 hover:bg-gray-100 transition relative"
+                title="Notificações"
+              >
+                <Bell size={16} className={notifsNaoLidas > 0 ? 'text-cyan-600' : 'text-gray-400'} />
+                {notifsNaoLidas > 0 && (
+                  <span
+                    className="absolute top-1 right-1 inline-flex items-center justify-center min-w-[14px] h-[14px] rounded-full bg-red-500 text-white text-[8px] font-black px-0.5"
+                    style={{ animation: 'notifPulse 2s infinite' }}
+                  >
+                    {notifsNaoLidas > 9 ? '9+' : notifsNaoLidas}
+                  </span>
+                )}
+              </button>
+
+              {showNotifs && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowNotifs(false)} />
+                  <div className="absolute left-full bottom-0 ml-2 z-50 w-[360px] max-h-[480px]">
+                    {notifPanel}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {currentUser ? (
+              <button
+                onClick={() => { logout(); setShowLogin(true); }}
+                className="flex items-center justify-center rounded-lg p-2 hover:bg-gray-100 text-gray-500 transition"
+                title="Sair"
+              >
+                <LogOut size={16} />
+              </button>
             ) : (
               <button
                 onClick={() => setShowLogin(true)}
-                className="rounded-xl px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-sm text-white font-semibold transition"
+                className="flex items-center justify-center rounded-lg p-2 hover:bg-gray-100 text-cyan-600 transition"
+                title="Entrar"
               >
-                Entrar
+                <User size={16} />
               </button>
             )}
           </div>
         </div>
+      </aside>
 
-        <nav className="mx-auto max-w-7xl px-2 sm:px-4 pb-2 flex gap-1 overflow-x-auto border-t border-gray-100 pt-2 scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
-          {nav
-            .filter((i) => (canManage ? true : !['/usuarios', '/departamentos', '/servicos', '/historico', '/lixeira'].includes(i.href)))
-            .map((i) => {
-              const active = pathname === i.href;
-              const Icon = i.icon;
-              const showBadge = (i as any).badge && vencidosCount > 0;
-              const showLixeiraBadge = i.href === '/lixeira' && lixeiraCount > 0;
-              return (
-                <Link
-                  key={i.href}
-                  href={i.href}
-                  className={
-                    'whitespace-nowrap rounded-lg px-2 sm:px-3 py-2 text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 sm:gap-2 relative ' +
-                    (active
-                      ? i.href === '/vencimentos' && vencidosCount > 0
-                        ? 'text-red-700 bg-red-50 border-b-2 border-red-600'
-                        : 'text-cyan-700 bg-cyan-50 border-b-2 border-cyan-600'
-                      : i.href === '/vencimentos' && vencidosCount > 0
-                        ? 'text-red-500 hover:bg-red-50 hover:text-red-700 font-bold'
-                        : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700')
-                  }
-                >
-                  <Icon size={16} />
-                  {i.label}
-                  {showBadge && (
-                    <span className="inline-flex items-center justify-center min-w-[20px] h-5 rounded-full bg-red-600 text-white text-[10px] font-black px-1.5 animate-pulse">
-                      {vencidosCount}
-                    </span>
-                  )}
-                  {showLixeiraBadge && (
-                    <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-gray-500 text-white text-[10px] font-bold px-1">
-                      {lixeiraCount}
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
-        </nav>
-      </header>
+      {/* ── Mobile Notification Panel ── */}
+      {showNotifs && (
+        <div className="md:hidden fixed inset-0 z-[80]">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowNotifs(false)} />
+          <div className="absolute bottom-0 left-0 right-0 max-h-[80vh] z-[81]">
+            {notifPanel}
+          </div>
+        </div>
+      )}
 
-      <main className="mx-auto max-w-7xl px-2 sm:px-4 py-4 sm:py-6">{children}</main>
+      {/* ── Conteúdo principal ── */}
+      <div
+        className={`flex-1 min-h-screen transition-all duration-200 ease-in-out pt-14 md:pt-0 ${sidebarOpen ? 'md:ml-64' : 'md:ml-[72px]'}`}
+      >
+        <main className="px-3 py-3 sm:px-4 sm:py-4 md:py-6">{children}</main>
+      </div>
 
+      <AutoBackup />
+
+      {/* ── Modal de login ── */}
       {showLogin && (
         <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4" onMouseDown={(e) => e.currentTarget === e.target && setShowLogin(false)}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
