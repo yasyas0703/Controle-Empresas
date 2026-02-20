@@ -5,7 +5,9 @@ import { AlertTriangle, CalendarClock, FileText, Building2, Clock, Search, MapPi
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR, isWithinDays } from '@/app/utils/date';
 import { detectTipoEstabelecimento, formatarDocumento, getTipoInscricaoDisplay } from '@/app/utils/validation';
-import type { Empresa, UUID } from '@/app/types';
+import type { Empresa, UUID, Limiares } from '@/app/types';
+import { LIMIARES_DEFAULTS } from '@/app/types';
+import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import ConfirmModal from '@/app/components/ConfirmModal';
@@ -29,6 +31,8 @@ const DEPT_COLORS: Record<number, { bg: string; text: string; border: string }> 
 
 export default function DashboardPage() {
   const { empresas, usuarios, departamentos, currentUserId, canManage, removerEmpresa } = useSistema();
+
+  const [limiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
 
   const [search, setSearch] = useState('');
   const [depId, setDepId] = useState('');
@@ -63,9 +67,6 @@ export default function DashboardPage() {
     const q = search.trim().toLowerCase();
     return empresas
       .filter((e) => {
-        if (!canManage) {
-          if (!canEditEmpresa(currentUserId, canManage, e)) return false;
-        }
         if (q) {
           const hay = [e.codigo, e.cnpj, e.razao_social, e.apelido].filter(Boolean).join(' ').toLowerCase();
           if (!hay.includes(q)) return false;
@@ -99,7 +100,7 @@ export default function DashboardPage() {
         }
         return true;
       })
-      .sort((a, b) => (a.codigo || '').localeCompare(b.codigo || ''));
+      .sort((a, b) => (a.razao_social || a.apelido || '').localeCompare(b.razao_social || b.apelido || ''));
   }, [empresas, search, depId, responsavelId, tipoEstabelecimento, regimeFederal, servico, estado, canManage, currentUserId]);
 
   const riskItems = useMemo(() => {
@@ -107,31 +108,32 @@ export default function DashboardPage() {
     for (const e of filteredEmpresas) {
       for (const d of e.documentos) {
         const dias = daysUntil(d.validade);
-        if (dias !== null && dias <= 60) {
+        if (dias !== null && dias <= limiares.proximo) {
           risk.push({ empresaNome: e.razao_social || e.apelido || '-', empresaCodigo: e.codigo, nome: d.nome, vencimento: d.validade, dias, kind: 'Doc' });
         }
       }
       for (const r of e.rets) {
         const dias = daysUntil(r.vencimento);
-        if (dias !== null && dias <= 60) {
+        if (dias !== null && dias <= limiares.proximo) {
           risk.push({ empresaNome: e.razao_social || e.apelido || '-', empresaCodigo: e.codigo, nome: `RET: ${r.nome}`, vencimento: r.vencimento, dias, kind: 'RET' });
         }
       }
     }
     return risk.sort((a, b) => a.dias - b.dias);
-  }, [filteredEmpresas]);
+  }, [filteredEmpresas, limiares]);
 
   const vencidos = riskItems.filter((r) => r.dias < 0);
-  const criticos = riskItems.filter((r) => r.dias >= 0 && r.dias <= 15);
-  const atencao = riskItems.filter((r) => r.dias > 15 && r.dias <= 60);
+  const criticos = riskItems.filter((r) => r.dias >= 0 && r.dias <= limiares.critico);
+  const atencao = riskItems.filter((r) => r.dias > limiares.critico && r.dias <= limiares.atencao);
+  const proximo = riskItems.filter((r) => r.dias > limiares.atencao && r.dias <= limiares.proximo);
 
   const totals = useMemo(() => ({
     empresas: filteredEmpresas.length,
     documentos: filteredEmpresas.reduce((a, e) => a + e.documentos.length, 0),
     rets: filteredEmpresas.reduce((a, e) => a + e.rets.length, 0),
     vencidos: vencidos.length,
-    emRisco: criticos.length + atencao.length,
-  }), [filteredEmpresas, vencidos, criticos, atencao]);
+    emRisco: criticos.length + atencao.length + proximo.length,
+  }), [filteredEmpresas, vencidos, criticos, atencao, proximo]);
 
   const hasFilters = search || depId || responsavelId || tipoEstabelecimento || regimeFederal || servico || estado;
 
@@ -144,6 +146,15 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Cards de Resumo */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
+        <StatCard icon={<Building2 size={24} />} gradient="from-blue-500 to-blue-600" label="Total Empresas" value={totals.empresas} />
+        <StatCard icon={<FileText size={24} />} gradient="from-orange-400 to-orange-500" label="Documentos" value={totals.documentos} />
+        <StatCard icon={<CalendarClock size={24} />} gradient="from-emerald-500 to-emerald-600" label="RETs" value={totals.rets} />
+        <StatCard icon={<AlertTriangle size={24} />} gradient="from-red-700 to-red-800" label="Vencidos" value={totals.vencidos} pulse={totals.vencidos > 0} />
+        <StatCard icon={<Clock size={24} />} gradient="from-amber-500 to-orange-500" label={`Em Risco (≤${limiares.proximo}d)`} value={totals.emRisco} />
+      </div>
+
       {/* VENCIDOS — Banner vermelho forte */}
       {vencidos.length > 0 && (
         <div className="rounded-2xl bg-gradient-to-r from-red-600 to-red-700 p-5 shadow-lg ring-2 ring-red-300 animate-pulse-subtle">
@@ -166,7 +177,7 @@ export default function DashboardPage() {
                   <span className="font-bold text-white truncate">{r.empresaNome}</span>
                 </div>
                 <div className="flex items-center gap-2 pl-6 sm:pl-0 sm:ml-auto shrink-0">
-                  <span className="text-red-100 truncate text-sm">{r.nome}</span>
+                  <span className="text-red-100 text-sm break-words" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.nome}</span>
                   <span className="px-2.5 py-1 rounded-full text-xs font-black bg-white text-red-700 whitespace-nowrap">
                     VENCIDO HÁ {Math.abs(r.dias)}d
                   </span>
@@ -181,7 +192,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Risk Alert Banner — próximos a vencer */}
+      {/* Risk Alert Banner — próximos a vencer (crítico + atenção) */}
       {(criticos.length > 0 || atencao.length > 0) && (
         <div className="rounded-2xl bg-gradient-to-r from-red-50 via-orange-50 to-amber-50 p-5 shadow-sm">
           <div className="flex items-center gap-3 mb-3">
@@ -191,9 +202,9 @@ export default function DashboardPage() {
             <div>
               <div className="text-lg font-bold text-red-800">{criticos.length + atencao.length} Próximo(s) a Vencer</div>
               <div className="text-sm text-red-600">
-                {criticos.length > 0 && <span className="font-bold">🔴 {criticos.length} crítico(s) (≤15d)</span>}
+                {criticos.length > 0 && <span className="font-bold">🔴 {criticos.length} crítico(s) (≤{limiares.critico}d)</span>}
                 {criticos.length > 0 && atencao.length > 0 && ' • '}
-                {atencao.length > 0 && <span>🟡 {atencao.length} em atenção (≤60d)</span>}
+                {atencao.length > 0 && <span>🟡 {atencao.length} em atenção (≤{limiares.atencao}d)</span>}
               </div>
             </div>
           </div>
@@ -201,14 +212,14 @@ export default function DashboardPage() {
             {[...criticos, ...atencao].slice(0, 8).map((r, idx) => (
               <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 bg-white/70 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3">
                 <div className="flex items-center gap-2 min-w-0">
-                  <Clock size={16} className={`shrink-0 ${r.dias <= 15 ? 'text-red-500' : 'text-amber-500'}`} />
+                  <Clock size={16} className={`shrink-0 ${r.dias <= limiares.critico ? 'text-red-500' : 'text-amber-500'}`} />
                   <span className="font-bold text-gray-800 shrink-0">{r.empresaCodigo}</span>
                   <span className="text-gray-500 hidden sm:inline">—</span>
                   <span className="font-bold text-gray-800 truncate">{r.empresaNome}</span>
                 </div>
                 <div className="flex items-center gap-2 pl-6 sm:pl-0 sm:ml-auto shrink-0">
-                  <span className="text-gray-700 truncate text-sm">{r.nome}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap ${r.dias <= 15 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                  <span className="text-gray-700 text-sm break-words" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.nome}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap ${r.dias <= limiares.critico ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
                     {r.dias}d restantes
                   </span>
                   <span className="text-xs text-gray-400 whitespace-nowrap">{formatBR(r.vencimento)}</span>
@@ -222,14 +233,42 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Cards de Resumo */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
-        <StatCard icon={<Building2 size={24} />} gradient="from-blue-500 to-blue-600" label="Total Empresas" value={totals.empresas} />
-        <StatCard icon={<FileText size={24} />} gradient="from-orange-400 to-orange-500" label="Documentos" value={totals.documentos} />
-        <StatCard icon={<CalendarClock size={24} />} gradient="from-emerald-500 to-emerald-600" label="RETs" value={totals.rets} />
-        <StatCard icon={<AlertTriangle size={24} />} gradient="from-red-700 to-red-800" label="Vencidos" value={totals.vencidos} pulse={totals.vencidos > 0} />
-        <StatCard icon={<Clock size={24} />} gradient="from-amber-500 to-orange-500" label="Em Risco (≤60d)" value={totals.emRisco} />
-      </div>
+      {/* Próximo (≤90d) — Banner verde */}
+      {proximo.length > 0 && (
+        <div className="rounded-2xl bg-gradient-to-r from-green-50 via-emerald-50 to-teal-50 p-5 shadow-sm">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="h-10 w-10 rounded-xl bg-green-100 flex items-center justify-center">
+              <Clock className="text-green-600" size={22} />
+            </div>
+            <div>
+              <div className="text-lg font-bold text-green-800">🟢 {proximo.length} Próximo(s) (≤{limiares.proximo} dias)</div>
+              <div className="text-sm text-green-600">Estes documentos/RETs vencem nos próximos {limiares.atencao + 1} a {limiares.proximo} dias</div>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {proximo.slice(0, 8).map((r, idx) => (
+              <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 bg-white/70 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Clock size={16} className="shrink-0 text-green-500" />
+                  <span className="font-bold text-gray-800 shrink-0">{r.empresaCodigo}</span>
+                  <span className="text-gray-500 hidden sm:inline">—</span>
+                  <span className="font-bold text-gray-800 truncate">{r.empresaNome}</span>
+                </div>
+                <div className="flex items-center gap-2 pl-6 sm:pl-0 sm:ml-auto shrink-0">
+                  <span className="text-gray-700 text-sm break-words" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.nome}</span>
+                  <span className="px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap bg-green-100 text-green-700">
+                    {r.dias}d restantes
+                  </span>
+                  <span className="text-xs text-gray-400 whitespace-nowrap">{formatBR(r.vencimento)}</span>
+                </div>
+              </div>
+            ))}
+            {proximo.length > 8 && (
+              <div className="text-sm text-green-600 font-semibold pl-4">+{proximo.length - 8} mais itens</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Filtros */}
       <div className="rounded-2xl bg-white p-5 shadow-sm">
@@ -245,7 +284,7 @@ export default function DashboardPage() {
           )}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-3">
-          <div className="md:col-span-2 relative">
+          <div className="col-span-2 sm:col-span-1 md:col-span-2 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
               value={search}
@@ -292,18 +331,30 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {filteredEmpresas.map((e) => {
           const nome = e.razao_social || e.apelido || '-';
-          const docsRisco = e.documentos.filter((d) => { const dias = daysUntil(d.validade); return dias !== null && dias >= 0 && dias <= 60; }).length;
+          const docsRisco = e.documentos.filter((d) => { const dias = daysUntil(d.validade); return dias !== null && dias >= 0 && dias <= limiares.atencao; }).length;
           const docsVencidos = e.documentos.filter((d) => { const dias = daysUntil(d.validade); return dias !== null && dias < 0; }).length;
-          const retsRisco = e.rets.filter((r) => { const dias = daysUntil(r.vencimento); return dias !== null && dias >= 0 && dias <= 60; }).length;
+          const retsRisco = e.rets.filter((r) => { const dias = daysUntil(r.vencimento); return dias !== null && dias >= 0 && dias <= limiares.atencao; }).length;
           const retsVencidos = e.rets.filter((r) => { const dias = daysUntil(r.vencimento); return dias !== null && dias < 0; }).length;
           const totalRisco = docsRisco + retsRisco;
           const totalVencidos = docsVencidos + retsVencidos;
+          const proximoVencDias = (() => {
+            let min: number | null = null;
+            for (const d of e.documentos) {
+              const dias = daysUntil(d.validade);
+              if (dias !== null && dias >= 0 && (min === null || dias < min)) min = dias;
+            }
+            for (const r of e.rets) {
+              const dias = daysUntil(r.vencimento);
+              if (dias !== null && dias >= 0 && (min === null || dias < min)) min = dias;
+            }
+            return min;
+          })();
 
           return (
             <div key={e.id} className="rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow p-5">
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="shrink-0 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-500 text-white px-2.5 py-1 text-xs font-bold shadow-sm">
                       {e.codigo}
                     </span>
@@ -337,6 +388,17 @@ export default function DashboardPage() {
                         <Clock size={10} /> {totalRisco} em risco
                       </span>
                     )}
+                    {proximoVencDias !== null && totalVencidos === 0 && (
+                      <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold flex items-center gap-1 ${
+                        proximoVencDias <= limiares.critico
+                          ? 'bg-orange-100 text-orange-700'
+                          : proximoVencDias <= limiares.atencao
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-green-100 text-green-700'
+                      }`}>
+                        <Clock size={10} /> Vence em {proximoVencDias}d
+                      </span>
+                    )}
                   </div>
                   <div className="font-bold text-gray-900 text-lg mt-2 truncate">{nome}</div>
                   {e.apelido && e.razao_social && <div className="text-sm text-gray-500 truncate">({e.apelido})</div>}
@@ -354,7 +416,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
                 <div className="flex items-center gap-2 text-gray-600">
                   <Briefcase size={14} className="text-blue-400 shrink-0" />
                   <span className="font-medium text-gray-500">{(() => {
@@ -407,7 +469,7 @@ export default function DashboardPage() {
                 return (
                   <div className="mt-4 pt-4 border-t border-gray-100">
                     <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Responsáveis</div>
-                    <div className="grid grid-cols-2 gap-1.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                       {resps.map((r) => {
                         const c = DEPT_COLORS[r.depIdx % 8];
                         return (

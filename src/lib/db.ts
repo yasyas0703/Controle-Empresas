@@ -82,6 +82,24 @@ export async function fetchUsuarioById(id: UUID): Promise<Usuario[]> {
   ];
 }
 
+export async function fetchUsuariosBasic(): Promise<Usuario[]> {
+  const { data, error } = await supabase
+    .from('usuarios')
+    .select('id, nome, email, role, departamento_id, ativo, criado_em, atualizado_em')
+    .order('criado_em', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((u) => ({
+    id: u.id,
+    nome: u.nome,
+    email: u.email,
+    role: u.role as Usuario['role'],
+    departamentoId: u.departamento_id,
+    ativo: u.ativo,
+    criadoEm: toIso(u.criado_em),
+    atualizadoEm: toIso(u.atualizado_em),
+  }));
+}
+
 export async function fetchUsuariosAdmin(): Promise<Usuario[]> {
   const token = await getAccessToken();
   const resp = await fetch('/api/admin/users', {
@@ -272,7 +290,12 @@ async function fetchDocsForEmpresa(empresaId: UUID): Promise<DocumentoEmpresa[]>
   return (data ?? []).map((d) => ({
     id: d.id,
     nome: d.nome,
-    validade: d.validade,
+    validade: d.validade ?? '',
+    arquivoUrl: d.arquivo_url ?? undefined,
+    departamentosIds: d.departamentos_ids ?? [],
+    visibilidade: d.visibilidade ?? 'publico',
+    criadoPorId: d.criado_por_id ?? undefined,
+    usuariosPermitidos: d.usuarios_permitidos ?? [],
     criadoEm: toIso(d.criado_em),
     atualizadoEm: toIso(d.atualizado_em),
   }));
@@ -345,7 +368,7 @@ export async function fetchEmpresas(): Promise<Empresa[]> {
   const docsMap = new Map<string, DocumentoEmpresa[]>();
   for (const d of allDocs) {
     const list = docsMap.get(d.empresa_id) ?? [];
-    list.push({ id: d.id, nome: d.nome, validade: d.validade, arquivoUrl: d.arquivo_url ?? undefined, criadoEm: toIso(d.criado_em), atualizadoEm: toIso(d.atualizado_em) });
+    list.push({ id: d.id, nome: d.nome, validade: d.validade ?? '', arquivoUrl: d.arquivo_url ?? undefined, departamentosIds: d.departamentos_ids ?? [], visibilidade: d.visibilidade ?? 'publico', criadoPorId: d.criado_por_id ?? undefined, usuariosPermitidos: d.usuarios_permitidos ?? [], criadoEm: toIso(d.criado_em), atualizadoEm: toIso(d.atualizado_em) });
     docsMap.set(d.empresa_id, list);
   }
 
@@ -536,9 +559,13 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
       numero_pta: r.numeroPta,
       nome: r.nome,
       vencimento: r.vencimento,
-      ultima_renovacao: r.ultimaRenovacao,
+      ultima_renovacao: r.ultimaRenovacao || null,
     }));
-    await supabase.from('rets').insert(retRows);
+    const { error: retErr } = await supabase.from('rets').insert(retRows);
+    if (retErr) {
+      console.error(`[DB] Erro ao inserir RETs para empresa ${empresaId}:`, retErr.message);
+      throw retErr;
+    }
   }
 
   // Documentos
@@ -546,9 +573,36 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
     const docRows = payload.documentos.map((d) => ({
       empresa_id: empresaId,
       nome: d.nome,
-      validade: d.validade,
+      validade: d.validade || null,
+      departamentos_ids: d.departamentosIds ?? [],
+      visibilidade: d.visibilidade ?? 'publico',
+      criado_por_id: d.criadoPorId ?? null,
+      usuarios_permitidos: d.usuariosPermitidos ?? [],
     }));
-    await supabase.from('documentos').insert(docRows);
+    let { error: docErr } = await supabase.from('documentos').insert(docRows);
+    // Fallback nível 1: sem usuarios_permitidos
+    if (docErr && docErr.message?.includes('usuarios_permitidos')) {
+      const rowsSemUp = payload.documentos.map((d) => ({
+        empresa_id: empresaId,
+        nome: d.nome,
+        validade: d.validade || null,
+        departamentos_ids: d.departamentosIds ?? [],
+        visibilidade: d.visibilidade ?? 'publico',
+        criado_por_id: d.criadoPorId ?? null,
+      }));
+      const r1 = await supabase.from('documentos').insert(rowsSemUp);
+      docErr = r1.error;
+    }
+    // Fallback nível 2: sem visibilidade/criado_por_id
+    if (docErr && (docErr.message?.includes('visibilidade') || docErr.message?.includes('criado_por_id'))) {
+      const fallbackRows = payload.documentos.map((d) => ({
+        empresa_id: empresaId,
+        nome: d.nome,
+        validade: d.validade || null,
+        departamentos_ids: d.departamentosIds ?? [],
+      }));
+      await supabase.from('documentos').insert(fallbackRows);
+    }
   }
 
   // Observações
@@ -596,16 +650,24 @@ export async function updateEmpresa(id: UUID, patch: Partial<Empresa>) {
 
   // Atualizar RETs se fornecidos
   if (patch.rets !== undefined) {
-    await supabase.from('rets').delete().eq('empresa_id', id);
+    const { error: delErr } = await supabase.from('rets').delete().eq('empresa_id', id);
+    if (delErr) {
+      console.error(`[DB] Erro ao deletar RETs da empresa ${id}:`, delErr.message);
+      throw delErr;
+    }
     if (patch.rets.length > 0) {
       const retRows = patch.rets.map((r) => ({
         empresa_id: id,
         numero_pta: r.numeroPta,
         nome: r.nome,
         vencimento: r.vencimento,
-        ultima_renovacao: r.ultimaRenovacao,
+        ultima_renovacao: r.ultimaRenovacao || null,
       }));
-      await supabase.from('rets').insert(retRows);
+      const { error: insErr } = await supabase.from('rets').insert(retRows);
+      if (insErr) {
+        console.error(`[DB] Erro ao inserir RETs para empresa ${id}:`, insErr.message);
+        throw insErr;
+      }
     }
   }
 
@@ -668,35 +730,118 @@ export async function deleteEmpresa(id: UUID) {
 // ─── Documentos ─────────────────────────────────────────────
 
 export async function insertDocumento(empresaId: UUID, doc: Omit<DocumentoEmpresa, 'id' | 'criadoEm' | 'atualizadoEm'>): Promise<DocumentoEmpresa> {
-  const { data, error } = await supabase
-    .from('documentos')
-    .insert({ empresa_id: empresaId, nome: doc.nome, validade: doc.validade, arquivo_url: doc.arquivoUrl || null })
-    .select()
-    .single();
+  const fullRow = {
+    empresa_id: empresaId,
+    nome: doc.nome,
+    validade: doc.validade || null,
+    arquivo_url: doc.arquivoUrl || null,
+    departamentos_ids: doc.departamentosIds ?? [],
+    visibilidade: doc.visibilidade ?? 'publico',
+    criado_por_id: doc.criadoPorId ?? null,
+    usuarios_permitidos: doc.usuariosPermitidos ?? [],
+  };
+
+  let { data, error } = await supabase.from('documentos').insert(fullRow).select().single();
+
+  // Fallback nível 1: se coluna usuarios_permitidos não existe ainda, tenta sem ela
+  if (error && error.message?.includes('usuarios_permitidos')) {
+    const { usuarios_permitidos, ...rowSemUsuarios } = fullRow;
+    const r1 = await supabase.from('documentos').insert(rowSemUsuarios).select().single();
+    data = r1.data;
+    error = r1.error;
+  }
+
+  // Fallback nível 2: se visibilidade/criado_por_id também não existem
+  if (error && (error.message?.includes('visibilidade') || error.message?.includes('criado_por_id'))) {
+    const fallbackRow = {
+      empresa_id: empresaId,
+      nome: doc.nome,
+      validade: doc.validade || null,
+      arquivo_url: doc.arquivoUrl || null,
+      departamentos_ids: doc.departamentosIds ?? [],
+    };
+    const r2 = await supabase.from('documentos').insert(fallbackRow).select().single();
+    data = r2.data;
+    error = r2.error;
+  }
+
   if (error) throw error;
-  return { id: data.id, nome: data.nome, validade: data.validade, arquivoUrl: data.arquivo_url ?? undefined, criadoEm: toIso(data.criado_em), atualizadoEm: toIso(data.atualizado_em) };
+  return {
+    id: data.id,
+    nome: data.nome,
+    validade: data.validade ?? '',
+    arquivoUrl: data.arquivo_url ?? undefined,
+    departamentosIds: data.departamentos_ids ?? [],
+    visibilidade: data.visibilidade ?? 'publico',
+    criadoPorId: data.criado_por_id ?? undefined,
+    usuariosPermitidos: data.usuarios_permitidos ?? [],
+    criadoEm: toIso(data.criado_em),
+    atualizadoEm: toIso(data.atualizado_em),
+  };
 }
 
 export async function uploadDocumentoArquivo(empresaId: UUID, file: File): Promise<string> {
+  // Validação de tamanho (max 10MB)
+  const MAX_SIZE = 10 * 1024 * 1024;
+  if (file.size > MAX_SIZE) {
+    throw new Error('O arquivo excede o limite de 10MB.');
+  }
+
+  // Validação de tipo
+  const ALLOWED_EXTENSIONS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg', 'txt'];
+  const ext = (file.name.split('.').pop() ?? '').toLowerCase();
+
+  if (!ALLOWED_EXTENSIONS.includes(ext)) {
+    throw new Error(`Tipo de arquivo não permitido (.${ext}). Permitidos: ${ALLOWED_EXTENSIONS.join(', ')}`);
+  }
+
   const BUCKET = 'documentos';
-  const ext = file.name.split('.').pop() ?? 'bin';
-  const path = `empresas/${empresaId}/${crypto.randomUUID()}.${ext}`;
+  const path = `empresas/${empresaId}/${crypto.randomUUID()}.${ext || 'bin'}`;
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
   if (error) {
     if (error.message?.includes('Bucket not found') || error.message?.includes('not found')) {
       throw new Error(
         'O bucket "documentos" não existe no Supabase Storage. ' +
-        'Vá em Storage no painel do Supabase e crie um bucket chamado "documentos" com acesso público.'
+        'Vá em Storage no painel do Supabase e crie um bucket chamado "documentos".'
       );
     }
     throw error;
   }
-  const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
-  return urlData.publicUrl;
+  // Retorna o caminho no storage (não mais URL pública — bucket é privado)
+  return path;
+}
+
+/**
+ * Gera uma signed URL para acessar um arquivo no bucket privado.
+ * Funciona tanto para caminhos novos quanto para URLs públicas legadas.
+ */
+export async function getDocumentoSignedUrl(arquivoUrl: string): Promise<string> {
+  let path = arquivoUrl;
+  // Detectar URL pública legada e extrair o caminho
+  const publicPrefix = '/storage/v1/object/public/documentos/';
+  const idx = arquivoUrl.indexOf(publicPrefix);
+  if (idx >= 0) {
+    path = decodeURIComponent(arquivoUrl.substring(idx + publicPrefix.length));
+  }
+  const { data, error } = await supabase.storage.from('documentos').createSignedUrl(path, 3600);
+  if (error) throw error;
+  return data.signedUrl;
 }
 
 export async function deleteDocumento(docId: UUID) {
   const { error } = await supabase.from('documentos').delete().eq('id', docId);
+  if (error) throw error;
+}
+
+export async function updateDocumento(docId: UUID, patch: Partial<Pick<DocumentoEmpresa, 'nome' | 'validade' | 'departamentosIds' | 'visibilidade' | 'usuariosPermitidos' | 'arquivoUrl'>>) {
+  const row: Record<string, unknown> = { atualizado_em: new Date().toISOString() };
+  if (patch.nome !== undefined) row.nome = patch.nome;
+  if (patch.validade !== undefined) row.validade = patch.validade || null;
+  if (patch.departamentosIds !== undefined) row.departamentos_ids = patch.departamentosIds;
+  if (patch.visibilidade !== undefined) row.visibilidade = patch.visibilidade;
+  if (patch.usuariosPermitidos !== undefined) row.usuarios_permitidos = patch.usuariosPermitidos;
+  if (patch.arquivoUrl !== undefined) row.arquivo_url = patch.arquivoUrl || null;
+  const { error } = await supabase.from('documentos').update(row).eq('id', docId);
   if (error) throw error;
 }
 
@@ -720,12 +865,12 @@ export async function deleteObservacao(obsId: UUID) {
 // ─── Logs ───────────────────────────────────────────────────
 
 export async function fetchLogs(): Promise<LogEntry[]> {
-  const { data, error } = await supabase.from('logs').select('*').order('em', { ascending: false }).limit(500);
-  if (error) throw error;
-  return (data ?? []).map((l) => ({
+  const all = await fetchAllRows<Record<string, any>>('logs', { order: { column: 'em', ascending: false } });
+  return all.map((l) => ({
     id: l.id,
     em: toIso(l.em),
     userId: l.user_id,
+    userNome: l.user_nome ?? null,
     action: l.action,
     entity: l.entity,
     entityId: l.entity_id,
@@ -737,6 +882,7 @@ export async function fetchLogs(): Promise<LogEntry[]> {
 export async function insertLog(entry: Omit<LogEntry, 'id' | 'em'>): Promise<LogEntry> {
   const { data, error } = await supabase.from('logs').insert({
     user_id: entry.userId,
+    user_nome: entry.userNome ?? null,
     action: entry.action,
     entity: entry.entity,
     entity_id: entry.entityId,
@@ -748,12 +894,24 @@ export async function insertLog(entry: Omit<LogEntry, 'id' | 'em'>): Promise<Log
     id: data.id,
     em: toIso(data.em),
     userId: data.user_id,
+    userNome: data.user_nome ?? null,
     action: data.action,
     entity: data.entity,
     entityId: data.entity_id,
     message: data.message,
     diff: data.diff ?? undefined,
   };
+}
+
+export async function clearLogs() {
+  const { error } = await supabase.from('logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  if (error) throw error;
+}
+
+export async function deleteLogsByIds(ids: UUID[]) {
+  if (ids.length === 0) return;
+  const { error } = await supabase.from('logs').delete().in('id', ids);
+  if (error) throw error;
 }
 
 // ─── Lixeira ────────────────────────────────────────────────
@@ -878,6 +1036,7 @@ export async function restoreDocumento(doc: DocumentoEmpresa, empresaId: UUID) {
       nome: doc.nome,
       validade: doc.validade,
       arquivo_url: doc.arquivoUrl ?? null,
+      departamentos_ids: doc.departamentosIds ?? [],
     });
   if (error) throw error;
 }
@@ -924,19 +1083,28 @@ export async function purgeLixeiraOlderThan(days: number) {
 
 // ─── Notificações ───────────────────────────────────────────
 
-export async function fetchNotificacoes(): Promise<Notificacao[]> {
+export async function fetchNotificacoes(currentUserId?: UUID | null): Promise<Notificacao[]> {
   const { data, error } = await supabase.from('notificacoes').select('*').order('criado_em', { ascending: false }).limit(100);
   if (error) throw error;
-  return (data ?? []).map((n) => ({
-    id: n.id,
-    titulo: n.titulo,
-    mensagem: n.mensagem,
-    tipo: n.tipo,
-    lida: n.lida,
-    criadoEm: toIso(n.criado_em),
-    autorId: n.autor_id,
-    autorNome: n.autor_nome,
-  }));
+  return (data ?? []).map((n) => {
+    // Per-user: check lidas_por array if it exists; fallback to global lida boolean
+    let lida = Boolean(n.lida);
+    if (currentUserId && Array.isArray(n.lidas_por)) {
+      lida = n.lidas_por.includes(currentUserId);
+    }
+    return {
+      id: n.id,
+      titulo: n.titulo,
+      mensagem: n.mensagem,
+      tipo: n.tipo,
+      lida,
+      criadoEm: toIso(n.criado_em),
+      autorId: n.autor_id,
+      autorNome: n.autor_nome,
+      empresaId: n.empresa_id ?? null,
+      destinatarios: Array.isArray(n.destinatarios) ? n.destinatarios : [],
+    };
+  });
 }
 
 export async function insertNotificacao(notif: Omit<Notificacao, 'id' | 'criadoEm'>): Promise<Notificacao> {
@@ -946,9 +1114,12 @@ export async function insertNotificacao(notif: Omit<Notificacao, 'id' | 'criadoE
       titulo: notif.titulo,
       mensagem: notif.mensagem,
       tipo: notif.tipo,
-      lida: notif.lida,
+      lida: false,
+      lidas_por: [],
       autor_id: notif.autorId ?? null,
       autor_nome: notif.autorNome ?? null,
+      empresa_id: notif.empresaId ?? null,
+      destinatarios: notif.destinatarios ?? [],
     })
     .select()
     .single();
@@ -958,19 +1129,86 @@ export async function insertNotificacao(notif: Omit<Notificacao, 'id' | 'criadoE
     titulo: data.titulo,
     mensagem: data.mensagem,
     tipo: data.tipo,
-    lida: data.lida,
+    lida: false,
     criadoEm: toIso(data.criado_em),
     autorId: data.autor_id,
     autorNome: data.autor_nome,
+    empresaId: data.empresa_id ?? null,
+    destinatarios: Array.isArray(data.destinatarios) ? data.destinatarios : [],
   };
 }
 
-export async function markNotificacaoLida(id: UUID) {
-  await supabase.from('notificacoes').update({ lida: true }).eq('id', id);
+export async function markNotificacaoLida(id: UUID, userId: UUID) {
+  // Try per-user approach (lidas_por array column)
+  const { data: current, error: selErr } = await supabase
+    .from('notificacoes')
+    .select('lidas_por')
+    .eq('id', id)
+    .single();
+
+  if (!selErr && current && Array.isArray(current.lidas_por)) {
+    const lidasPor: string[] = current.lidas_por;
+    if (!lidasPor.includes(userId)) {
+      const { error: updErr } = await supabase
+        .from('notificacoes')
+        .update({ lidas_por: [...lidasPor, userId] })
+        .eq('id', id);
+      if (updErr) {
+        console.error('[Notif] Erro ao atualizar lidas_por:', updErr.message);
+        throw updErr;
+      }
+    }
+  } else {
+    // Fallback: lidas_por column not available, use global lida boolean
+    console.warn('[Notif] lidas_por indisponível, usando lida global. Erro:', selErr?.message);
+    const { error } = await supabase.from('notificacoes').update({ lida: true }).eq('id', id);
+    if (error) throw error;
+  }
 }
 
-export async function markAllNotificacoesLidas() {
-  await supabase.from('notificacoes').update({ lida: true }).eq('lida', false);
+export async function markAllNotificacoesLidas(userId: UUID) {
+  const { data, error: selErr } = await supabase.from('notificacoes').select('id, lidas_por');
+  if (selErr) {
+    console.error('[Notif] Erro ao buscar notificações:', selErr.message);
+    throw selErr;
+  }
+  if (!data || data.length === 0) return;
+
+  // Check if lidas_por column is available
+  const hasLidasPor = 'lidas_por' in data[0] && Array.isArray(data[0].lidas_por);
+
+  if (hasLidasPor) {
+    const toUpdate = data.filter((n) => {
+      const lidasPor: string[] = n.lidas_por ?? [];
+      return !lidasPor.includes(userId);
+    });
+
+    if (toUpdate.length === 0) return;
+
+    // Update in parallel (batch of up to 10 at a time to avoid rate limits)
+    const BATCH = 10;
+    for (let i = 0; i < toUpdate.length; i += BATCH) {
+      const batch = toUpdate.slice(i, i + BATCH);
+      const results = await Promise.all(
+        batch.map((n) => {
+          const lidasPor: string[] = n.lidas_por ?? [];
+          return supabase
+            .from('notificacoes')
+            .update({ lidas_por: [...lidasPor, userId] })
+            .eq('id', n.id);
+        })
+      );
+      const errors = results.filter((r) => r.error);
+      if (errors.length > 0) {
+        console.error('[Notif] Erros ao marcar lidas:', errors.map((e) => e.error?.message));
+      }
+    }
+  } else {
+    // Fallback: lidas_por column not available, use global lida boolean
+    console.warn('[Notif] lidas_por indisponível, usando lida global');
+    const { error } = await supabase.from('notificacoes').update({ lida: true }).neq('lida', true);
+    if (error) throw error;
+  }
 }
 
 export async function clearNotificacoes() {

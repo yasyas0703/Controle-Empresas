@@ -365,7 +365,3 @@ npm start
 
 ---
 
-<p align="center">
-  <strong>Desenvolvido para Triar Contabilidade</strong><br/>
-  <sub>Sistema de gestão empresarial completo, seguro e moderno.</sub>
-</p>

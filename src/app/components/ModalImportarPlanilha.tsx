@@ -279,6 +279,8 @@ function parseFile(text: string): ParsedRow[] {
           responsaveis[canonical] = picked;
         } else if (indices.length > 0) {
           // Tem coluna mapeada mas valor vazio → departamento sem responsável
+          // Incluir como string vazia para que a importação saiba que deve limpar
+          responsaveis[canonical] = '';
           deptsSemResp.push(canonical);
         }
       }
@@ -441,6 +443,11 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
         const deptId = deptIdByName.get(deptKey);
         if (!deptId) {
           issues.push({ deptName, personName, reason: 'departamento não encontrado (deptIdByName)' });
+          continue;
+        }
+        // Se o CSV tem a coluna mas o valor está vazio, marcar como null (limpar responsável)
+        if (!personName.trim()) {
+          resolved[deptId] = null;
           continue;
         }
         const personKey = normFn(personName);
@@ -772,9 +779,11 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
       let hasAny = false;
       for (const [depId, userIdOrNull] of Object.entries(resolvedMap)) {
         if (userIdOrNull) {
+          // CSV tem responsável → atribuir
           responsaveis[depId] = userIdOrNull;
           hasAny = true;
-        } else if (!empresa.responsaveis[depId]) {
+        } else if (empresa.responsaveis[depId]) {
+          // CSV está vazio mas empresa tem responsável → limpar
           responsaveis[depId] = null;
           hasAny = true;
         }

@@ -45,7 +45,7 @@ async function assertManager(req: Request) {
   });
 
   const { data, error } = await authClient.auth.getUser(token);
-  if (error || !data.user) return { ok: false as const, status: 401, message: 'Token inválido' };
+  if (error || !data.user) return { ok: false as const, status: 401, message: 'Sessão expirada. Faça login novamente.' };
 
   const admin = getSupabaseAdmin();
   const { data: profile, error: profileError } = await admin
@@ -54,8 +54,8 @@ async function assertManager(req: Request) {
     .eq('id', data.user.id)
     .maybeSingle();
 
-  if (profileError) return { ok: false as const, status: 500, message: profileError.message };
-  if (!profile || !profile.ativo || profile.role !== 'gerente') {
+  if (profileError) return { ok: false as const, status: 500, message: 'Erro interno.' };
+  if (!profile || !profile.ativo || (profile.role !== 'gerente' && profile.role !== 'admin')) {
     return { ok: false as const, status: 403, message: 'Apenas gerentes podem executar esta ação' };
   }
 
@@ -130,7 +130,7 @@ export async function POST(req: Request) {
           status = 'existing';
           break;
         } else {
-          error = 'Email já existe no Auth, mas não foi possível localizar o usuário';
+          error = 'Este email já está cadastrado, mas não foi possível localizar o usuário.';
           break;
         }
       }
@@ -138,7 +138,7 @@ export async function POST(req: Request) {
       // Rate-limit ou erro temporário — tentar novamente
       const isRetryable = msg.includes('rate') || msg.includes('429') || msg.includes('timeout') || msg.includes('503');
       if (!isRetryable && attempt >= 1) {
-        error = createError?.message || 'Falha desconhecida';
+        error = 'Não foi possível criar este usuário.';
         break;
       }
     }
@@ -162,7 +162,7 @@ export async function POST(req: Request) {
         .single();
 
       if (profileError) {
-        error = `Auth OK, mas perfil falhou: ${profileError.message}`;
+        error = 'Não foi possível criar o perfil do usuário.';
         status = 'failed';
         userId = null;
       }

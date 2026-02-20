@@ -1,22 +1,30 @@
 'use client';
 
 import React, { useMemo, useState, useCallback } from 'react';
-import { X, Plus, Trash2, Send, MessageSquare, Pencil, Download, Eye, Paperclip, FileText } from 'lucide-react';
-import type { Empresa, UUID } from '@/app/types';
+import { X, Plus, Trash2, Send, MessageSquare, Pencil, Download, Eye, Paperclip, FileText, Globe, Building2, Lock, Users, Loader2 } from 'lucide-react';
+import type { Empresa, DocumentoEmpresa, UUID } from '@/app/types';
 import ModalBase from '@/app/components/ModalBase';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR } from '@/app/utils/date';
 import ModalAdicionarDocumento from '@/app/components/ModalAdicionarDocumento';
 import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
+import { getDocumentoSignedUrl } from '@/lib/db';
 
-/** Formata número do RET no padrão XX.XXXXXXXX-XX */
+/** Formata número do RET no padrão XX.XXXXXXXXX-XX (13 dígitos) */
 function formatRetNumber(value: string): string {
-  const digits = value.replace(/\D/g, '').slice(0, 12);
+  const digits = value.replace(/\D/g, '').slice(0, 13);
   if (digits.length <= 2) return digits;
-  if (digits.length <= 10) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}.${digits.slice(2, 10)}-${digits.slice(10)}`;
+  if (digits.length <= 11) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 11)}-${digits.slice(11)}`;
 }
+
+const VIS_BADGE: Record<string, { icon: React.ReactNode; label: string; cls: string }> = {
+  publico: { icon: <Globe size={11} />, label: 'Público', cls: 'bg-green-100 text-green-700' },
+  departamento: { icon: <Building2 size={11} />, label: 'Departamento', cls: 'bg-blue-100 text-blue-700' },
+  usuarios: { icon: <Users size={11} />, label: 'Por Usuários', cls: 'bg-purple-100 text-purple-700' },
+  confidencial: { icon: <Lock size={11} />, label: 'Confidencial', cls: 'bg-red-100 text-red-700' },
+};
 
 export default function ModalDetalhesEmpresa({
   empresa: empresaProp,
@@ -25,15 +33,44 @@ export default function ModalDetalhesEmpresa({
   empresa: Empresa;
   onClose: () => void;
 }) {
-  const { adicionarDocumento, removerDocumento, adicionarObservacao, removerObservacao, departamentos, usuarios, currentUser, canManage, empresas } = useSistema();
+  const { adicionarDocumento, removerDocumento, atualizarDocumento, adicionarObservacao, removerObservacao, departamentos, usuarios, currentUser, canManage, empresas, currentUserId } = useSistema();
   // Sempre buscar a versão mais atualizada da empresa no contexto
   const empresa = empresas.find((e) => e.id === empresaProp.id) ?? empresaProp;
+  const canEdit = canManage || (!!currentUserId && Object.values(empresa.responsaveis || {}).some((uid) => uid === currentUserId));
   const [docOpen, setDocOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [obsTexto, setObsTexto] = useState('');
   const [confirmDeleteDocId, setConfirmDeleteDocId] = useState<string | null>(null);
   const [confirmDeleteObsId, setConfirmDeleteObsId] = useState<string | null>(null);
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
+  const [editingDocId, setEditingDocId] = useState<string | null>(null);
+  const [editDocNome, setEditDocNome] = useState('');
+  const [editDocValidade, setEditDocValidade] = useState('');
+  const [editDocDepts, setEditDocDepts] = useState<UUID[]>([]);
+  const [editDocVis, setEditDocVis] = useState<import('@/app/types').Visibilidade>('publico');
+  const [editDocUsers, setEditDocUsers] = useState<UUID[]>([]);
+  const [editDocFile, setEditDocFile] = useState<File | null>(null);
+  const editFileRef = React.useRef<HTMLInputElement>(null);
+
+  // Signed URLs cache & loading
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+  const [loadingUrlId, setLoadingUrlId] = useState<string | null>(null);
+
+  const resolveUrl = useCallback(async (doc: DocumentoEmpresa): Promise<string | null> => {
+    if (!doc.arquivoUrl) return null;
+    if (signedUrls[doc.id]) return signedUrls[doc.id];
+    try {
+      setLoadingUrlId(doc.id);
+      const url = await getDocumentoSignedUrl(doc.arquivoUrl);
+      setSignedUrls((prev) => ({ ...prev, [doc.id]: url }));
+      return url;
+    } catch {
+      // Fallback: tentar URL direta (legado)
+      return doc.arquivoUrl;
+    } finally {
+      setLoadingUrlId(null);
+    }
+  }, [signedUrls]);
 
   const forceDownload = useCallback(async (url: string, fileName: string) => {
     try {
@@ -53,6 +90,20 @@ export default function ModalDetalhesEmpresa({
     }
   }, []);
 
+  const handlePreview = useCallback(async (doc: DocumentoEmpresa) => {
+    if (previewDocId === doc.id) {
+      setPreviewDocId(null);
+      return;
+    }
+    const url = await resolveUrl(doc);
+    if (url) setPreviewDocId(doc.id);
+  }, [previewDocId, resolveUrl]);
+
+  const handleDownload = useCallback(async (doc: DocumentoEmpresa) => {
+    const url = await resolveUrl(doc);
+    if (url) forceDownload(url, doc.nome);
+  }, [resolveUrl, forceDownload]);
+
   const nome = useMemo(() => empresa.razao_social || empresa.apelido || '-', [empresa]);
 
   return (
@@ -71,13 +122,15 @@ export default function ModalDetalhesEmpresa({
                 Detalhes da Empresa
               </h3>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setEditOpen(true)}
-                  className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-semibold px-3 py-2 rounded-lg transition"
-                >
-                  <Pencil size={16} />
-                  Editar
-                </button>
+                {canEdit && (
+                  <button
+                    onClick={() => setEditOpen(true)}
+                    className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-semibold px-3 py-2 rounded-lg transition"
+                  >
+                    <Pencil size={16} />
+                    Editar
+                  </button>
+                )}
                 <button onClick={onClose} className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-lg">
                   <X size={20} />
                 </button>
@@ -113,7 +166,7 @@ export default function ModalDetalhesEmpresa({
               {(() => {
                 const entries = Object.entries(empresa.responsaveis || {});
                 const mapped = entries
-                  .map(([depId, userId], idx) => {
+                  .map(([depId, userId]) => {
                     const dep = departamentos.find((d) => d.id === depId);
                     const depIdx = departamentos.findIndex((d) => d.id === depId);
                     const user = userId ? usuarios.find((u) => u.id === userId) : null;
@@ -168,15 +221,24 @@ export default function ModalDetalhesEmpresa({
                 <div className="space-y-3">
                   {empresa.rets.map((r) => {
                     const dias = daysUntil(r.vencimento);
-                    const danger = dias !== null && dias <= 60;
+                    const vencido = dias !== null && dias < 0;
+                    const critico = dias !== null && !vencido && dias <= 60;
+                    const proximo = dias !== null && !vencido && !critico && dias <= 90;
                     return (
-                      <div key={r.id} className="rounded-xl border bg-white p-4 flex items-center justify-between gap-4">
+                      <div key={r.id} className={`rounded-xl border p-4 flex items-center justify-between gap-4 ${
+                        vencido ? 'bg-red-50 border-red-200' : critico ? 'bg-amber-50 border-amber-200' : proximo ? 'bg-green-50 border-green-200' : 'bg-white'
+                      }`}>
                         <div className="min-w-0">
-                          <div className="font-bold text-gray-900 truncate">{r.nome}</div>
+                          <div className="font-bold text-gray-900 break-words">{r.nome}</div>
                           <div className="text-sm text-gray-600">PTA: {r.numeroPta ? formatRetNumber(r.numeroPta) : '-'}</div>
                           <div className="text-sm text-gray-600">
-                            Vencimento: <span className={danger ? 'font-bold text-red-600' : 'text-gray-900'}>{formatBR(r.vencimento)}</span>
-                            {dias !== null ? ` • ${dias}d` : ''}
+                            Vencimento: <span className={
+                              vencido ? 'font-bold text-red-600' :
+                              critico ? 'font-bold text-amber-600' :
+                              proximo ? 'font-semibold text-green-600' :
+                              'text-gray-900'
+                            }>{formatBR(r.vencimento)}</span>
+                            {dias !== null ? ` • ${dias < 0 ? `${Math.abs(dias)}d atrás` : `${dias}d`}` : ''}
                           </div>
                           <div className="text-sm text-gray-600">Última renovação: {formatBR(r.ultimaRenovacao)}</div>
                         </div>
@@ -188,33 +250,76 @@ export default function ModalDetalhesEmpresa({
             </Section>
 
             <Section title="Documentos da Empresa" tone="orange" right={
-              <button
-                onClick={() => setDocOpen(true)}
-                className="inline-flex items-center gap-2 rounded-xl bg-orange-600 text-white px-4 py-2 text-sm font-semibold hover:bg-orange-700"
-              >
-                <Plus size={16} />
-                Adicionar
-              </button>
+              canEdit ? (
+                <button
+                  onClick={() => setDocOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-orange-600 text-white px-4 py-2 text-sm font-semibold hover:bg-orange-700"
+                >
+                  <Plus size={16} />
+                  Adicionar
+                </button>
+              ) : undefined
             }>
               {empresa.documentos.length === 0 ? (
                 <div className="text-sm text-gray-600">Sem documentos.</div>
               ) : (
                 <div className="space-y-3">
                   {empresa.documentos.map((d) => {
-                    const dias = daysUntil(d.validade);
-                    const danger = dias !== null && dias <= 60;
+                    const dias = d.validade ? daysUntil(d.validade) : null;
+                    const vencido = dias !== null && dias < 0;
+                    const critico = dias !== null && !vencido && dias <= 60;
+                    const proximo = dias !== null && !vencido && !critico && dias <= 90;
+                    const docDepts = (d.departamentosIds ?? []).map((id) => departamentos.find((dep) => dep.id === id)?.nome).filter(Boolean);
+                    const docUsers = (d.usuariosPermitidos ?? []).map((id) => usuarios.find((u) => u.id === id)?.nome).filter(Boolean);
+                    const isEditingThis = editingDocId === d.id;
+                    const visBadge = VIS_BADGE[d.visibilidade ?? 'publico'] ?? VIS_BADGE.publico;
+                    const isLoadingThis = loadingUrlId === d.id;
                     return (
                       <React.Fragment key={d.id}>
-                      <div className="rounded-xl border bg-white p-4 flex items-center justify-between gap-4">
+                      <div className={`rounded-xl border p-4 ${
+                        vencido ? 'bg-red-50 border-red-200' : critico ? 'bg-amber-50 border-amber-200' : proximo ? 'bg-green-50 border-green-200' : 'bg-white'
+                      }`}>
+                        <div className="flex items-center justify-between gap-4">
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <FileText size={16} className="text-orange-500 shrink-0" />
                             <div className="font-bold text-gray-900 truncate">{d.nome}</div>
+                            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${visBadge.cls}`}>
+                              {visBadge.icon} {visBadge.label}
+                            </span>
                           </div>
                           <div className="text-sm text-gray-600 mt-1">
-                            Validade: <span className={danger ? 'font-bold text-red-600' : 'text-gray-900'}>{formatBR(d.validade)}</span>
-                            {dias !== null ? ` • ${dias}d` : ''}
+                            {d.validade ? (
+                              <>
+                                Validade: <span className={
+                                  vencido ? 'font-bold text-red-600' :
+                                  critico ? 'font-bold text-amber-600' :
+                                  proximo ? 'font-semibold text-green-600' :
+                                  'text-gray-900'
+                                }>{formatBR(d.validade)}</span>
+                                {dias !== null ? ` • ${dias < 0 ? `${Math.abs(dias)}d atrás` : `${dias}d`}` : ''}
+                              </>
+                            ) : (
+                              <span className="text-gray-400 italic">Sem validade definida</span>
+                            )}
                           </div>
+                          {docDepts.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {docDepts.map((n) => (
+                                <span key={n} className="rounded-md bg-orange-100 text-orange-700 px-2 py-0.5 text-[10px] font-bold">{n}</span>
+                              ))}
+                            </div>
+                          )}
+                          {docDepts.length === 0 && d.visibilidade !== 'confidencial' && d.visibilidade !== 'usuarios' && (
+                            <div className="text-[10px] text-gray-400 mt-1">Todos os departamentos</div>
+                          )}
+                          {d.visibilidade === 'usuarios' && docUsers.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {docUsers.map((n) => (
+                                <span key={n} className="rounded-md bg-purple-100 text-purple-700 px-2 py-0.5 text-[10px] font-bold">{n}</span>
+                              ))}
+                            </div>
+                          )}
                           {d.arquivoUrl && (
                             <div className="flex items-center gap-1.5 mt-1.5">
                               <Paperclip size={12} className="text-orange-400" />
@@ -226,14 +331,16 @@ export default function ModalDetalhesEmpresa({
                           {d.arquivoUrl && (
                             <>
                               <button
-                                onClick={() => setPreviewDocId(previewDocId === d.id ? null : d.id)}
+                                onClick={() => handlePreview(d)}
+                                disabled={isLoadingThis}
                                 className={`rounded-xl border p-2 hover:bg-orange-50 transition ${previewDocId === d.id ? 'bg-orange-100 border-orange-300' : ''}`}
                                 title="Visualizar arquivo"
                               >
-                                <Eye className="text-orange-600" size={18} />
+                                {isLoadingThis ? <Loader2 className="text-orange-600 animate-spin" size={18} /> : <Eye className="text-orange-600" size={18} />}
                               </button>
                               <button
-                                onClick={() => forceDownload(d.arquivoUrl!, d.nome)}
+                                onClick={() => handleDownload(d)}
+                                disabled={isLoadingThis}
                                 className="rounded-xl border p-2 hover:bg-blue-50 transition"
                                 title="Baixar arquivo"
                               >
@@ -241,19 +348,244 @@ export default function ModalDetalhesEmpresa({
                               </button>
                             </>
                           )}
-                          <button
-                            onClick={() => setConfirmDeleteDocId(d.id)}
-                            className="rounded-xl border p-2 hover:bg-red-50 transition"
-                            title="Excluir documento"
-                          >
-                            <Trash2 className="text-red-600" size={18} />
-                          </button>
+                          {canEdit && (
+                            <button
+                              onClick={() => {
+                                if (isEditingThis) {
+                                  setEditingDocId(null);
+                                } else {
+                                  setEditingDocId(d.id);
+                                  setEditDocNome(d.nome);
+                                  setEditDocValidade(d.validade ?? '');
+                                  setEditDocDepts(d.departamentosIds ?? []);
+                                  setEditDocVis(d.visibilidade ?? 'publico');
+                                  setEditDocUsers((d.usuariosPermitidos ?? []).filter((uid) => uid !== currentUserId));
+                                  setEditDocFile(null);
+                                }
+                              }}
+                              className={`rounded-xl border p-2 hover:bg-blue-50 transition ${isEditingThis ? 'bg-blue-100 border-blue-300' : ''}`}
+                              title="Editar documento"
+                            >
+                              <Pencil className="text-blue-600" size={18} />
+                            </button>
+                          )}
+                          {canEdit && (
+                            <button
+                              onClick={() => setConfirmDeleteDocId(d.id)}
+                              className="rounded-xl border p-2 hover:bg-red-50 transition"
+                              title="Excluir documento"
+                            >
+                              <Trash2 className="text-red-600" size={18} />
+                            </button>
+                          )}
                         </div>
+                        </div>
+                        {/* Inline edit completo */}
+                        {isEditingThis && canEdit && (
+                          <div className="mt-3 pt-3 border-t border-gray-200 space-y-3">
+                            {/* Nome */}
+                            <div>
+                              <div className="text-xs font-bold text-gray-600 mb-1">Nome do documento:</div>
+                              <input
+                                value={editDocNome}
+                                onChange={(e) => setEditDocNome(e.target.value)}
+                                className="w-full rounded-lg border px-3 py-2 text-sm"
+                                placeholder="Nome do documento"
+                              />
+                            </div>
+
+                            {/* Validade */}
+                            <div>
+                              <div className="text-xs font-bold text-gray-600 mb-1">Validade <span className="font-normal text-gray-400">(opcional)</span>:</div>
+                              <div className="flex gap-2 items-center">
+                                <input
+                                  type="date"
+                                  value={editDocValidade}
+                                  onChange={(e) => setEditDocValidade(e.target.value)}
+                                  className="flex-1 rounded-lg border px-3 py-2 text-sm"
+                                />
+                                {editDocValidade && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditDocValidade('')}
+                                    className="text-xs text-red-500 hover:text-red-700 font-semibold whitespace-nowrap"
+                                  >
+                                    Limpar
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Arquivo */}
+                            <div>
+                              <div className="text-xs font-bold text-gray-600 mb-1">Arquivo:</div>
+                              <input
+                                ref={editFileRef}
+                                type="file"
+                                accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
+                                onChange={(e) => setEditDocFile(e.target.files?.[0] ?? null)}
+                                className="hidden"
+                              />
+                              {editDocFile ? (
+                                <div className="flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2">
+                                  <FileText size={14} className="text-orange-600 shrink-0" />
+                                  <span className="text-xs font-semibold text-gray-900 truncate flex-1">{editDocFile.name}</span>
+                                  <button type="button" onClick={() => { setEditDocFile(null); if (editFileRef.current) editFileRef.current.value = ''; }} className="text-xs text-red-500 font-bold">Remover</button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => editFileRef.current?.click()}
+                                  className="w-full rounded-lg border-2 border-dashed border-gray-300 px-3 py-3 text-center hover:border-orange-400 hover:bg-orange-50 transition text-xs text-gray-500"
+                                >
+                                  {d.arquivoUrl ? 'Trocar arquivo' : 'Anexar arquivo'}
+                                </button>
+                              )}
+                              {d.arquivoUrl && !editDocFile && (
+                                <div className="flex items-center gap-1.5 mt-1">
+                                  <Paperclip size={11} className="text-orange-400" />
+                                  <span className="text-[10px] text-orange-600 font-semibold">Arquivo atual mantido</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Visibilidade */}
+                            <div>
+                              <div className="text-xs font-bold text-gray-600 mb-2">Visibilidade:</div>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                {([
+                                  { value: 'publico' as const, label: 'Público', icon: <Globe size={13} />, color: 'text-green-700', border: 'border-green-300', bg: 'bg-green-50' },
+                                  { value: 'departamento' as const, label: 'Departamento', icon: <Building2 size={13} />, color: 'text-blue-700', border: 'border-blue-300', bg: 'bg-blue-50' },
+                                  { value: 'usuarios' as const, label: 'Por Usuários', icon: <Users size={13} />, color: 'text-purple-700', border: 'border-purple-300', bg: 'bg-purple-50' },
+                                  { value: 'confidencial' as const, label: 'Confidencial', icon: <Lock size={13} />, color: 'text-red-700', border: 'border-red-300', bg: 'bg-red-50' },
+                                ]).map((opt) => (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => setEditDocVis(opt.value)}
+                                    className={`flex items-center gap-1.5 rounded-lg border-2 px-2.5 py-2 transition text-xs font-bold ${
+                                      editDocVis === opt.value
+                                        ? `${opt.bg} ${opt.border} ${opt.color}`
+                                        : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                                    }`}
+                                  >
+                                    {opt.icon}
+                                    {opt.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Departamentos — visível para público e departamento */}
+                            {(editDocVis === 'publico' || editDocVis === 'departamento') && (
+                              <div>
+                                <div className="text-xs font-bold text-gray-600 mb-2">Departamentos responsáveis:</div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {departamentos.map((dep) => (
+                                    <label
+                                      key={dep.id}
+                                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition text-sm ${
+                                        editDocDepts.includes(dep.id)
+                                          ? 'bg-orange-50 border-orange-300'
+                                          : 'bg-white border-gray-200 hover:bg-gray-50'
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={editDocDepts.includes(dep.id)}
+                                        onChange={() => setEditDocDepts((prev) =>
+                                          prev.includes(dep.id) ? prev.filter((x) => x !== dep.id) : [...prev, dep.id]
+                                        )}
+                                        className="h-3.5 w-3.5 rounded"
+                                      />
+                                      <span className="font-semibold text-gray-800">{dep.nome}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Seletor de usuários — visível quando 'usuarios' */}
+                            {editDocVis === 'usuarios' && (
+                              <div>
+                                <div className="text-xs font-bold text-gray-600 mb-2">Usuários que podem ver:</div>
+                                <div className="rounded-lg bg-purple-50 border border-purple-200 px-3 py-1.5 mb-2 text-[11px] text-purple-700 font-semibold">
+                                  {currentUser?.nome ?? 'Você'} — incluído automaticamente
+                                </div>
+                                <div className="grid grid-cols-1 gap-1.5 max-h-36 overflow-y-auto">
+                                  {usuarios.filter((u) => u.ativo && u.id !== currentUserId).map((u) => (
+                                    <label
+                                      key={u.id}
+                                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition text-sm ${
+                                        editDocUsers.includes(u.id)
+                                          ? 'bg-purple-50 border-purple-300'
+                                          : 'bg-white border-gray-200 hover:bg-gray-50'
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={editDocUsers.includes(u.id)}
+                                        onChange={() => setEditDocUsers((prev) =>
+                                          prev.includes(u.id) ? prev.filter((x) => x !== u.id) : [...prev, u.id]
+                                        )}
+                                        className="h-3.5 w-3.5 rounded"
+                                      />
+                                      <div className="min-w-0">
+                                        <span className="font-semibold text-gray-800 block truncate">{u.nome}</span>
+                                        <span className="text-[10px] text-gray-500">{u.email}</span>
+                                      </div>
+                                    </label>
+                                  ))}
+                                </div>
+                                {editDocUsers.length > 0 && (
+                                  <div className="text-[11px] text-purple-600 font-semibold mt-1">
+                                    {editDocUsers.length} usuário(s) selecionado(s)
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="flex gap-2 mt-2">
+                              <button
+                                onClick={() => setEditingDocId(null)}
+                                className="rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-gray-50"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const patch: Record<string, unknown> = {
+                                    nome: editDocNome.trim(),
+                                    validade: editDocValidade,
+                                    visibilidade: editDocVis,
+                                    departamentosIds: editDocDepts,
+                                  };
+                                  if (editDocVis === 'usuarios') {
+                                    const usersArr = [...editDocUsers];
+                                    if (currentUserId && !usersArr.includes(currentUserId)) {
+                                      usersArr.unshift(currentUserId);
+                                    }
+                                    patch.usuariosPermitidos = usersArr;
+                                  } else {
+                                    patch.usuariosPermitidos = [];
+                                  }
+                                  atualizarDocumento(empresa.id, d.id, patch as any, editDocFile ?? undefined);
+                                  setEditingDocId(null);
+                                  setEditDocFile(null);
+                                }}
+                                disabled={!editDocNome.trim() || (editDocVis === 'usuarios' && editDocUsers.length === 0)}
+                                className="rounded-lg bg-blue-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                Salvar
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      {previewDocId === d.id && d.arquivoUrl && (
+                      {previewDocId === d.id && (signedUrls[d.id] || d.arquivoUrl) && (
                         <div className="rounded-xl border border-orange-200 bg-orange-50/50 overflow-hidden" style={{ height: 400 }}>
                           <iframe
-                            src={d.arquivoUrl}
+                            src={signedUrls[d.id] || d.arquivoUrl}
                             className="w-full h-full border-0"
                             title={`Preview: ${d.nome}`}
                           />
@@ -366,6 +698,8 @@ export default function ModalDetalhesEmpresa({
         isOpen={docOpen}
         onClose={() => setDocOpen(false)}
         onSubmit={(doc, file) => adicionarDocumento(empresa.id, doc, file)}
+        departamentos={departamentos}
+        usuarios={usuarios}
       />
 
       {editOpen && (

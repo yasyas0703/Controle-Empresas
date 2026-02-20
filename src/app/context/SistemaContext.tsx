@@ -41,6 +41,7 @@ export type AlertItem = { id: UUID; title: string; message: string; type: AlertT
 interface SistemaContextValue extends SistemaState {
   currentUser: Usuario | null;
   canManage: boolean;
+  canAdmin: boolean;
   loading: boolean;
   authReady: boolean;
   reloadData: () => Promise<void>;
@@ -73,6 +74,7 @@ interface SistemaContextValue extends SistemaState {
 
   // Documentos
   adicionarDocumento: (empresaId: UUID, doc: Omit<DocumentoEmpresa, 'id' | 'criadoEm' | 'atualizadoEm'>, file?: File) => Promise<void>;
+  atualizarDocumento: (empresaId: UUID, docId: UUID, patch: Partial<Pick<DocumentoEmpresa, 'nome' | 'validade' | 'departamentosIds' | 'visibilidade' | 'usuariosPermitidos' | 'arquivoUrl'>>, file?: File) => Promise<void>;
   removerDocumento: (empresaId: UUID, docId: UUID) => Promise<void>;
 
   // Observações
@@ -87,10 +89,14 @@ interface SistemaContextValue extends SistemaState {
 
   // Notificações
   notificacoes: Notificacao[];
-  adicionarNotificacao: (titulo: string, mensagem: string, tipo: Notificacao['tipo']) => Promise<void>;
+  adicionarNotificacao: (titulo: string, mensagem: string, tipo: Notificacao['tipo'], empresaId?: UUID | null) => Promise<void>;
   marcarNotificacaoLida: (id: UUID) => Promise<void>;
   marcarTodasLidas: () => Promise<void>;
   limparNotificacoes: () => Promise<void>;
+
+  // Histórico
+  limparHistorico: () => Promise<void>;
+  removerLogsSelecionados: (ids: UUID[]) => Promise<void>;
 }
 
 const SistemaContext = createContext<SistemaContextValue | null>(null);
@@ -116,16 +122,16 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       // Sempre carregamos o próprio perfil primeiro (define canManage de forma confiável)
       const meList = await db.fetchUsuarioById(userId);
       const me = meList[0] ?? null;
-      const isManager = !!me && me.ativo && me.role === 'gerente';
+      const isManager = !!me && me.ativo && (me.role === 'gerente' || me.role === 'admin');
 
       const [empresas, departamentos, servicos, notificacoes, logs, lixeira, usuarios] = await Promise.all([
         db.fetchEmpresas(),
         db.fetchDepartamentos(),
         db.fetchServicos(),
-        db.fetchNotificacoes(),
-        isManager ? db.fetchLogs() : Promise.resolve([]),
+        db.fetchNotificacoes(userId),
+        db.fetchLogs(),
         isManager ? db.fetchLixeira() : Promise.resolve([]),
-        isManager ? db.fetchUsuariosAdmin() : Promise.resolve(me ? [me] : []),
+        isManager ? db.fetchUsuariosAdmin() : db.fetchUsuariosBasic().catch(() => (me ? [me] : [])),
       ]);
 
       // ── DEBUG: verificar o que realmente foi carregado ──
@@ -161,6 +167,34 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         db.purgeLixeiraOlderThan(10).catch(() => {});
       }
 
+      // ── Filtrar notificações por papel ──
+      // Títulos de notificações internas (só admin deve ver)
+      const ADMIN_ONLY_TITLES = new Set([
+        'Histórico excluído',
+        'Registros do histórico excluídos',
+        'Exclusão permanente',
+        'Lixeira limpa',
+      ]);
+
+      let notifsFiltradas = notificacoes;
+      if (me && me.role === 'usuario') {
+        // Usuário: vê notificações onde está nos destinatários (exceto internas)
+        notifsFiltradas = notificacoes.filter(n =>
+          !ADMIN_ONLY_TITLES.has(n.titulo) &&
+          Array.isArray(n.destinatarios) && n.destinatarios.includes(userId)
+        );
+      } else if (me && me.role === 'gerente') {
+        // Gerente: vê notificações relacionadas a empresas ou onde está nos destinatários (exceto internas)
+        notifsFiltradas = notificacoes.filter(n =>
+          !ADMIN_ONLY_TITLES.has(n.titulo) &&
+          (
+            !n.empresaId ||
+            (Array.isArray(n.destinatarios) && n.destinatarios.includes(userId))
+          )
+        );
+      }
+      // Admin: sem filtro (todas)
+
       setState((prev) => ({
         empresas,
         usuarios,
@@ -168,7 +202,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         servicos,
         logs,
         lixeira,
-        notificacoes,
+        notificacoes: notifsFiltradas,
         currentUserId: userId,
       }));
     },
@@ -246,12 +280,14 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     [state.currentUserId, state.usuarios]
   );
 
-  const canManage = currentUser?.role === 'gerente';
+  const canManage = currentUser?.role === 'gerente' || currentUser?.role === 'admin';
+  const canAdmin = currentUser?.role === 'admin';
 
-  const pushLog = async (entry: Omit<LogEntry, 'id' | 'em' | 'userId'> & { diff?: LogEntry['diff'] }) => {
+  const pushLog = async (entry: Omit<LogEntry, 'id' | 'em' | 'userId' | 'userNome'> & { diff?: LogEntry['diff'] }) => {
     try {
       const newLog = await db.insertLog({
         userId: state.currentUserId,
+        userNome: currentUser?.nome ?? null,
         ...entry,
       });
       setState((prev) => ({
@@ -266,14 +302,37 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   const mostrarAlerta = (title: string, message: string, type: AlertType) => {
     const id = newId();
     setAlerts((prev) => [{ id, title, message, type }, ...prev].slice(0, 5));
-    pushLog({ action: 'alert', entity: 'empresa', entityId: null, message: `${type.toUpperCase()}: ${title} - ${message}` });
     window.setTimeout(() => dismissAlert(id), 5000);
   };
 
   const dismissAlert = (id: UUID) => setAlerts((prev) => prev.filter((a) => a.id !== id));
 
-  const addNotification = async (titulo: string, mensagem: string, tipo: Notificacao['tipo']) => {
+  const addNotification = async (titulo: string, mensagem: string, tipo: Notificacao['tipo'], empresaId?: UUID | null) => {
     try {
+      // Computar destinatários: quem deve ver esta notificação
+      const destinatarios: UUID[] = [];
+      if (empresaId) {
+        const empresa = state.empresas.find(e => e.id === empresaId);
+        if (empresa) {
+          const deptIdsComResp = new Set<string>();
+          // Adicionar usuários responsáveis diretos
+          for (const [deptId, uid] of Object.entries(empresa.responsaveis)) {
+            if (uid) {
+              destinatarios.push(uid as UUID);
+              deptIdsComResp.add(deptId);
+            }
+          }
+          // Adicionar gerentes dos departamentos envolvidos
+          for (const u of state.usuarios) {
+            if (u.role === 'gerente' && u.departamentoId && deptIdsComResp.has(u.departamentoId)) {
+              if (!destinatarios.includes(u.id)) {
+                destinatarios.push(u.id);
+              }
+            }
+          }
+        }
+      }
+
       const notif = await db.insertNotificacao({
         titulo,
         mensagem,
@@ -281,6 +340,8 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         lida: false,
         autorId: state.currentUserId,
         autorNome: currentUser?.nome,
+        empresaId: empresaId ?? null,
+        destinatarios,
       });
       setState((prev) => ({
         ...prev,
@@ -300,8 +361,9 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     try {
       await loadForUser(userId as UUID);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      mostrarAlerta('Erro ao carregar dados', err?.message || 'Falha ao carregar dados do sistema após login.', 'erro');
     } finally {
       setLoading(false);
     }
@@ -321,7 +383,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     if (!canManage) return null;
     try {
       const servico = await db.insertServico(nome);
-      await pushLog({ action: 'create', entity: 'departamento', entityId: servico.id, message: `Criou serviço: ${nome}` });
+      await pushLog({ action: 'create', entity: 'servico', entityId: servico.id, message: `Criou serviço: ${nome}` });
       setState((prev) => ({ ...prev, servicos: [servico, ...prev.servicos] }));
       return servico.id;
     } catch (err) {
@@ -335,7 +397,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     const servico = state.servicos.find((s) => s.id === id);
     try {
       await db.deleteServico(id, servico?.nome ?? '');
-      await pushLog({ action: 'delete', entity: 'departamento', entityId: id, message: `Removeu serviço: ${servico?.nome ?? id}` });
+      await pushLog({ action: 'delete', entity: 'servico', entityId: id, message: `Removeu serviço: ${servico?.nome ?? id}` });
       setState((prev) => ({
         ...prev,
         servicos: prev.servicos.filter((s) => s.id !== id),
@@ -387,7 +449,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   // ── Usuários ──
 
   const criarUsuario = async (payload: Omit<Usuario, 'id' | 'criadoEm' | 'atualizadoEm'>) => {
-    if (!canManage) return null;
+    if (!canAdmin) return null;
     try {
       const user = await db.insertUsuario(payload);
       await pushLog({ action: 'create', entity: 'usuario', entityId: user.id, message: `Criou usuário: ${user.nome}` });
@@ -395,12 +457,12 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       return user.id;
     } catch (err) {
       console.error(err);
-      return null;
+      throw err;
     }
   };
 
   const atualizarUsuario = async (id: UUID, patch: Partial<Usuario>) => {
-    if (!canManage) return;
+    if (!canAdmin) return;
     const before = state.usuarios.find((u) => u.id === id);
     if (!before) return;
     const after = { ...before, ...patch, atualizadoEm: isoNow() };
@@ -414,6 +476,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       }));
     } catch (err) {
       console.error(err);
+      throw err;
     }
   };
 
@@ -424,7 +487,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   };
 
   const removerUsuario = async (id: UUID) => {
-    if (!canManage) return;
+    if (!canAdmin) return;
     const user = state.usuarios.find((u) => u.id === id);
     try {
       await db.deleteUsuario(id);
@@ -497,7 +560,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       };
 
       await pushLog({ action: 'create', entity: 'empresa', entityId: empresaId, message: `Criou empresa: ${empresa.codigo} - ${empresa.razao_social ?? empresa.apelido ?? ''}` });
-      await addNotification('Nova empresa cadastrada', `${empresa.codigo} - ${empresa.razao_social || empresa.apelido || ''} foi cadastrada por ${currentUser?.nome ?? 'Desconhecido'}`, 'sucesso');
+      await addNotification('Nova empresa cadastrada', `${empresa.codigo} - ${empresa.razao_social || empresa.apelido || ''} foi cadastrada por ${currentUser?.nome ?? 'Desconhecido'}`, 'sucesso', empresaId);
 
       setState((prev) => ({ ...prev, empresas: [empresa, ...prev.empresas] }));
       return empresaId;
@@ -535,9 +598,9 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     if (!empresa) return;
     try {
       const lixeiraItem = await db.insertLixeira(empresa, state.currentUserId, currentUser?.nome ?? 'Desconhecido');
+      await addNotification('Empresa excluída', `${empresa.codigo} - ${empresa.razao_social || empresa.apelido || ''} foi movida para a lixeira por ${currentUser?.nome ?? 'Desconhecido'}`, 'aviso', id);
       await db.deleteEmpresa(id);
       await pushLog({ action: 'delete', entity: 'empresa', entityId: id, message: `Moveu empresa para lixeira: ${empresa.codigo}` });
-      await addNotification('Empresa excluída', `${empresa.codigo} - ${empresa.razao_social || empresa.apelido || ''} foi movida para a lixeira por ${currentUser?.nome ?? 'Desconhecido'}`, 'aviso');
       setState((prev) => ({
         ...prev,
         empresas: prev.empresas.filter((e) => e.id !== id),
@@ -557,7 +620,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       await db.insertEmpresa(item.empresa, depIds);
       await db.deleteLixeiraItem(lixeiraItemId);
       await pushLog({ action: 'create', entity: 'empresa', entityId: item.empresa.id, message: `Restaurou empresa da lixeira: ${item.empresa.codigo}` });
-      await addNotification('Empresa restaurada', `${item.empresa.codigo} - ${item.empresa.razao_social || item.empresa.apelido || ''} foi restaurada por ${currentUser?.nome ?? 'Desconhecido'}`, 'sucesso');
+      await addNotification('Empresa restaurada', `${item.empresa.codigo} - ${item.empresa.razao_social || item.empresa.apelido || ''} foi restaurada por ${currentUser?.nome ?? 'Desconhecido'}`, 'sucesso', item.empresa.id);
       setState((prev) => ({
         ...prev,
         empresas: [item.empresa, ...prev.empresas],
@@ -664,7 +727,12 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
           arquivoUrl = undefined;
         }
       }
-      const novo = await db.insertDocumento(empresaId, { ...doc, arquivoUrl });
+      // Garantir que o criador está em usuariosPermitidos quando visibilidade='usuarios'
+      let usuariosPermitidos = doc.usuariosPermitidos ?? [];
+      if (doc.visibilidade === 'usuarios' && state.currentUserId && !usuariosPermitidos.includes(state.currentUserId)) {
+        usuariosPermitidos = [state.currentUserId, ...usuariosPermitidos];
+      }
+      const novo = await db.insertDocumento(empresaId, { ...doc, arquivoUrl, criadoPorId: state.currentUserId ?? undefined, usuariosPermitidos });
       await pushLog({ action: 'create', entity: 'documento', entityId: novo.id, message: `Adicionou documento: ${doc.nome}` });
       setState((prev) => ({
         ...prev,
@@ -675,6 +743,34 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     } catch (err: any) {
       console.error(err);
       mostrarAlerta('Erro ao adicionar documento', err?.message || 'Falha ao salvar documento.', 'erro');
+    }
+  };
+
+  const atualizarDocumento = async (empresaId: UUID, docId: UUID, patch: Partial<Pick<DocumentoEmpresa, 'nome' | 'validade' | 'departamentosIds' | 'visibilidade' | 'usuariosPermitidos' | 'arquivoUrl'>>, file?: File) => {
+    try {
+      const finalPatch = { ...patch };
+      if (file) {
+        try {
+          const arquivoUrl = await db.uploadDocumentoArquivo(empresaId, file);
+          finalPatch.arquivoUrl = arquivoUrl;
+        } catch (uploadErr: any) {
+          console.error('Erro no upload:', uploadErr);
+          mostrarAlerta('Erro no upload', uploadErr?.message || 'Não foi possível enviar o arquivo.', 'erro');
+        }
+      }
+      await db.updateDocumento(docId, finalPatch);
+      await pushLog({ action: 'update', entity: 'documento', entityId: docId, message: `Atualizou documento` });
+      setState((prev) => ({
+        ...prev,
+        empresas: prev.empresas.map((e) =>
+          e.id === empresaId
+            ? { ...e, documentos: e.documentos.map((d) => d.id === docId ? { ...d, ...finalPatch, atualizadoEm: isoNow() } : d), atualizadoEm: isoNow() }
+            : e
+        ),
+      }));
+    } catch (err: any) {
+      console.error(err);
+      mostrarAlerta('Erro ao atualizar documento', err?.message || 'Falha ao salvar alterações.', 'erro');
     }
   };
 
@@ -765,13 +861,14 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
   // ── Notificações ──
 
-  const adicionarNotificacao = async (titulo: string, mensagem: string, tipo: Notificacao['tipo']) => {
-    await addNotification(titulo, mensagem, tipo);
+  const adicionarNotificacao = async (titulo: string, mensagem: string, tipo: Notificacao['tipo'], empresaId?: UUID | null) => {
+    await addNotification(titulo, mensagem, tipo, empresaId);
   };
 
   const marcarNotificacaoLida = async (id: UUID) => {
+    if (!state.currentUserId) return;
     try {
-      await db.markNotificacaoLida(id);
+      await db.markNotificacaoLida(id, state.currentUserId);
       setState((prev) => ({
         ...prev,
         notificacoes: prev.notificacoes.map((n) => n.id === id ? { ...n, lida: true } : n),
@@ -782,8 +879,9 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   };
 
   const marcarTodasLidas = async () => {
+    if (!state.currentUserId) return;
     try {
-      await db.markAllNotificacoesLidas();
+      await db.markAllNotificacoesLidas(state.currentUserId);
       setState((prev) => ({
         ...prev,
         notificacoes: prev.notificacoes.map((n) => ({ ...n, lida: true })),
@@ -802,10 +900,45 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const limparHistorico = async () => {
+    if (!canAdmin) return;
+    try {
+      const count = state.logs.length;
+      await db.clearLogs();
+      setState((prev) => ({ ...prev, logs: [] }));
+      await addNotification(
+        'Histórico excluído',
+        `${currentUser?.nome ?? 'Admin'} excluiu todo o histórico (${count} registros)`,
+        'aviso'
+      );
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const removerLogsSelecionados = async (ids: UUID[]) => {
+    if (!canAdmin || ids.length === 0) return;
+    try {
+      await db.deleteLogsByIds(ids);
+      setState((prev) => ({
+        ...prev,
+        logs: prev.logs.filter((l) => !ids.includes(l.id)),
+      }));
+      await addNotification(
+        'Registros do histórico excluídos',
+        `${currentUser?.nome ?? 'Admin'} excluiu ${ids.length} registro(s) do histórico`,
+        'aviso'
+      );
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const value: SistemaContextValue = {
     ...state,
     currentUser,
     canManage,
+    canAdmin,
     loading,
     authReady,
     reloadData,
@@ -826,6 +959,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     atualizarEmpresa,
     removerEmpresa,
     adicionarDocumento,
+    atualizarDocumento,
     removerDocumento,
     adicionarObservacao,
     removerObservacao,
@@ -838,6 +972,8 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     marcarNotificacaoLida,
     marcarTodasLidas,
     limparNotificacoes,
+    limparHistorico,
+    removerLogsSelecionados,
   };
 
   return <SistemaContext.Provider value={value}>{children}</SistemaContext.Provider>;

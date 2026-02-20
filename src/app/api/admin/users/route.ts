@@ -49,7 +49,7 @@ async function assertManager(req: Request) {
   });
 
   const { data, error } = await authClient.auth.getUser(token);
-  if (error || !data.user) return { ok: false as const, status: 401, message: 'Token inválido' };
+  if (error || !data.user) return { ok: false as const, status: 401, message: 'Sessão expirada. Faça login novamente.' };
 
   const admin = getSupabaseAdmin();
   const { data: profile, error: profileError } = await admin
@@ -58,8 +58,8 @@ async function assertManager(req: Request) {
     .eq('id', data.user.id)
     .maybeSingle();
 
-  if (profileError) return { ok: false as const, status: 500, message: profileError.message };
-  if (!profile || !profile.ativo || profile.role !== 'gerente') {
+  if (profileError) return { ok: false as const, status: 500, message: 'Erro interno.' };
+  if (!profile || !profile.ativo || (profile.role !== 'gerente' && profile.role !== 'admin')) {
     return { ok: false as const, status: 403, message: 'Apenas gerentes podem executar esta ação' };
   }
 
@@ -74,7 +74,7 @@ export async function GET(req: Request) {
 
   const admin = getSupabaseAdmin();
   const { data, error } = await admin.from('usuarios').select('*').order('criado_em', { ascending: false });
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) return NextResponse.json({ error: 'Erro ao buscar usuários.' }, { status: 400 });
 
   return NextResponse.json(
     (data ?? []).map((u) => ({
@@ -105,6 +105,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'nome, email e senha são obrigatórios' }, { status: 400 });
   }
 
+  if (body.senha.trim().length < 8) {
+    return NextResponse.json({ error: 'A senha deve ter no mínimo 8 caracteres.' }, { status: 400 });
+  }
+
   const admin = getSupabaseAdmin();
 
   const { data: created, error: createError } = await admin.auth.admin.createUser({
@@ -118,7 +122,7 @@ export async function POST(req: Request) {
     const msg = String(createError?.message || '').toLowerCase();
     const isDuplicateEmail = msg.includes('already been registered') || msg.includes('already registered') || msg.includes('already exists');
     if (!isDuplicateEmail) {
-      return NextResponse.json({ error: createError?.message ?? 'Falha ao criar usuário' }, { status: 400 });
+      return NextResponse.json({ error: 'Não foi possível criar o usuário.' }, { status: 400 });
     }
 
     const existingId = await findAuthUserIdByEmail(admin, body.email);
@@ -143,8 +147,17 @@ export async function POST(req: Request) {
       .single();
 
     if (profileError) {
-      return NextResponse.json({ error: profileError.message }, { status: 400 });
+      return NextResponse.json({ error: 'Erro ao criar perfil do usuário.' }, { status: 400 });
     }
+
+    // Audit log
+    await admin.from('logs').insert({
+      user_id: authz.userId,
+      action: 'create',
+      entity: 'usuario',
+      entity_id: profile.id,
+      message: `Criou usuário: ${profile.nome} (${profile.email})`,
+    }).then(() => {}, () => {});
 
     return NextResponse.json({
       id: profile.id,
@@ -177,8 +190,17 @@ export async function POST(req: Request) {
   if (profileError) {
     // rollback auth user
     await admin.auth.admin.deleteUser(created.user.id).catch(() => {});
-    return NextResponse.json({ error: profileError.message }, { status: 400 });
+    return NextResponse.json({ error: 'Erro ao criar perfil do usuário.' }, { status: 400 });
   }
+
+  // Audit log
+  await admin.from('logs').insert({
+    user_id: authz.userId,
+    action: 'create',
+    entity: 'usuario',
+    entity_id: profile.id,
+    message: `Criou usuário: ${profile.nome} (${profile.email})`,
+  }).then(() => {}, () => {});
 
   return NextResponse.json({
     id: profile.id,

@@ -1,16 +1,19 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Building2, Plus, Search, Pencil, Trash2, Eye, FileText, CalendarClock, Upload, Users, Globe, Loader2 } from 'lucide-react';
+import { AlertTriangle, Building2, Plus, Search, Pencil, Trash2, Eye, FileText, CalendarClock, Upload, Users, Globe, Loader2, Clock } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
-import type { Empresa, UUID } from '@/app/types';
+import type { Empresa, UUID, Limiares } from '@/app/types';
+import { LIMIARES_DEFAULTS } from '@/app/types';
 import { detectTipoEstabelecimento, formatarDocumento, getTipoInscricaoDisplay } from '@/app/utils/validation';
+import { daysUntil } from '@/app/utils/date';
 import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import ModalImportarPlanilha from '@/app/components/ModalImportarPlanilha';
 import ModalImportarResponsabilidadesFiscal from '@/app/components/ModalImportarResponsabilidadesFiscal';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { api } from '@/app/utils/api';
+import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 
 function canEditEmpresa(currentUserId: UUID | null, canManage: boolean, empresa: Empresa): boolean {
   if (canManage) return true;
@@ -31,6 +34,8 @@ const DEPT_COLORS: Record<number, { bg: string; text: string; border: string }> 
 
 export default function EmpresasPage() {
   const { empresas, currentUserId, canManage, removerEmpresa, atualizarEmpresa, departamentos, usuarios, mostrarAlerta } = useSistema();
+
+  const [limiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
 
   const getDepName = (dId: string) => departamentos.find(d => d.id === dId)?.nome ?? '';
   const getDepIndex = (dId: string) => departamentos.findIndex(d => d.id === dId);
@@ -109,7 +114,6 @@ export default function EmpresasPage() {
     const qCod = searchCodigo.trim();
     return empresas
       .filter((e) => {
-        if (!canManage && !canEditEmpresa(currentUserId, canManage, e)) return false;
         if (qCod) {
           if (e.codigo !== qCod) return false;
         }
@@ -119,7 +123,7 @@ export default function EmpresasPage() {
         }
         return true;
       })
-      .sort((a, b) => (a.codigo || '').localeCompare(b.codigo || ''));
+      .sort((a, b) => (a.razao_social || a.apelido || '').localeCompare(b.razao_social || b.apelido || ''));
   }, [empresas, search, searchCodigo, canManage, currentUserId]);
 
   const selectableIds = useMemo(() => {
@@ -278,7 +282,7 @@ export default function EmpresasPage() {
                 }
               >
                 {enriching ? <Loader2 size={18} className="animate-spin" /> : <Globe size={18} />}
-                {enriching ? 'Parar' : `Enriquecer CNPJ (${empresasSemEndereco.length})`}
+                {enriching ? 'Parar' : `CNPJ (${empresasSemEndereco.length})`}
               </button>
             )}
             {canManage && (
@@ -393,11 +397,25 @@ export default function EmpresasPage() {
           const nome = e.razao_social || e.apelido || '-';
           const canEdit = canEditEmpresa(currentUserId, canManage, e);
           const checked = selectedVisibleIds.includes(e.id);
+          const totalVencidos = e.documentos.filter((d) => { const dias = daysUntil(d.validade); return dias !== null && dias < 0; }).length
+            + e.rets.filter((r) => { const dias = daysUntil(r.vencimento); return dias !== null && dias < 0; }).length;
+          const proximoVencDias = (() => {
+            let min: number | null = null;
+            for (const d of e.documentos) {
+              const dias = daysUntil(d.validade);
+              if (dias !== null && dias >= 0 && (min === null || dias < min)) min = dias;
+            }
+            for (const r of e.rets) {
+              const dias = daysUntil(r.vencimento);
+              if (dias !== null && dias >= 0 && (min === null || dias < min)) min = dias;
+            }
+            return min;
+          })();
           return (
             <div key={e.id} className="rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <label className="inline-flex items-center gap-2 select-none">
                       <input
                         type="checkbox"
@@ -431,6 +449,22 @@ export default function EmpresasPage() {
                       }
                       return null;
                     })()}
+                    {totalVencidos > 0 && (
+                      <span className="rounded-md bg-red-600 text-white px-2 py-0.5 text-[10px] font-black flex items-center gap-1 animate-pulse">
+                        <AlertTriangle size={10} /> {totalVencidos} VENCIDO(S)
+                      </span>
+                    )}
+                    {proximoVencDias !== null && totalVencidos === 0 && (
+                      <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold flex items-center gap-1 ${
+                        proximoVencDias <= limiares.critico
+                          ? 'bg-orange-100 text-orange-700'
+                          : proximoVencDias <= limiares.atencao
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-green-100 text-green-700'
+                      }`}>
+                        <Clock size={10} /> Vence em {proximoVencDias}d
+                      </span>
+                    )}
                   </div>
                   <div className="font-bold text-gray-900 mt-2 truncate">{nome}</div>
                   {e.apelido && e.razao_social && <div className="text-sm text-gray-500 truncate">({e.apelido})</div>}
@@ -461,7 +495,7 @@ export default function EmpresasPage() {
                 if (resps.length === 0) return null;
                 return (
                   <div className="mt-3 pt-3 border-t border-gray-100">
-                    <div className="grid grid-cols-2 gap-1.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                       {resps.map((r) => {
                         const c = DEPT_COLORS[r.depIdx % 8];
                         return (

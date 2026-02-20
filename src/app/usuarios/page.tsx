@@ -1,29 +1,40 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Pencil, CheckCircle2, XCircle, X, Shield, User } from 'lucide-react';
+import { Plus, Trash2, Pencil, CheckCircle2, XCircle, X, Shield, User, Crown } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import ConfirmModal from '@/app/components/ConfirmModal';
-import type { Usuario } from '@/app/types';
+import type { Role, Usuario } from '@/app/types';
 
 export default function UsuariosPage() {
-  const { canManage, usuarios, departamentos, criarUsuario, atualizarUsuario, toggleUsuarioAtivo, removerUsuario, mostrarAlerta } = useSistema();
+  const { canAdmin, usuarios, departamentos, criarUsuario, atualizarUsuario, toggleUsuarioAtivo, removerUsuario, mostrarAlerta } = useSistema();
 
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
-  const [role, setRole] = useState<'gerente' | 'usuario'>('usuario');
+  const [role, setRole] = useState<Role>('usuario');
   const [depId, setDepId] = useState<string>('');
 
   const [editUser, setEditUser] = useState<Usuario | null>(null);
   const [editNome, setEditNome] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editSenha, setEditSenha] = useState('');
-  const [editRole, setEditRole] = useState<'gerente' | 'usuario'>('usuario');
+  const [editRole, setEditRole] = useState<Role>('usuario');
   const [editDepId, setEditDepId] = useState<string>('');
   const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<string | null>(null);
 
   const deps = useMemo(() => departamentos, [departamentos]);
+
+  const ROLE_ORDER: Record<string, number> = { admin: 0, gerente: 1, usuario: 2 };
+  const usuariosOrdenados = useMemo(() =>
+    [...usuarios].sort((a, b) => {
+      const ra = ROLE_ORDER[a.role] ?? 9;
+      const rb = ROLE_ORDER[b.role] ?? 9;
+      if (ra !== rb) return ra - rb;
+      return a.nome.localeCompare(b.nome, 'pt-BR');
+    }),
+    [usuarios]
+  );
 
   const openEditModal = (u: Usuario) => {
     setEditUser(u);
@@ -34,7 +45,7 @@ export default function UsuariosPage() {
     setEditDepId(u.departamentoId || '');
   };
 
-  const handleEditSave = () => {
+  const handleEditSave = async () => {
     if (!editUser) return;
     if (!editNome.trim() || !editEmail.trim()) {
       mostrarAlerta('Campos obrigatórios', 'Nome e email são obrigatórios.', 'aviso');
@@ -49,25 +60,29 @@ export default function UsuariosPage() {
     if (editSenha.trim()) {
       patch.senha = editSenha.trim();
     }
-    atualizarUsuario(editUser.id, patch);
-    setEditUser(null);
-    mostrarAlerta('Usuário atualizado', `${editNome.trim()} foi atualizado com sucesso.`, 'sucesso');
+    try {
+      await atualizarUsuario(editUser.id, patch);
+      setEditUser(null);
+      mostrarAlerta('Usuário atualizado', `${editNome.trim()} foi atualizado com sucesso.`, 'sucesso');
+    } catch (err: any) {
+      mostrarAlerta('Erro ao atualizar', err?.message || 'Não foi possível atualizar o usuário.', 'erro');
+    }
   };
 
-  if (!canManage) {
+  if (!canAdmin) {
     return (
       <div className="rounded-2xl bg-white p-6 shadow-sm">
         <div className="text-lg font-bold text-gray-900">Usuários</div>
-        <div className="mt-2 text-sm text-gray-600">Apenas gerentes têm acesso a esta área.</div>
+        <div className="mt-2 text-sm text-gray-600">Apenas administradores têm acesso a esta área.</div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl bg-white p-6 shadow-sm">
-        <div className="text-2xl font-bold text-gray-900">Gerenciar Usuários</div>
-        <div className="text-sm text-gray-500">Crie usuários, defina gerente/usuário e vincule ao departamento</div>
+      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+        <div className="text-xl sm:text-2xl font-bold text-gray-900">Gerenciar Usuários</div>
+        <div className="text-sm text-gray-500">Crie usuários, defina o cargo e vincule ao departamento</div>
 
         <div className="mt-6 rounded-2xl bg-cyan-50 p-5">
           <div className="font-bold text-cyan-900">Criar Novo Usuário</div>
@@ -82,45 +97,50 @@ export default function UsuariosPage() {
               <input value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-xl bg-white px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400" placeholder="email@empresa.com" />
             </Field>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Tipo">
-                <select value={role} onChange={(e) => setRole(e.target.value as any)} className="w-full rounded-xl bg-white px-4 py-3 text-gray-900">
+              <Field label="Cargo">
+                <select value={role} onChange={(e) => { setRole(e.target.value as Role); if (e.target.value === 'admin') setDepId(''); }} className="w-full rounded-xl bg-white px-4 py-3 text-gray-900">
                   <option value="usuario">Usuário</option>
-                  <option value="gerente">Administrador</option>
+                  <option value="gerente">Gerente</option>
+                  <option value="admin">Administrador</option>
                 </select>
               </Field>
-              <Field label="Departamento">
-                <select value={depId} onChange={(e) => setDepId(e.target.value)} className="w-full rounded-xl bg-white px-4 py-3 text-gray-900">
-                  <option value="">Selecione...</option>
-                  {deps.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.nome}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              {role !== 'admin' && (
+                <Field label="Departamento">
+                  <select value={depId} onChange={(e) => setDepId(e.target.value)} className="w-full rounded-xl bg-white px-4 py-3 text-gray-900">
+                    <option value="">Selecione...</option>
+                    {deps.map((d) => (
+                      <option key={d.id} value={d.id}>{d.nome}</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
             </div>
           </div>
 
           <button
-            onClick={() => {
+            onClick={async () => {
               if (!nome.trim() || !email.trim() || !senha.trim()) {
                 mostrarAlerta('Campos obrigatórios', 'Nome, email e senha são obrigatórios.', 'aviso');
                 return;
               }
-              criarUsuario({
-                nome: nome.trim(),
-                email: email.trim(),
-                senha,
-                role,
-                departamentoId: depId || null,
-                ativo: true,
-              });
-              setNome('');
-              setEmail('');
-              setSenha('');
-              setRole('usuario');
-              setDepId('');
-              mostrarAlerta('Usuário criado', 'Usuário criado com sucesso.', 'sucesso');
+              try {
+                await criarUsuario({
+                  nome: nome.trim(),
+                  email: email.trim(),
+                  senha,
+                  role,
+                  departamentoId: depId || null,
+                  ativo: true,
+                });
+                setNome('');
+                setEmail('');
+                setSenha('');
+                setRole('usuario');
+                setDepId('');
+                mostrarAlerta('Usuário criado', 'Usuário criado com sucesso.', 'sucesso');
+              } catch (err: any) {
+                mostrarAlerta('Erro ao criar usuário', err?.message || 'Não foi possível criar o usuário.', 'erro');
+              }
             }}
             className="mt-4 inline-flex items-center gap-2 w-full rounded-xl bg-gradient-to-r from-cyan-600 to-teal-500 text-white px-4 py-3 font-bold hover:from-cyan-700 hover:to-teal-600 shadow-md justify-center"
           >
@@ -130,21 +150,25 @@ export default function UsuariosPage() {
         </div>
       </div>
 
-      <div className="rounded-2xl bg-white p-6 shadow-sm">
-        <div className="text-lg font-bold text-gray-900">Usuários Cadastrados ({usuarios.length})</div>
+      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+        <div className="text-lg font-bold text-gray-900">Usuários Cadastrados ({usuariosOrdenados.length})</div>
 
         <div className="mt-4 space-y-3">
-          {usuarios.map((u) => (
+          {usuariosOrdenados.map((u) => (
             <div key={u.id} className="rounded-2xl bg-gray-50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 hover:shadow-sm transition-shadow">
               <div className="min-w-0 flex items-center gap-3">
-                <div className={'h-10 w-10 rounded-xl flex items-center justify-center ' + (u.role === 'gerente' ? 'bg-cyan-100' : 'bg-gray-200')}>
-                  {u.role === 'gerente' ? <Shield size={18} className="text-cyan-600" /> : <User size={18} className="text-gray-500" />}
+                <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${u.role === 'admin' ? 'bg-red-100' : u.role === 'gerente' ? 'bg-amber-100' : 'bg-gray-200'}`}>
+                  {u.role === 'admin'
+                    ? <Crown size={18} className="text-red-600" />
+                    : u.role === 'gerente'
+                      ? <Shield size={18} className="text-amber-600" />
+                      : <User size={18} className="text-gray-500" />}
                 </div>
                 <div className="min-w-0">
                   <div className="font-bold text-gray-900 truncate">{u.nome}</div>
                   <div className="text-sm text-gray-500 truncate">{u.email}</div>
                   <div className="text-xs text-gray-400 mt-0.5">
-                    {u.role === 'gerente' ? 'Administrador' : 'Usuário'}
+                    {u.role === 'admin' ? 'Administrador' : u.role === 'gerente' ? 'Gerente' : 'Usuário'}
                     {u.departamentoId ? ` · ${deps.find((d) => d.id === u.departamentoId)?.nome ?? ''}` : ''}
                   </div>
                 </div>
@@ -214,21 +238,24 @@ export default function UsuariosPage() {
                 <input type="password" value={editSenha} onChange={(e) => setEditSenha(e.target.value)} className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white" placeholder="Nova senha" />
               </Field>
 
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Tipo">
-                  <select value={editRole} onChange={(e) => setEditRole(e.target.value as any)} className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label="Cargo">
+                  <select value={editRole} onChange={(e) => { setEditRole(e.target.value as Role); if (e.target.value === 'admin') setEditDepId(''); }} className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900">
                     <option value="usuario">Usuário</option>
-                    <option value="gerente">Administrador</option>
+                    <option value="gerente">Gerente</option>
+                    <option value="admin">Administrador</option>
                   </select>
                 </Field>
-                <Field label="Departamento">
-                  <select value={editDepId} onChange={(e) => setEditDepId(e.target.value)} className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900">
-                    <option value="">Nenhum</option>
-                    {deps.map((d) => (
-                      <option key={d.id} value={d.id}>{d.nome}</option>
-                    ))}
-                  </select>
-                </Field>
+                {editRole !== 'admin' && (
+                  <Field label="Departamento">
+                    <select value={editDepId} onChange={(e) => setEditDepId(e.target.value)} className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900">
+                      <option value="">Nenhum</option>
+                      {deps.map((d) => (
+                        <option key={d.id} value={d.id}>{d.nome}</option>
+                      ))}
+                    </select>
+                  </Field>
+                )}
               </div>
 
               <div className="flex gap-3 pt-2">

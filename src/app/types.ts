@@ -1,6 +1,6 @@
 export type UUID = string;
 
-export type Role = 'gerente' | 'usuario';
+export type Role = 'admin' | 'gerente' | 'usuario';
 
 export interface Departamento {
   id: UUID;
@@ -22,11 +22,17 @@ export interface Usuario {
   atualizadoEm: string; // ISO
 }
 
+export type Visibilidade = 'publico' | 'departamento' | 'confidencial' | 'usuarios';
+
 export interface DocumentoEmpresa {
   id: UUID;
   nome: string;
-  validade: string; // ISO date (YYYY-MM-DD)
-  arquivoUrl?: string; // URL do arquivo no Supabase Storage
+  validade: string; // ISO date (YYYY-MM-DD) — pode ser vazio se sem validade
+  arquivoUrl?: string; // Caminho no Storage (ou URL legada)
+  departamentosIds: UUID[]; // Departamentos responsáveis pelo documento
+  visibilidade: Visibilidade;
+  criadoPorId?: UUID; // Quem fez o upload
+  usuariosPermitidos: UUID[]; // IDs de usuários que podem ver (quando visibilidade='usuarios')
   criadoEm: string; // ISO
   atualizadoEm: string; // ISO
 }
@@ -111,12 +117,13 @@ export type LogAction =
   | 'delete'
   | 'alert';
 
-export type LogEntity = 'empresa' | 'usuario' | 'departamento' | 'documento' | 'ret';
+export type LogEntity = 'empresa' | 'usuario' | 'departamento' | 'documento' | 'ret' | 'notificacao' | 'servico';
 
 export interface LogEntry {
   id: UUID;
   em: string; // ISO
   userId: UUID | null;
+  userNome?: string | null;
   action: LogAction;
   entity: LogEntity;
   entityId: UUID | null;
@@ -164,4 +171,18 @@ export interface Notificacao {
   criadoEm: string; // ISO
   autorId?: UUID | null;
   autorNome?: string;
+  empresaId?: UUID | null;
+  destinatarios?: UUID[];
 }
+
+export interface Limiares {
+  critico: number;
+  atencao: number;
+  proximo: number;
+}
+
+export const LIMIARES_DEFAULTS: Limiares = {
+  critico: 15,
+  atencao: 60,
+  proximo: 90,
+};

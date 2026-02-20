@@ -68,7 +68,7 @@ export default function AnalisesPage() {
       }
       if (filtroEstado && (e.estado || '') !== filtroEstado) return false;
       return true;
-    });
+    }).sort((a, b) => (a.razao_social || a.apelido || '').localeCompare(b.razao_social || b.apelido || ''));
   }, [empresas, filtroRegime, filtroTipo, filtroDep, filtroEstado]);
 
   const stats = useMemo(() => {
@@ -133,14 +133,14 @@ export default function AnalisesPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="rounded-2xl bg-white p-6 shadow-sm">
+      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-cyan-500 to-teal-600 flex items-center justify-center shadow-md">
               <BarChart3 className="text-white" size={22} />
             </div>
             <div>
-              <div className="text-2xl font-bold text-gray-900">Dashboard de Análises</div>
+              <div className="text-xl sm:text-2xl font-bold text-gray-900">Dashboard de Análises</div>
               <div className="text-sm text-gray-500">Gráficos e estatísticas • {filteredEmpresas.length} empresas</div>
             </div>
           </div>
@@ -189,55 +189,51 @@ export default function AnalisesPage() {
         <MiniCard label="Departamentos" value={stats.byDepartamento.length} gradient="from-rose-500 to-pink-500" icon={<Users size={20} />} />
       </div>
 
-      {/* Gráficos - Linha 1 */}
+      {/* Gráficos - Linha principal: Regime | Matriz/Filial | Estado | Departamento */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <Panel title="Regime Federal" icon={<PieChart size={16} />} color="text-blue-600">
+          {stats.byRegime.length === 0 ? <Empty /> : <DonutChart rows={stats.byRegime} compact />}
+        </Panel>
+
+        <Panel title="Matriz vs Filial" icon={<Building2 size={16} />} color="text-teal-600">
+          {stats.byTipo.length === 0 ? <Empty /> : <DonutChart rows={stats.byTipo} compact />}
+        </Panel>
+
+        <Panel title="Por Estado (UF)" icon={<MapPin size={16} />} color="text-teal-600">
+          {stats.byEstado.length === 0 ? <Empty /> : <HorizontalBars rows={stats.byEstado} />}
+        </Panel>
+
+        <Panel title="Por Departamento" icon={<Users size={16} />} color="text-rose-600">
+          {stats.byDepartamento.length === 0 ? <Empty /> : <Bars rows={stats.byDepartamento} />}
+        </Panel>
+      </div>
+
+      {/* Gráficos secundários */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Panel title="Empresas por Serviço" icon={<BarChart3 size={18} />} color="text-cyan-600">
           {stats.byServico.length === 0 ? <Empty /> : <Bars rows={stats.byServico} />}
         </Panel>
 
-        <Panel title="Empresas por Regime Federal" icon={<PieChart size={18} />} color="text-blue-600">
-          {stats.byRegime.length === 0 ? <Empty /> : <DonutChart rows={stats.byRegime} />}
-        </Panel>
-      </div>
-
-      {/* Gráficos - Linha 2 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Panel title="Matriz vs Filial" icon={<Building2 size={18} />} color="text-teal-600">
-          {stats.byTipo.length === 0 ? <Empty /> : <DonutChart rows={stats.byTipo} />}
-        </Panel>
-
-        <Panel title="Status dos Documentos" icon={<FileCheck size={18} />} color="text-emerald-600">
-          {stats.docStatus.length === 0 ? <Empty /> : <DonutChart rows={stats.docStatus} statusColors />}
-        </Panel>
-
-        <Panel title="Empresas por Departamento" icon={<Users size={18} />} color="text-rose-600">
-          {stats.byDepartamento.length === 0 ? <Empty /> : <Bars rows={stats.byDepartamento} />}
-        </Panel>
-      </div>
-
-      {/* Gráficos - Linha 3 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Panel title="Empresas por Estado (UF)" icon={<MapPin size={18} />} color="text-teal-600">
-          {stats.byEstado.length === 0 ? <Empty /> : <HorizontalBars rows={stats.byEstado} />}
-        </Panel>
-
-        <Panel title="Top Serviços (ranking)" icon={<TrendingUp size={18} />} color="text-amber-600">
-          {stats.byServico.length === 0 ? <Empty /> : <RankingList rows={stats.byServico.slice(0, 10)} />}
-        </Panel>
-      </div>
-
-      {/* Tipo de Inscrição */}
-      <div className="grid grid-cols-1 gap-6">
         <Panel title="Tipo de Inscrição" icon={<Briefcase size={18} />} color="text-teal-600">
           {stats.byInscricao.length === 0 ? <Empty /> : <HorizontalBars rows={stats.byInscricao} />}
         </Panel>
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Panel title="Top Serviços (ranking)" icon={<TrendingUp size={18} />} color="text-amber-600">
+          {stats.byServico.length === 0 ? <Empty /> : <RankingList rows={stats.byServico.slice(0, 10)} />}
+        </Panel>
+
+        <Panel title="Status dos Documentos" icon={<FileCheck size={18} />} color="text-emerald-600">
+          {stats.docStatus.length === 0 ? <Empty /> : <DonutChart rows={stats.docStatus} statusColors />}
+        </Panel>
+      </div>
+
       {/* Lista de Empresas Filtradas */}
-      <div className="rounded-2xl bg-white p-6 shadow-sm">
+      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
           <List size={18} className="text-blue-600" />
-          <div className="text-lg font-bold text-gray-900">
+          <div className="text-base sm:text-lg font-bold text-gray-900">
             Empresas {hasFilters ? 'filtradas' : ''} ({filteredEmpresas.length})
           </div>
         </div>
@@ -246,67 +242,115 @@ export default function AnalisesPage() {
             Nenhuma empresa encontrada com os filtros atuais.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-100 text-gray-700">
-                  <th className="text-left px-4 py-2.5 rounded-tl-xl font-bold">Código</th>
-                  <th className="text-left px-4 py-2.5 font-bold">Empresa</th>
-                  <th className="text-left px-4 py-2.5 font-bold">CNPJ/CPF</th>
-                  <th className="text-left px-4 py-2.5 font-bold">Tipo</th>
-                  <th className="text-left px-4 py-2.5 font-bold">Regime</th>
-                  <th className="text-left px-4 py-2.5 font-bold">Estado</th>
-                  <th className="text-center px-4 py-2.5 font-bold">Docs</th>
-                  <th className="text-center px-4 py-2.5 font-bold">RETs</th>
-                  <th className="text-center px-4 py-2.5 rounded-tr-xl font-bold">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredEmpresas.map((emp) => {
-                  const nome = emp.razao_social || emp.apelido || '-';
-                  const digits = (emp.cnpj || '').replace(/\D/g, '');
-                  const tipo = (() => {
-                    if (digits.length === 11) return { label: 'CPF', cls: 'bg-sky-100 text-sky-700' };
-                    const computed = detectTipoEstabelecimento(emp.cnpj || '');
-                    const effective = computed || emp.tipoEstabelecimento;
-                    if (effective === 'matriz') return { label: 'Matriz', cls: 'bg-teal-100 text-teal-700' };
-                    if (effective === 'filial') return { label: 'Filial', cls: 'bg-teal-100 text-teal-700' };
-                    const tipoIns = getTipoInscricaoDisplay(emp.cnpj, emp.tipoInscricao);
-                    if (tipoIns && tipoIns !== 'CNPJ') return { label: tipoIns, cls: 'bg-gray-100 text-gray-600' };
-                    return { label: 'CNPJ', cls: 'bg-gray-100 text-gray-600' };
-                  })();
-                  const docFormatted = emp.cnpj ? formatarDocumento(emp.cnpj, detectTipoInscricao(emp.cnpj) || emp.tipoInscricao || '') : '-';
-                  return (
-                    <tr key={emp.id} className="border-b border-gray-50 hover:bg-gray-50 transition">
-                      <td className="px-4 py-3">
-                        <span className="rounded-md bg-gradient-to-r from-teal-500 to-cyan-500 text-white px-2 py-0.5 text-xs font-bold">
+          <>
+            {/* Desktop table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-100 text-gray-700">
+                    <th className="text-left px-4 py-2.5 rounded-tl-xl font-bold">Código</th>
+                    <th className="text-left px-4 py-2.5 font-bold">Empresa</th>
+                    <th className="text-left px-4 py-2.5 font-bold">CNPJ/CPF</th>
+                    <th className="text-left px-4 py-2.5 font-bold">Tipo</th>
+                    <th className="text-left px-4 py-2.5 font-bold">Regime</th>
+                    <th className="text-left px-4 py-2.5 font-bold">Estado</th>
+                    <th className="text-center px-4 py-2.5 font-bold">Docs</th>
+                    <th className="text-center px-4 py-2.5 font-bold">RETs</th>
+                    <th className="text-center px-4 py-2.5 rounded-tr-xl font-bold">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredEmpresas.map((emp) => {
+                    const nome = emp.razao_social || emp.apelido || '-';
+                    const digits = (emp.cnpj || '').replace(/\D/g, '');
+                    const tipo = (() => {
+                      if (digits.length === 11) return { label: 'CPF', cls: 'bg-sky-100 text-sky-700' };
+                      const computed = detectTipoEstabelecimento(emp.cnpj || '');
+                      const effective = computed || emp.tipoEstabelecimento;
+                      if (effective === 'matriz') return { label: 'Matriz', cls: 'bg-teal-100 text-teal-700' };
+                      if (effective === 'filial') return { label: 'Filial', cls: 'bg-teal-100 text-teal-700' };
+                      const tipoIns = getTipoInscricaoDisplay(emp.cnpj, emp.tipoInscricao);
+                      if (tipoIns && tipoIns !== 'CNPJ') return { label: tipoIns, cls: 'bg-gray-100 text-gray-600' };
+                      return { label: 'CNPJ', cls: 'bg-gray-100 text-gray-600' };
+                    })();
+                    const docFormatted = emp.cnpj ? formatarDocumento(emp.cnpj, detectTipoInscricao(emp.cnpj) || emp.tipoInscricao || '') : '-';
+                    return (
+                      <tr key={emp.id} className="border-b border-gray-50 hover:bg-gray-50 transition">
+                        <td className="px-4 py-3">
+                          <span className="rounded-md bg-gradient-to-r from-teal-500 to-cyan-500 text-white px-2 py-0.5 text-xs font-bold">
+                            {emp.codigo}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-gray-900 truncate max-w-[200px]">{nome}</td>
+                        <td className="px-4 py-3 text-gray-700 font-mono text-xs">{docFormatted}</td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase ${tipo.cls}`}>{tipo.label}</span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-700">{emp.regime_federal || '-'}</td>
+                        <td className="px-4 py-3 text-gray-700">{emp.estado || '-'}</td>
+                        <td className="px-4 py-3 text-center font-bold text-gray-700">{emp.documentos.length}</td>
+                        <td className="px-4 py-3 text-center font-bold text-gray-700">{emp.rets.length}</td>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            onClick={() => setEmpresaView(emp)}
+                            className="rounded-lg p-1.5 hover:bg-blue-50 transition"
+                            title="Ver detalhes"
+                          >
+                            <Eye size={16} className="text-blue-500" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="md:hidden divide-y divide-gray-100">
+              {filteredEmpresas.map((emp) => {
+                const nome = emp.razao_social || emp.apelido || '-';
+                const digits = (emp.cnpj || '').replace(/\D/g, '');
+                const tipo = (() => {
+                  if (digits.length === 11) return { label: 'CPF', cls: 'bg-sky-100 text-sky-700' };
+                  const computed = detectTipoEstabelecimento(emp.cnpj || '');
+                  const effective = computed || emp.tipoEstabelecimento;
+                  if (effective === 'matriz') return { label: 'Matriz', cls: 'bg-teal-100 text-teal-700' };
+                  if (effective === 'filial') return { label: 'Filial', cls: 'bg-teal-100 text-teal-700' };
+                  const tipoIns = getTipoInscricaoDisplay(emp.cnpj, emp.tipoInscricao);
+                  if (tipoIns && tipoIns !== 'CNPJ') return { label: tipoIns, cls: 'bg-gray-100 text-gray-600' };
+                  return { label: 'CNPJ', cls: 'bg-gray-100 text-gray-600' };
+                })();
+                const docFormatted = emp.cnpj ? formatarDocumento(emp.cnpj, detectTipoInscricao(emp.cnpj) || emp.tipoInscricao || '') : '-';
+                return (
+                  <div key={emp.id} className="p-3 hover:bg-gray-50 transition">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="rounded-md bg-gradient-to-r from-teal-500 to-cyan-500 text-white px-2 py-0.5 text-xs font-bold shrink-0">
                           {emp.codigo}
                         </span>
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-gray-900 truncate max-w-[200px]">{nome}</td>
-                      <td className="px-4 py-3 text-gray-700 font-mono text-xs">{docFormatted}</td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase ${tipo.cls}`}>{tipo.label}</span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">{emp.regime_federal || '-'}</td>
-                      <td className="px-4 py-3 text-gray-700">{emp.estado || '-'}</td>
-                      <td className="px-4 py-3 text-center font-bold text-gray-700">{emp.documentos.length}</td>
-                      <td className="px-4 py-3 text-center font-bold text-gray-700">{emp.rets.length}</td>
-                      <td className="px-4 py-3 text-center">
-                        <button
-                          onClick={() => setEmpresaView(emp)}
-                          className="rounded-lg p-1.5 hover:bg-blue-50 transition"
-                          title="Ver detalhes"
-                        >
-                          <Eye size={16} className="text-blue-500" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase shrink-0 ${tipo.cls}`}>{tipo.label}</span>
+                        <span className="font-semibold text-gray-900 truncate text-sm">{nome}</span>
+                      </div>
+                      <button
+                        onClick={() => setEmpresaView(emp)}
+                        className="rounded-lg p-1.5 hover:bg-blue-50 transition shrink-0"
+                        title="Ver detalhes"
+                      >
+                        <Eye size={16} className="text-blue-500" />
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-gray-600">
+                      <span className="font-mono">{docFormatted}</span>
+                      <span>{emp.regime_federal || '-'}</span>
+                      <span>{emp.estado || '-'}</span>
+                      <span className="ml-auto font-bold text-gray-700">{emp.documentos.length} docs / {emp.rets.length} RETs</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 
@@ -335,10 +379,10 @@ function MiniCard({ label, value, gradient, icon }: { label: string; value: numb
 
 function Panel({ title, icon, color, children }: { title: string; icon?: React.ReactNode; color?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl bg-white p-6 shadow-sm">
+    <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
       <div className="flex items-center gap-2 mb-4">
         {icon && <span className={color || 'text-cyan-600'}>{icon}</span>}
-        <div className="text-lg font-bold text-gray-900">{title}</div>
+        <div className="text-base sm:text-lg font-bold text-gray-900">{title}</div>
       </div>
       {children}
     </div>
@@ -388,7 +432,7 @@ function HorizontalBars({ rows }: { rows: Array<[string, number]> }) {
   );
 }
 
-function DonutChart({ rows, statusColors }: { rows: Array<[string, number]>; statusColors?: boolean }) {
+function DonutChart({ rows, statusColors, compact }: { rows: Array<[string, number]>; statusColors?: boolean; compact?: boolean }) {
   const total = rows.reduce((a, [, n]) => a + n, 0);
   if (total === 0) return <Empty />;
 
@@ -407,8 +451,41 @@ function DonutChart({ rows, statusColors }: { rows: Array<[string, number]>; sta
     return { label, n, percent, offset, color };
   });
 
-  const radius = 60;
+  const radius = compact ? 44 : 60;
+  const size = compact ? 110 : 150;
+  const strokeWidth = compact ? 18 : 24;
   const circumference = 2 * Math.PI * radius;
+
+  if (compact) {
+    return (
+      <div className="flex flex-col items-center gap-3">
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+          {segments.map((s, i) => (
+            <circle
+              key={i}
+              cx={size / 2} cy={size / 2} r={radius}
+              fill="none" stroke={s.color} strokeWidth={strokeWidth}
+              strokeDasharray={`${s.percent * circumference} ${circumference}`}
+              strokeDashoffset={-s.offset * circumference}
+              transform={`rotate(-90 ${size / 2} ${size / 2})`}
+            />
+          ))}
+          <text x={size / 2} y={size / 2} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="16" fontWeight="bold">
+            {total}
+          </text>
+        </svg>
+        <div className="w-full space-y-1">
+          {segments.map((s) => (
+            <div key={s.label} className="flex items-center gap-1.5">
+              <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+              <div className="text-xs text-gray-700 truncate flex-1">{s.label}</div>
+              <div className="text-xs font-bold text-gray-600 whitespace-nowrap">{s.n} <span className="text-gray-400 font-normal">({Math.round(s.percent * 100)}%)</span></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
@@ -417,12 +494,8 @@ function DonutChart({ rows, statusColors }: { rows: Array<[string, number]>; sta
           {segments.map((s, i) => (
             <circle
               key={i}
-              cx="75"
-              cy="75"
-              r={radius}
-              fill="none"
-              stroke={s.color}
-              strokeWidth="24"
+              cx="75" cy="75" r={radius}
+              fill="none" stroke={s.color} strokeWidth="24"
               strokeDasharray={`${s.percent * circumference} ${circumference}`}
               strokeDashoffset={-s.offset * circumference}
               transform="rotate(-90 75 75)"

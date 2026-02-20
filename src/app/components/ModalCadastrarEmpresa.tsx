@@ -18,16 +18,16 @@ function newId(): UUID {
   return `id_${Math.random().toString(16).slice(2)}_${Date.now()}`;
 }
 
-/** Formata número do RET no padrão XX.XXXXXXXX-XX */
+/** Formata número do RET no padrão XX.XXXXXXXXX-XX (13 dígitos) */
 function formatRetNumber(value: string): string {
-  const digits = value.replace(/\D/g, '').slice(0, 12);
+  const digits = value.replace(/\D/g, '').slice(0, 13);
   if (digits.length <= 2) return digits;
-  if (digits.length <= 10) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}.${digits.slice(2, 10)}-${digits.slice(10)}`;
+  if (digits.length <= 11) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 11)}-${digits.slice(11)}`;
 }
 
 export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastrarEmpresaProps) {
-  const { criarEmpresa, atualizarEmpresa, mostrarAlerta, departamentos, usuarios, servicos: servicosCadastrados, criarServico } = useSistema();
+  const { empresas, criarEmpresa, atualizarEmpresa, mostrarAlerta, departamentos, usuarios, servicos: servicosCadastrados, criarServico, canManage } = useSistema();
 
   const [empresaCadastrada, setEmpresaCadastrada] = useState(empresa ? empresa.cadastrada !== false : false);
 
@@ -274,7 +274,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
         if (!r.numeroPta?.trim()) novosErros[`ret_${idx}_numeroPta`] = 'Número do PTA é obrigatório';
         if (!r.nome?.trim()) novosErros[`ret_${idx}_nome`] = 'Nome do RET é obrigatório';
         if (!r.vencimento) novosErros[`ret_${idx}_vencimento`] = 'Vencimento é obrigatório';
-        if (!r.ultimaRenovacao) novosErros[`ret_${idx}_ultimaRenovacao`] = 'Última renovação é obrigatória';
+        // ultimaRenovacao is optional
       });
     }
 
@@ -286,18 +286,38 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
       return;
     }
 
+    // Validação de duplicatas (código, CNPJ)
+    const outrasEmpresas = empresas.filter((e) => e.id !== empresa?.id);
+    const codigoDuplicado = outrasEmpresas.find((e) => e.codigo.trim().toLowerCase() === (formData.codigo || '').trim().toLowerCase());
+    if (codigoDuplicado) {
+      novosErros.codigo = `Já existe uma empresa com o código "${codigoDuplicado.codigo}"`;
+      setErros({ ...novosErros });
+      void mostrarAlerta('Código duplicado', `Já existe uma empresa cadastrada com o código "${codigoDuplicado.codigo}".`, 'aviso');
+      return;
+    }
+
     const cnpjDigits2 = String(formData.cnpj || '').replace(/\D/g, '');
+    if (cnpjDigits2.length >= 11) {
+      const cnpjDuplicado = outrasEmpresas.find((e) => (e.cnpj || '').replace(/\D/g, '') === cnpjDigits2);
+      if (cnpjDuplicado) {
+        novosErros.cnpj = `Já existe uma empresa com esse CPF/CNPJ`;
+        setErros({ ...novosErros });
+        void mostrarAlerta('CPF/CNPJ duplicado', `Já existe uma empresa cadastrada com esse CPF/CNPJ (${cnpjDuplicado.codigo} - ${cnpjDuplicado.razao_social || cnpjDuplicado.apelido || ''}).`, 'aviso');
+        return;
+      }
+    }
     const temCnpjValido = cnpjDigits2.length === 14;
     const cadastrada = empresaCadastrada ? temCnpjValido : temCnpjValido;
 
+    const { responsaveis: _respForm, ...formDataSemResp } = formData;
     const dadosParaSalvar: Partial<Empresa> = {
-      ...formData,
+      ...formDataSemResp,
       cnpj: formData.cnpj ? String(formData.cnpj) : undefined,
       cadastrada,
       servicos: (formData.servicos ?? []).filter(Boolean),
       possuiRet: Boolean(formData.possuiRet) && (formData.rets ?? []).length > 0,
       rets: Boolean(formData.possuiRet) ? (formData.rets ?? []) : [],
-      responsaveis: formData.responsaveis ?? {},
+      ...(canManage ? { responsaveis: formData.responsaveis ?? {} } : {}),
     };
 
     if (empresa?.id) {
@@ -338,6 +358,9 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
               e.preventDefault();
               (e.currentTarget as HTMLFormElement).requestSubmit();
+            }
+            if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+              e.preventDefault();
             }
           }}
         >
@@ -605,20 +628,21 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                         <label className="block text-sm font-semibold text-gray-700 mb-2">Número do PTA *</label>
                         <input
                           value={formatRetNumber(r.numeroPta)}
-                          onChange={(e) => updateRet(r.id, { numeroPta: e.target.value.replace(/\D/g, '').slice(0, 12) })}
+                          onChange={(e) => updateRet(r.id, { numeroPta: e.target.value.replace(/\D/g, '').slice(0, 13) })}
                           className={`w-full rounded-xl border px-4 py-3 ${erros[`ret_${idx}_numeroPta`] ? 'border-red-500' : 'border-gray-300'}`}
-                          placeholder="Ex.: 01.00012345-67"
+                          placeholder="Ex.: 01.000123456-78"
                         />
                         {erros[`ret_${idx}_numeroPta`] && <div className="text-sm text-red-500 mt-1">{erros[`ret_${idx}_numeroPta`]}</div>}
                       </div>
 
                       <div>
                         <label className="block text-sm font-semibold text-gray-700 mb-2">Nome *</label>
-                        <input
+                        <textarea
                           value={r.nome}
                           onChange={(e) => updateRet(r.id, { nome: e.target.value })}
-                          className={`w-full rounded-xl border px-4 py-3 ${erros[`ret_${idx}_nome`] ? 'border-red-500' : 'border-gray-300'}`}
+                          className={`w-full rounded-xl border px-4 py-3 resize-none ${erros[`ret_${idx}_nome`] ? 'border-red-500' : 'border-gray-300'}`}
                           placeholder="Ex.: RET X"
+                          rows={2}
                         />
                         {erros[`ret_${idx}_nome`] && <div className="text-sm text-red-500 mt-1">{erros[`ret_${idx}_nome`]}</div>}
                       </div>
@@ -635,7 +659,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                       </div>
 
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Última data de renovação *</label>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Última data de renovação</label>
                         <input
                           type="date"
                           value={r.ultimaRenovacao}
@@ -661,6 +685,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
           </div>
 
           {/* Responsáveis */}
+          {canManage && (
           <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
             <h4 className="font-semibold text-gray-800 mb-4">Responsáveis por Departamento</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -693,6 +718,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
               })}
             </div>
           </div>
+          )}
 
           {/* Inscrições e Regimes */}
           <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
