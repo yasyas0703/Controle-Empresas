@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   Departamento,
   DocumentoEmpresa,
@@ -42,11 +42,15 @@ interface SistemaContextValue extends SistemaState {
   currentUser: Usuario | null;
   canManage: boolean;
   canAdmin: boolean;
+  isGhost: boolean;
+  isDeveloper: boolean;
+  isPrivileged: boolean;
+  protectedUserIds: string[];
   loading: boolean;
   authReady: boolean;
   reloadData: () => Promise<void>;
 
-  login: (email: string, senha: string) => Promise<boolean>;
+  login: (email: string, senha: string) => Promise<boolean | 'rate_limited'>;
   logout: () => void;
 
   mostrarAlerta: (title: string, message: string, type: AlertType) => void;
@@ -114,6 +118,8 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   });
   const [loading, setLoading] = useState(true);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [privileges, setPrivileges] = useState({ isGhost: false, isDeveloper: false, isPrivileged: false, protectedUserIds: [] as string[] });
+  const loginAttemptsRef = useRef<number[]>([]);
 
   const [authReady, setAuthReady] = useState(false);
 
@@ -195,9 +201,16 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       }
       // Admin: sem filtro (todas)
 
+      // Garante que o próprio usuário logado sempre esteja na lista,
+      // mesmo que seja filtrado da lista pública (ex: ghost user).
+      const usuariosComMe =
+        me && !usuarios.some((u) => u.id === userId)
+          ? [me, ...usuarios]
+          : usuarios;
+
       setState((prev) => ({
         empresas,
-        usuarios,
+        usuarios: usuariosComMe,
         departamentos,
         servicos,
         logs,
@@ -205,6 +218,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         notificacoes: notifsFiltradas,
         currentUserId: userId,
       }));
+      return me;
     },
     []
   );
@@ -218,6 +232,56 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       console.error('Erro ao carregar dados:', err);
     }
   }, [loadForUser, state.currentUserId]);
+
+  // ── Realtime: sincroniza automaticamente quando outro usuário faz mudanças ──
+  useEffect(() => {
+    if (!state.currentUserId) return;
+
+    const userId = state.currentUserId;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleReload = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadForUser(userId as UUID).catch(console.error);
+      }, 1500);
+    };
+
+    const tables = [
+      'empresas', 'documentos', 'observacoes', 'rets', 'responsaveis',
+      'usuarios', 'departamentos', 'servicos',
+      'notificacoes', 'lixeira', 'logs',
+    ];
+
+    let channel = supabase.channel(`app-realtime-${userId}`);
+    for (const table of tables) {
+      channel = channel.on(
+        'postgres_changes' as any,
+        { event: '*', schema: 'public', table },
+        scheduleReload
+      );
+    }
+    channel.subscribe();
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      supabase.removeChannel(channel);
+    };
+  }, [state.currentUserId, loadForUser]);
+
+  const fetchPrivileges = useCallback(async (token: string) => {
+    try {
+      const res = await fetch('/api/me/privileges', {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setPrivileges({ isGhost: !!json.isGhost, isDeveloper: !!json.isDeveloper, isPrivileged: !!json.isPrivileged, protectedUserIds: Array.isArray(json.protectedUserIds) ? json.protectedUserIds : [] });
+      }
+    } catch {
+      setPrivileges({ isGhost: false, isDeveloper: false, isPrivileged: false, protectedUserIds: [] });
+    }
+  }, []);
 
   // Auth + initial load
   useEffect(() => {
@@ -233,9 +297,13 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         if (userId) {
           setLoading(true);
           initialLoadDone = true;
-          await loadForUser(userId as UUID).catch((err) => console.error(err));
+          await Promise.all([
+            loadForUser(userId as UUID).catch((err) => console.error(err)),
+            fetchPrivileges(data.session!.access_token),
+          ]);
         } else {
           setState((prev) => ({ ...prev, currentUserId: null }));
+          setPrivileges({ isGhost: false, isDeveloper: false, isPrivileged: false, protectedUserIds: [] });
         }
       })
       .finally(() => {
@@ -251,7 +319,10 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       const userId = session?.user?.id ?? null;
       if (userId) {
         setLoading(true);
-        loadForUser(userId as UUID)
+        Promise.all([
+          loadForUser(userId as UUID),
+          fetchPrivileges(session!.access_token),
+        ])
           .catch((err) => console.error(err))
           .finally(() => setLoading(false));
       } else {
@@ -266,6 +337,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
           lixeira: [],
           notificacoes: [],
         }));
+        setPrivileges({ isGhost: false, isDeveloper: false, isPrivileged: false, protectedUserIds: [] });
       }
     });
 
@@ -273,7 +345,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       data.subscription.unsubscribe();
     };
-  }, [loadForUser]);
+  }, [loadForUser, fetchPrivileges]);
 
   const currentUser = useMemo(
     () => state.usuarios.find((u) => u.id === state.currentUserId) ?? null,
@@ -283,11 +355,13 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   const canManage = currentUser?.role === 'gerente' || currentUser?.role === 'admin';
   const canAdmin = currentUser?.role === 'admin';
 
-  const pushLog = async (entry: Omit<LogEntry, 'id' | 'em' | 'userId' | 'userNome'> & { diff?: LogEntry['diff'] }) => {
+  const pushLog = async (entry: Omit<LogEntry, 'id' | 'em' | 'userId' | 'userNome'> & { diff?: LogEntry['diff'] }, nomeOverride?: string | null, userIdOverride?: string | null) => {
+    const resolvedUserId = userIdOverride ?? state.currentUserId;
+    if (privileges.isGhost) return;
     try {
       const newLog = await db.insertLog({
-        userId: state.currentUserId,
-        userNome: currentUser?.nome ?? null,
+        userId: resolvedUserId,
+        userNome: nomeOverride !== undefined ? nomeOverride : (currentUser?.nome ?? null),
         ...entry,
       });
       setState((prev) => ({
@@ -354,20 +428,39 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
   // ── Auth ──
 
-  const login = async (email: string, senha: string) => {
+  const login = async (email: string, senha: string): Promise<boolean | 'rate_limited'> => {
+    const now = Date.now();
+    const WINDOW_MS = 3 * 60 * 1000; // 3 minutos
+    const MAX_ATTEMPTS = 5;
+
+    // Limpar tentativas antigas (fora da janela)
+    loginAttemptsRef.current = loginAttemptsRef.current.filter((t) => now - t < WINDOW_MS);
+
+    if (loginAttemptsRef.current.length >= MAX_ATTEMPTS) {
+      return 'rate_limited';
+    }
+
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha });
-    if (error || !data.session?.user) return false;
+    if (error || !data.session?.user) {
+      loginAttemptsRef.current.push(now);
+      return false;
+    }
+
+    // Login bem-sucedido — limpar tentativas
+    loginAttemptsRef.current = [];
+
     const userId = data.session.user.id;
     setLoading(true);
+    let me: { nome?: string } | null = null;
     try {
-      await loadForUser(userId as UUID);
+      me = await loadForUser(userId as UUID);
     } catch (err: any) {
       console.error(err);
       mostrarAlerta('Erro ao carregar dados', err?.message || 'Falha ao carregar dados do sistema após login.', 'erro');
     } finally {
       setLoading(false);
     }
-    await pushLog({ action: 'login', entity: 'usuario', entityId: userId, message: `Login` });
+    await pushLog({ action: 'login', entity: 'usuario', entityId: userId, message: `Login` }, me?.nome ?? null, userId);
     return true;
   };
 
@@ -758,8 +851,10 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
           mostrarAlerta('Erro no upload', uploadErr?.message || 'Não foi possível enviar o arquivo.', 'erro');
         }
       }
+      const empresa = state.empresas.find((e) => e.id === empresaId);
+      const doc = empresa?.documentos.find((d) => d.id === docId);
       await db.updateDocumento(docId, finalPatch);
-      await pushLog({ action: 'update', entity: 'documento', entityId: docId, message: `Atualizou documento` });
+      await pushLog({ action: 'update', entity: 'documento', entityId: docId, message: `Atualizou documento: ${doc?.nome ?? docId} (empresa ${empresa?.codigo ?? empresaId})` });
       setState((prev) => ({
         ...prev,
         empresas: prev.empresas.map((e) =>
@@ -939,6 +1034,10 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     currentUser,
     canManage,
     canAdmin,
+    isGhost: privileges.isGhost,
+    isDeveloper: privileges.isDeveloper,
+    isPrivileged: privileges.isPrivileged,
+    protectedUserIds: privileges.protectedUserIds,
     loading,
     authReady,
     reloadData,

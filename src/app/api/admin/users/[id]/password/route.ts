@@ -58,6 +58,26 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const { id } = await ctx.params;
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
+  // Conta protegida: somente a própria desenvolvedora pode alterar sua senha
+  const devId = process.env.DEVELOPER_USER_ID;
+  if (devId && id === devId && authz.callerId !== devId) {
+    return NextResponse.json({ error: 'Não foi possível alterar a senha.' }, { status: 403 });
+  }
+
+  // Conta ghost: somente o ghost e a desenvolvedora podem alterar a senha do ghost
+  const ghostId = process.env.GHOST_USER_ID;
+  if (ghostId && id === ghostId && authz.callerId !== ghostId && (!devId || authz.callerId !== devId)) {
+    return NextResponse.json({ error: 'Não foi possível alterar a senha.' }, { status: 403 });
+  }
+
+  const admin = getSupabaseAdmin();
+
+  // Admins não podem alterar senha de outro admin — exceto a desenvolvedora e o ghost
+  const { data: targetProfile } = await admin.from('usuarios').select('role').eq('id', id).maybeSingle();
+  if (targetProfile?.role === 'admin' && authz.callerId !== id && (!devId || authz.callerId !== devId) && (!ghostId || authz.callerId !== ghostId)) {
+    return NextResponse.json({ error: 'Não foi possível alterar a senha.' }, { status: 403 });
+  }
+
   let body: { senha: string };
   try {
     body = (await req.json()) as { senha: string };
@@ -72,7 +92,6 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: 'A senha deve ter no mínimo 8 caracteres.' }, { status: 400 });
   }
 
-  const admin = getSupabaseAdmin();
   const { error } = await admin.auth.admin.updateUserById(id, { password: senha });
   if (error) return NextResponse.json({ error: 'Não foi possível alterar a senha.' }, { status: 400 });
 

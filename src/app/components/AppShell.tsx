@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import React, { useMemo, useState, useEffect } from 'react';
-import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X } from 'lucide-react';
+import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil } from '@/app/utils/date';
 import AutoBackup from '@/app/components/AutoBackup';
@@ -13,6 +13,7 @@ const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/vencimentos', label: 'Vencimentos', icon: AlertTriangle, badge: true },
   { href: '/calendario', label: 'Calendário', icon: CalendarDays },
+  { href: '/dev', label: 'Controle', icon: Terminal, ghostOnly: true },
   { href: '/empresas', label: 'Empresas', icon: Building2 },
   { href: '/servicos', label: 'Serviços', icon: Briefcase },
   { href: '/usuarios', label: 'Usuários', icon: Users },
@@ -25,13 +26,28 @@ const nav = [
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { currentUser, canManage, canAdmin, logout, login, mostrarAlerta, empresas, notificacoes, marcarNotificacaoLida, marcarTodasLidas, limparNotificacoes, lixeira, loading, authReady } = useSistema();
+  const { currentUser, canManage, canAdmin, isGhost, isPrivileged, logout, login, mostrarAlerta, empresas, notificacoes, marcarNotificacaoLida, marcarTodasLidas, limparNotificacoes, lixeira, loading, authReady } = useSistema();
   const [showLogin, setShowLogin] = useState(false);
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [showNotifs, setShowNotifs] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [manutencao, setManutencao] = useState(false);
+
+  // isGhost e isPrivileged vêm do contexto (validados no servidor)
+
+  useEffect(() => {
+    const check = () => {
+      fetch('/api/admin/manutencao')
+        .then((r) => r.json())
+        .then((d) => setManutencao(!!d.ativo))
+        .catch(() => {});
+    };
+    check();
+    const interval = setInterval(check, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Persiste estado da sidebar (desktop only)
   useEffect(() => {
@@ -75,13 +91,35 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const lixeiraCount = (lixeira ?? []).length;
 
   const handleLogin = async () => {
-    const ok = await login(email, senha);
-    if (!ok) {
+    const result = await login(email, senha);
+    if (result === 'rate_limited') {
+      mostrarAlerta('Muitas tentativas', 'Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente.', 'aviso');
+      return;
+    }
+    if (!result) {
       mostrarAlerta('Login inválido', 'Verifique email/senha e tente novamente.', 'erro');
       return;
     }
     setShowLogin(false);
   };
+
+  // Tela de manutenção — bloqueia quem está logado mas não é privilegiado
+  // (usuários não logados ainda veem o login para que o ghost possa entrar)
+  if (manutencao && authReady && currentUser && !isPrivileged) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+        <div className="text-center max-w-md">
+          <div className="h-16 w-16 mx-auto mb-6 rounded-2xl bg-amber-100 flex items-center justify-center">
+            <WrenchIcon size={32} className="text-amber-600" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Sistema em Manutenção</h1>
+          <p className="text-gray-500 text-sm">
+            O sistema está temporariamente indisponível para manutenção. Por favor, tente novamente em breve.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (!authReady) {
     return (
@@ -96,7 +134,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const navItems = nav.filter((i) => {
+  const navItems = nav.filter((i: any) => {
+    if (i.ghostOnly) return isGhost;
     if (i.href === '/usuarios' || i.href === '/backup' || i.href === '/historico') return canAdmin;
     if (['/departamentos', '/servicos', '/lixeira'].includes(i.href)) return canManage;
     return true;

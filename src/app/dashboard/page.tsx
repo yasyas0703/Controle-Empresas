@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { AlertTriangle, CalendarClock, FileText, Building2, Clock, Search, MapPin, Briefcase, Eye, Pencil, Trash2, Plus } from 'lucide-react';
+import React, { useMemo, useState, useCallback } from 'react';
+import { AlertTriangle, CalendarClock, FileText, Building2, Clock, Search, MapPin, Briefcase, Eye, Pencil, Trash2, CheckSquare, Square, FileDown, X, ArrowUpDown } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR, isWithinDays } from '@/app/utils/date';
 import { detectTipoEstabelecimento, formatarDocumento, getTipoInscricaoDisplay } from '@/app/utils/validation';
@@ -11,6 +11,7 @@ import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import ConfirmModal from '@/app/components/ConfirmModal';
+import { exportEmpresasPdf } from '@/lib/exportPdf';
 
 function canEditEmpresa(currentUserId: UUID | null, canManage: boolean, empresa: Empresa): boolean {
   if (canManage) return true;
@@ -41,6 +42,11 @@ export default function DashboardPage() {
   const [regimeFederal, setRegimeFederal] = useState('');
   const [servico, setServico] = useState('');
   const [estado, setEstado] = useState('');
+  const [cadastrada, setCadastrada] = useState('');
+  const [statusVenc, setStatusVenc] = useState('');
+  const [sortBy, setSortBy] = useState<'alpha' | 'vencidos' | 'proximo' | 'recente'>('alpha');
+  const [selecionando, setSelecionando] = useState(false);
+  const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
 
   const [empresaEdit, setEmpresaEdit] = useState<Empresa | null>(null);
   const [empresaView, setEmpresaView] = useState<Empresa | null>(null);
@@ -91,17 +97,52 @@ export default function DashboardPage() {
         if (regimeFederal && (e.regime_federal || '') !== regimeFederal) return false;
         if (estado && (e.estado || '') !== estado) return false;
         if (servico && !(e.servicos || []).includes(servico)) return false;
+        if (cadastrada === 'sim' && !e.cadastrada) return false;
+        if (cadastrada === 'nao' && e.cadastrada) return false;
         if (depId) {
-          const resp = (e.responsaveis || {})[depId] || '';
+          const resp = (e.responsaveis || {})[depId];
+          if (!resp) return false;
           if (responsavelId && resp !== responsavelId) return false;
         } else if (responsavelId) {
           const anyResp = Object.values(e.responsaveis || {}).some((uid) => uid === responsavelId);
           if (!anyResp) return false;
         }
+        if (statusVenc) {
+          const allItems = [
+            ...e.documentos.map((d) => d.validade),
+            ...e.rets.map((r) => r.vencimento),
+          ];
+          const temVencido = allItems.some((v) => { const d = daysUntil(v); return d !== null && d < 0; });
+          const temRisco = allItems.some((v) => { const d = daysUntil(v); return d !== null && d >= 0 && d <= limiares.atencao; });
+          if (statusVenc === 'vencidos' && !temVencido) return false;
+          if (statusVenc === 'risco' && !temRisco) return false;
+          if (statusVenc === 'emdia' && (temVencido || temRisco)) return false;
+        }
         return true;
       })
-      .sort((a, b) => (a.razao_social || a.apelido || '').localeCompare(b.razao_social || b.apelido || ''));
-  }, [empresas, search, depId, responsavelId, tipoEstabelecimento, regimeFederal, servico, estado, canManage, currentUserId]);
+      .sort((a, b) => {
+        if (sortBy === 'vencidos') {
+          const countV = (e: Empresa) => [...e.documentos.map((d) => d.validade), ...e.rets.map((r) => r.vencimento)]
+            .filter((v) => { const d = daysUntil(v); return d !== null && d < 0; }).length;
+          return countV(b) - countV(a);
+        }
+        if (sortBy === 'proximo') {
+          const nearest = (e: Empresa) => {
+            let min: number | null = null;
+            for (const v of [...e.documentos.map((d) => d.validade), ...e.rets.map((r) => r.vencimento)]) {
+              const d = daysUntil(v);
+              if (d !== null && (min === null || d < min)) min = d;
+            }
+            return min ?? 99999;
+          };
+          return nearest(a) - nearest(b);
+        }
+        if (sortBy === 'recente') {
+          return new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime();
+        }
+        return (a.razao_social || a.apelido || '').localeCompare(b.razao_social || b.apelido || '');
+      });
+  }, [empresas, search, depId, responsavelId, tipoEstabelecimento, regimeFederal, servico, estado, cadastrada, statusVenc, sortBy, limiares, canManage, currentUserId]);
 
   const riskItems = useMemo(() => {
     const risk: Array<{ empresaNome: string; empresaCodigo: string; nome: string; vencimento: string; dias: number; kind: string }> = [];
@@ -135,7 +176,7 @@ export default function DashboardPage() {
     emRisco: criticos.length + atencao.length + proximo.length,
   }), [filteredEmpresas, vencidos, criticos, atencao, proximo]);
 
-  const hasFilters = search || depId || responsavelId || tipoEstabelecimento || regimeFederal || servico || estado;
+  const hasFilters = search || depId || responsavelId || tipoEstabelecimento || regimeFederal || servico || estado || cadastrada || statusVenc;
 
   const getDepName = (dId: string) => departamentos.find(d => d.id === dId)?.nome ?? '';
   const getDepIndex = (dId: string) => departamentos.findIndex(d => d.id === dId);
@@ -273,17 +314,37 @@ export default function DashboardPage() {
       {/* Filtros */}
       <div className="rounded-2xl bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between mb-4">
-          <div className="text-lg font-bold text-gray-800">Filtros de Empresas</div>
-          {hasFilters && (
+          <div className="flex items-center gap-3">
+            <div className="text-lg font-bold text-gray-800">Filtros de Empresas</div>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as 'alpha' | 'vencidos' | 'proximo' | 'recente')} className="rounded-lg bg-teal-50 px-3 py-1.5 text-sm text-gray-900 font-medium focus:ring-2 focus:ring-cyan-400 border border-teal-200">
+              <option value="alpha">Ordenar por</option>
+              <option value="vencidos">Mais vencidos</option>
+              <option value="proximo">Mais próximo</option>
+              <option value="recente">Mais recente</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            {hasFilters && (
+              <button
+                onClick={() => { setSearch(''); setDepId(''); setResponsavelId(''); setTipoEstabelecimento(''); setRegimeFederal(''); setServico(''); setEstado(''); setCadastrada(''); setStatusVenc(''); setSortBy('alpha'); }}
+                className="text-xs text-teal-600 hover:text-teal-700 font-bold"
+              >
+                Limpar filtros
+              </button>
+            )}
             <button
-              onClick={() => { setSearch(''); setDepId(''); setResponsavelId(''); setTipoEstabelecimento(''); setRegimeFederal(''); setServico(''); setEstado(''); }}
-              className="text-xs text-teal-600 hover:text-teal-700 font-bold"
+              onClick={() => { setSelecionando(!selecionando); if (selecionando) setSelecionadas(new Set()); }}
+              className={`text-xs px-3 py-1.5 rounded-lg font-bold transition ${
+                selecionando
+                  ? 'bg-red-100 text-red-600 hover:bg-red-200'
+                  : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+              }`}
             >
-              Limpar filtros
+              {selecionando ? 'Cancelar' : 'Selecionar'}
             </button>
-          )}
+          </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3">
           <div className="col-span-2 sm:col-span-1 md:col-span-2 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
@@ -324,6 +385,17 @@ export default function DashboardPage() {
             <option value="">Estado</option>
             {allEstados.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
           </select>
+          <select value={cadastrada} onChange={(e) => setCadastrada(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+            <option value="">Cadastro</option>
+            <option value="sim">Cadastrada</option>
+            <option value="nao">Não cadastrada</option>
+          </select>
+          <select value={statusVenc} onChange={(e) => setStatusVenc(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+            <option value="">Vencimento</option>
+            <option value="vencidos">Tem vencidos</option>
+            <option value="risco">Em risco</option>
+            <option value="emdia">Em dia</option>
+          </select>
         </div>
       </div>
 
@@ -351,9 +423,31 @@ export default function DashboardPage() {
           })();
 
           return (
-            <div key={e.id} className="rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow p-5">
+            <div key={e.id} className={`rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow p-5 ${selecionando && selecionadas.has(e.id) ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}>
               <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    {selecionando && (
+                      <button
+                        onClick={() => {
+                          const newSet = new Set(selecionadas);
+                          if (newSet.has(e.id)) {
+                            newSet.delete(e.id);
+                          } else {
+                            newSet.add(e.id);
+                          }
+                          setSelecionadas(newSet);
+                        }}
+                        className="shrink-0 mt-1 p-1 hover:bg-gray-100 rounded-lg transition"
+                        title={selecionadas.has(e.id) ? 'Desselecionar' : 'Selecionar'}
+                      >
+                        {selecionadas.has(e.id) ? (
+                          <CheckSquare size={20} className="text-blue-600" />
+                        ) : (
+                          <Square size={20} className="text-gray-400" />
+                        )}
+                      </button>
+                    )}
+                    <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="shrink-0 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-500 text-white px-2.5 py-1 text-xs font-bold shadow-sm">
                       {e.codigo}
@@ -402,7 +496,8 @@ export default function DashboardPage() {
                   </div>
                   <div className="font-bold text-gray-900 text-lg mt-2 truncate">{nome}</div>
                   {e.apelido && e.razao_social && <div className="text-sm text-gray-500 truncate">({e.apelido})</div>}
-                </div>
+                    </div>
+                  </div>
                 <div className="flex gap-1.5">
                   <button onClick={() => setEmpresaView(e)} className="rounded-lg p-2 hover:bg-blue-50 transition" title="Ver detalhes">
                     <Eye size={17} className="text-blue-500" />
@@ -493,6 +588,51 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Floating Action Bar para Seleção em Massa */}
+      {selecionando && (
+        <div className="fixed bottom-6 left-6 right-6 bg-white rounded-2xl shadow-2xl p-4 flex items-center gap-3 z-50 border-l-4 border-blue-500">
+          <div className="text-sm font-bold text-gray-800 whitespace-nowrap">
+            {selecionadas.size} {selecionadas.size === 1 ? 'selecionada' : 'selecionadas'}
+          </div>
+          <div className="flex items-center gap-2 ml-auto flex-wrap justify-end">
+            <button
+              onClick={() => {
+                const allIds = new Set(filteredEmpresas.map(e => e.id));
+                setSelecionadas(allIds);
+              }}
+              className="text-sm px-3 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium transition"
+            >
+              Selecionar tudo
+            </button>
+            <button
+              onClick={() => setSelecionadas(new Set())}
+              className="text-sm px-3 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium transition"
+            >
+              Limpar
+            </button>
+            <button
+              onClick={() => {
+                const empresasSelecionadas = filteredEmpresas.filter(e => selecionadas.has(e.id));
+                if (empresasSelecionadas.length > 0) {
+                  exportEmpresasPdf(empresasSelecionadas, departamentos, usuarios);
+                }
+              }}
+              disabled={selecionadas.size === 0}
+              className="text-sm px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 font-bold transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <FileDown size={16} />
+              Exportar PDF
+            </button>
+            <button
+              onClick={() => { setSelecionando(false); setSelecionadas(new Set()); }}
+              className="text-sm px-3 py-2 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 font-medium transition"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {empresaEdit && <ModalCadastrarEmpresa empresa={empresaEdit} onClose={() => setEmpresaEdit(null)} />}
       {empresaView && <ModalDetalhesEmpresa empresa={empresaView} onClose={() => setEmpresaView(null)} />}

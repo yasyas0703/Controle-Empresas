@@ -3,9 +3,12 @@
 import React, { useMemo, useState } from 'react';
 import { BarChart3, PieChart, TrendingUp, Building2, MapPin, Briefcase, FileCheck, Users, Eye, List } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
+import { daysUntil } from '@/app/utils/date';
+import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import { detectTipoEstabelecimento, getTipoInscricaoDisplay, formatarDocumento, detectTipoInscricao } from '@/app/utils/validation';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
-import type { Empresa } from '@/app/types';
+import type { Empresa, Limiares } from '@/app/types';
+import { LIMIARES_DEFAULTS } from '@/app/types';
 
 function countBy(values: string[]) {
   const map: Record<string, number> = {};
@@ -32,10 +35,13 @@ const donutColors = [
 export default function AnalisesPage() {
   const { empresas, departamentos, usuarios } = useSistema();
 
+  const [limiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
+
   const [filtroRegime, setFiltroRegime] = useState('');
   const [filtroTipo, setFiltroTipo] = useState('');
   const [filtroDep, setFiltroDep] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
+  const [statusVenc, setStatusVenc] = useState('');
   const [empresaView, setEmpresaView] = useState<Empresa | null>(null);
 
   const allEstados = useMemo(() => {
@@ -67,9 +73,20 @@ export default function AnalisesPage() {
         if (!resp) return false;
       }
       if (filtroEstado && (e.estado || '') !== filtroEstado) return false;
+      if (statusVenc) {
+        const allItems = [
+          ...e.documentos.map((d) => d.validade),
+          ...e.rets.map((r) => r.vencimento),
+        ];
+        const temVencido = allItems.some((v) => { const d = daysUntil(v); return d !== null && d < 0; });
+        const temRisco = allItems.some((v) => { const d = daysUntil(v); return d !== null && d >= 0 && d <= limiares.atencao; });
+        if (statusVenc === 'vencidos' && !temVencido) return false;
+        if (statusVenc === 'risco' && !temRisco) return false;
+        if (statusVenc === 'emdia' && (temVencido || temRisco)) return false;
+      }
       return true;
     }).sort((a, b) => (a.razao_social || a.apelido || '').localeCompare(b.razao_social || b.apelido || ''));
-  }, [empresas, filtroRegime, filtroTipo, filtroDep, filtroEstado]);
+  }, [empresas, filtroRegime, filtroTipo, filtroDep, filtroEstado, statusVenc, limiares]);
 
   const stats = useMemo(() => {
     const servicos = filteredEmpresas.flatMap((e) => e.servicos || []);
@@ -128,7 +145,7 @@ export default function AnalisesPage() {
     return { byServico, byRegime, byEstado, byTipo, byInscricao, byDepartamento, docStatus };
   }, [filteredEmpresas, departamentos]);
 
-  const hasFilters = filtroRegime || filtroTipo || filtroDep || filtroEstado;
+  const hasFilters = filtroRegime || filtroTipo || filtroDep || filtroEstado || statusVenc;
 
   return (
     <div className="space-y-6">
@@ -146,7 +163,7 @@ export default function AnalisesPage() {
           </div>
           {hasFilters && (
             <button
-              onClick={() => { setFiltroRegime(''); setFiltroTipo(''); setFiltroDep(''); setFiltroEstado(''); }}
+              onClick={() => { setFiltroRegime(''); setFiltroTipo(''); setFiltroDep(''); setFiltroEstado(''); setStatusVenc(''); }}
               className="text-sm text-teal-600 hover:text-teal-700 font-bold"
             >
               Limpar filtros
@@ -176,6 +193,12 @@ export default function AnalisesPage() {
           <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Todos os estados</option>
             {allEstados.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
+          </select>
+          <select value={statusVenc} onChange={(e) => setStatusVenc(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+            <option value="">Vencimento</option>
+            <option value="vencidos">Tem vencidos</option>
+            <option value="risco">Em risco</option>
+            <option value="emdia">Em dia</option>
           </select>
         </div>
       </div>

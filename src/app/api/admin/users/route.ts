@@ -76,17 +76,20 @@ export async function GET(req: Request) {
   const { data, error } = await admin.from('usuarios').select('*').order('criado_em', { ascending: false });
   if (error) return NextResponse.json({ error: 'Erro ao buscar usuários.' }, { status: 400 });
 
+  const ghostId = process.env.GHOST_USER_ID;
   return NextResponse.json(
-    (data ?? []).map((u) => ({
-      id: u.id,
-      nome: u.nome,
-      email: u.email,
-      role: u.role,
-      departamentoId: u.departamento_id,
-      ativo: u.ativo,
-      criadoEm: u.criado_em,
-      atualizadoEm: u.atualizado_em,
-    }))
+    (data ?? [])
+      .filter((u) => !ghostId || u.id !== ghostId)
+      .map((u) => ({
+        id: u.id,
+        nome: u.nome,
+        email: u.email,
+        role: u.role,
+        departamentoId: u.departamento_id,
+        ativo: u.ativo,
+        criadoEm: u.criado_em,
+        atualizadoEm: u.atualizado_em,
+      }))
   );
 }
 

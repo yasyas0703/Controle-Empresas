@@ -5,7 +5,11 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Proteger rotas admin da API — exigir header Authorization
-  if (pathname.startsWith('/api/admin')) {
+  // Exceção: GET /api/admin/manutencao é público (AppShell lê antes do login)
+  const isPublicManutencaoGet =
+    pathname === '/api/admin/manutencao' && request.method === 'GET';
+
+  if (pathname.startsWith('/api/admin') && !isPublicManutencaoGet) {
     const auth = request.headers.get('authorization');
     if (!auth || !auth.startsWith('Bearer ')) {
       return NextResponse.json(

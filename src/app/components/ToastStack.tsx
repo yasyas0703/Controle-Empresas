@@ -17,7 +17,7 @@ export default function ToastStack() {
   if (alerts.length === 0) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-[2000] flex flex-col gap-3">
+    <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-3">
       {alerts.map((a) => {
         const cfg = typeConfig[a.type as keyof typeof typeConfig] ?? typeConfig.info;
         const Icon = cfg.icon;

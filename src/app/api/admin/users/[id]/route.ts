@@ -58,6 +58,34 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const { id } = await ctx.params;
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
+  // Conta protegida: somente a própria desenvolvedora pode editar sua conta
+  const devId = process.env.DEVELOPER_USER_ID;
+  if (devId && id === devId && authz.callerId !== devId) {
+    return NextResponse.json({ error: 'Não foi possível atualizar o perfil.' }, { status: 403 });
+  }
+
+  // Conta ghost: somente o ghost e a desenvolvedora podem editar a conta ghost
+  const ghostId = process.env.GHOST_USER_ID;
+  if (ghostId && id === ghostId && authz.callerId !== ghostId && (!devId || authz.callerId !== devId)) {
+    return NextResponse.json({ error: 'Não foi possível atualizar o perfil.' }, { status: 403 });
+  }
+
+  const admin = getSupabaseAdmin();
+
+  // Buscar role do alvo para checagens de permissão
+  const { data: targetProfile } = await admin
+    .from('usuarios')
+    .select('role')
+    .eq('id', id)
+    .maybeSingle();
+
+  const targetRole = targetProfile?.role;
+
+  // Admins não podem editar outros admins — exceto a desenvolvedora e o ghost
+  if (targetRole === 'admin' && authz.callerId !== id && (!devId || authz.callerId !== devId) && (!ghostId || authz.callerId !== ghostId)) {
+    return NextResponse.json({ error: 'Não foi possível atualizar o perfil.' }, { status: 403 });
+  }
+
   let body: PatchBody;
   try {
     body = (await req.json()) as PatchBody;
@@ -65,18 +93,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: 'JSON inválido' }, { status: 400 });
   }
 
-  const admin = getSupabaseAdmin();
+  // Ninguém pode desativar a si mesmo
+  if (authz.callerId === id && body.ativo === false) {
+    return NextResponse.json({ error: 'Você não pode desativar a sua própria conta.' }, { status: 403 });
+  }
 
   // Se vai mudar email ou role, verificar permissão
   if (body.email !== undefined || body.role !== undefined) {
-    // Buscar o perfil do usuário alvo para ver se é admin/gerente
-    const { data: targetProfile } = await admin
-      .from('usuarios')
-      .select('role')
-      .eq('id', id)
-      .maybeSingle();
-
-    const targetRole = targetProfile?.role;
     const isTargetPrivileged = targetRole === 'admin' || targetRole === 'gerente';
 
     // Só admin pode alterar email/role de admin/gerente
@@ -143,7 +166,30 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   const { id } = await ctx.params;
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
+  // Ninguém pode excluir a si mesmo
+  if (authz.callerId === id) {
+    return NextResponse.json({ error: 'Você não pode excluir a sua própria conta.' }, { status: 403 });
+  }
+
+  // Conta protegida: ninguém pode excluir a desenvolvedora
+  const devId = process.env.DEVELOPER_USER_ID;
+  if (devId && id === devId) {
+    return NextResponse.json({ error: 'Não foi possível remover o usuário.' }, { status: 403 });
+  }
+
+  // Conta ghost: somente a desenvolvedora pode excluir a conta ghost
+  const ghostId = process.env.GHOST_USER_ID;
+  if (ghostId && id === ghostId && (!devId || authz.callerId !== devId)) {
+    return NextResponse.json({ error: 'Não foi possível remover o usuário.' }, { status: 403 });
+  }
+
   const admin = getSupabaseAdmin();
+
+  // Admins não podem excluir outros admins — exceto a desenvolvedora e o ghost
+  const { data: delTargetProfile } = await admin.from('usuarios').select('role').eq('id', id).maybeSingle();
+  if (delTargetProfile?.role === 'admin' && (!devId || authz.callerId !== devId) && (!ghostId || authz.callerId !== ghostId)) {
+    return NextResponse.json({ error: 'Não foi possível remover o usuário.' }, { status: 403 });
+  }
 
   // Tenta deletar do Auth (ignora erro se o user só existe na tabela e não no Auth)
   const { error: authError } = await admin.auth.admin.deleteUser(id);

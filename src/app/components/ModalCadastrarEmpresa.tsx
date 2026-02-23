@@ -167,15 +167,18 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
 
   useEffect(() => {
     if (empresa) {
+      const digits = String(empresa.cnpj || '').replace(/\D/g, '');
+      const autoEstab = detectTipoEstabelecimento(digits);
       setFormData({
         ...empresa,
+        tipoEstabelecimento: empresa.tipoEstabelecimento || autoEstab || '',
         responsaveis: empresa.responsaveis ?? {},
         servicos: empresa.servicos ?? [],
         rets: empresa.rets ?? [],
       });
       setEmpresaCadastrada(empresa.cadastrada !== false);
       setCnpjTouched(false);
-      lastAutoLookupDigitsRef.current = String(empresa.cnpj || '').replace(/\D/g, '');
+      lastAutoLookupDigitsRef.current = digits;
     } else {
       // ao criar, garante responsaveis com todos departamentos
       setFormData((prev) => {
