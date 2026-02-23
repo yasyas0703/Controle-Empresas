@@ -394,7 +394,6 @@ export async function fetchEmpresas(): Promise<Empresa[]> {
   }
 
   const respsMap = new Map<string, Record<UUID, UUID | null>>();
-  console.log(`[DB DEBUG] fetchEmpresas: responsaveis carregados do banco: ${allResps.length} registros (paginado)`);
   for (const r of allResps) {
     const map = respsMap.get(r.empresa_id) ?? {};
     map[r.departamento_id] = r.usuario_id;
@@ -530,15 +529,12 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
       allDeptIds.add(depId);
     }
   }
-  console.log(`[DB DEBUG] insertEmpresa ${empresaId}: departamentoIds recebidos:`, departamentoIds.length, ', payload.responsaveis keys:', Object.keys(payload.responsaveis || {}));
-  console.log(`[DB DEBUG] allDeptIds (${allDeptIds.size}):`, Array.from(allDeptIds));
   if (allDeptIds.size > 0) {
     const rows = Array.from(allDeptIds).map((depId) => ({
       empresa_id: empresaId,
       departamento_id: depId,
       usuario_id: payload.responsaveis?.[depId] || null,
     }));
-    console.log(`[DB DEBUG] Responsáveis rows a inserir (${rows.length}):`, rows.map(r => ({ dept: r.departamento_id, user: r.usuario_id })));
     // Upsert evita 409 (Conflict) no retry/reimport e mantém idempotência
     let lastErr: unknown = null;
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -547,7 +543,6 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
           .from('responsaveis')
           .upsert(rows, { onConflict: 'empresa_id,departamento_id' })
           .select();
-        console.log(`[DB DEBUG] insertEmpresa ${empresaId}: upsert resultado → status=${respStatus} ${statusText}, data=${respData?.length ?? 'null'} rows, error=${respError?.message ?? 'nenhum'}`);
         if (respError) throw respError;
         lastErr = null;
         break;
@@ -701,10 +696,6 @@ export async function updateEmpresa(id: UUID, patch: Partial<Empresa>) {
       departamento_id: depId,
       usuario_id: userId || null,
     }));
-    console.log(`%c[DB DEBUG] updateEmpresa ${id}: upsert responsáveis (${rows.length} rows)`, 'color: dodgerblue; font-weight: bold');
-    for (const r of rows) {
-      console.log(`  dept=${r.departamento_id} → user=${r.usuario_id ?? 'NULL'}`);
-    }
     if (rows.length > 0) {
       // Upsert em batch: evita 409 e reduz requests
       let lastErr: unknown = null;
@@ -714,7 +705,6 @@ export async function updateEmpresa(id: UUID, patch: Partial<Empresa>) {
             .from('responsaveis')
             .upsert(rows, { onConflict: 'empresa_id,departamento_id' })
             .select();
-          console.log(`[DB DEBUG] updateEmpresa ${id}: upsert resultado → status=${respStatus} ${statusText}, data=${JSON.stringify(respData?.length ?? 'null')} rows, error=${respError?.message ?? 'nenhum'}`);
           if (respError) throw respError;
           lastErr = null;
           break;

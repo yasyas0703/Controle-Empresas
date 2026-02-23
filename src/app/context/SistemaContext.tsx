@@ -140,34 +140,6 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         isManager ? db.fetchUsuariosAdmin() : db.fetchUsuariosBasic().catch(() => (me ? [me] : [])),
       ]);
 
-      // ── DEBUG: verificar o que realmente foi carregado ──
-      const comResp = empresas.filter(e => Object.values(e.responsaveis || {}).some(uid => uid));
-      console.log(
-        `%c[LOAD] loadForUser: ${empresas.length} empresas (${comResp.length} com resp), ${usuarios.length} usuários, ${departamentos.length} depts`,
-        'color: magenta; font-weight: bold'
-      );
-      // Verificar se os userId referenciados nos responsáveis existem na lista de usuários
-      const userIdSet = new Set(usuarios.map(u => u.id));
-      let missingUsers = 0;
-      for (const e of comResp) {
-        for (const uid of Object.values(e.responsaveis)) {
-          if (uid && !userIdSet.has(uid)) missingUsers++;
-        }
-      }
-      if (missingUsers > 0) {
-        console.error(`%c[LOAD] ⚠️ ${missingUsers} referências a usuarios que NÃO estão em state.usuarios! Badges não aparecerão!`, 'color: red; font-weight: bold; font-size: 14px');
-      }
-      const deptIdSet = new Set(departamentos.map(d => d.id));
-      let missingDepts = 0;
-      for (const e of comResp) {
-        for (const dId of Object.keys(e.responsaveis)) {
-          if (!deptIdSet.has(dId)) missingDepts++;
-        }
-      }
-      if (missingDepts > 0) {
-        console.error(`%c[LOAD] ⚠️ ${missingDepts} referências a departamentos que NÃO estão em state.departamentos!`, 'color: red; font-weight: bold; font-size: 14px');
-      }
-
       // Auto-purge: remover itens da lixeira com mais de 10 dias
       if (isManager) {
         db.purgeLixeiraOlderThan(10).catch(() => {});

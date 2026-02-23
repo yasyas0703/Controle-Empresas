@@ -44,60 +44,6 @@ export default function EmpresasPage() {
     return usuarios.find(u => u.id === uId)?.nome ?? '';
   };
 
-  // ── Diagnóstico: loga estado dos responsáveis quando dados mudam ──
-  useEffect(() => {
-    if (empresas.length === 0) return;
-    const comResp = empresas.filter((e) => {
-      const uids = Object.values(e.responsaveis || {}).filter(Boolean);
-      return uids.length > 0;
-    });
-
-    // Contar quantas empresas renderizam badges visíveis
-    let comBadgeVisivel = 0;
-    let semBadgeMasTêmResp = 0;
-    const exemplosProblemas: string[] = [];
-
-    for (const e of empresas) {
-      const entries = Object.entries(e.responsaveis || {}).filter(([, uid]) => uid);
-      if (entries.length === 0) continue;
-      const resolvidos = entries
-        .map(([dId, uid]) => ({
-          dep: departamentos.find(d => d.id === dId)?.nome ?? '',
-          user: uid ? (usuarios.find(u => u.id === uid)?.nome ?? '') : '',
-          dId,
-          uid,
-        }))
-        .filter(r => r.dep && r.user);
-      if (resolvidos.length > 0) {
-        comBadgeVisivel++;
-      } else {
-        semBadgeMasTêmResp++;
-        if (exemplosProblemas.length < 5) {
-          const firstEntry = entries[0];
-          const deptFound = departamentos.find(d => d.id === firstEntry[0]);
-          const userFound = usuarios.find(u => u.id === firstEntry[1]);
-          exemplosProblemas.push(
-            `cod=${e.codigo} | dept_id=${firstEntry[0].slice(0,8)}… → ${deptFound ? `"${deptFound.nome}"` : '❌ NÃO ENCONTRADO'} | ` +
-            `user_id=${String(firstEntry[1]).slice(0,8)}… → ${userFound ? `"${userFound.nome}"` : '❌ NÃO ENCONTRADO'}`
-          );
-        }
-      }
-    }
-
-    console.log(
-      `%c[EMPRESAS PAGE] Render: ${empresas.length} empresas | ${comResp.length} com resp no state | ${comBadgeVisivel} com badges visíveis | ${semBadgeMasTêmResp} com resp MAS SEM badge`,
-      'color: dodgerblue; font-weight: bold',
-    );
-    if (semBadgeMasTêmResp > 0) {
-      console.warn(`%c[EMPRESAS PAGE] ⚠️ ${semBadgeMasTêmResp} empresas TÊM responsáveis no state mas badges NÃO aparecem!`, 'color: red; font-weight: bold');
-      for (const ex of exemplosProblemas) {
-        console.warn(`  → ${ex}`);
-      }
-      console.warn(`  Departamentos no state (${departamentos.length}):`, departamentos.map(d => `${d.id.slice(0,8)}="${d.nome}"`).join(', '));
-      console.warn(`  Usuários no state (${usuarios.length}):`, usuarios.slice(0, 10).map(u => `${u.id.slice(0,8)}="${u.nome}"`).join(', '), usuarios.length > 10 ? `... +${usuarios.length - 10}` : '');
-    }
-  }, [empresas, departamentos, usuarios]);
-
   const [search, setSearch] = useState('');
   const [searchCodigo, setSearchCodigo] = useState('');
   const [modalCreate, setModalCreate] = useState(false);

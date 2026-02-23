@@ -4,9 +4,10 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import React, { useMemo, useState, useEffect } from 'react';
-import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon } from 'lucide-react';
+import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil } from '@/app/utils/date';
+import { supabase } from '@/lib/supabase';
 import AutoBackup from '@/app/components/AutoBackup';
 
 const nav = [
@@ -34,6 +35,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [manutencao, setManutencao] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
 
   // isGhost e isPrivileged vêm do contexto (validados no servidor)
 
@@ -89,6 +94,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const notifsNaoLidas = (notificacoes ?? []).filter((n) => !n.lida).length;
   const lixeiraCount = (lixeira ?? []).length;
+
+  const handleForgotPassword = async () => {
+    if (!forgotEmail.trim()) {
+      mostrarAlerta('Campo obrigatório', 'Digite o email da sua conta.', 'aviso');
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      setForgotSent(true);
+    } catch (err: any) {
+      mostrarAlerta('Erro', err?.message || 'Não foi possível enviar o email de recuperação.', 'erro');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   const handleLogin = async () => {
     const result = await login(email, senha);
@@ -490,39 +514,108 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   <Image src="/triar.png" alt="Triar" width={36} height={36} />
                 </div>
                 <div>
-                  <div className="text-lg font-bold text-white">Entrar no Sistema</div>
+                  <div className="text-lg font-bold text-white">
+                    {showForgot ? 'Recuperar Senha' : 'Entrar no Sistema'}
+                  </div>
                   <div className="text-xs text-cyan-200 mt-0.5">Controle de Empresas</div>
                 </div>
               </div>
             </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Email</label>
-                <input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
-                  placeholder="email@empresa.com"
-                />
+
+            {showForgot ? (
+              <div className="p-6 space-y-4">
+                {forgotSent ? (
+                  <>
+                    <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4">
+                      <div className="flex items-center gap-2 text-emerald-700 font-semibold text-sm mb-1">
+                        <CheckCircle size={16} />
+                        Email enviado!
+                      </div>
+                      <p className="text-xs text-emerald-600">
+                        Enviamos um link de recuperação para <strong>{forgotEmail}</strong>. Verifique sua caixa de entrada e spam.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => { setShowForgot(false); setForgotSent(false); setForgotEmail(''); }}
+                      className="w-full rounded-xl bg-gray-100 text-gray-700 px-4 py-3 font-semibold hover:bg-gray-200 transition"
+                    >
+                      Voltar ao Login
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-600">
+                      Digite o email da sua conta. Enviaremos um link para você criar uma nova senha.
+                    </p>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Email</label>
+                      <input
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                        placeholder="email@empresa.com"
+                        onKeyDown={(e) => e.key === 'Enter' && handleForgotPassword()}
+                      />
+                    </div>
+                    <button
+                      onClick={handleForgotPassword}
+                      disabled={forgotLoading}
+                      className="w-full rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 text-white px-4 py-3 font-bold hover:from-cyan-700 hover:to-teal-700 shadow-lg transition disabled:opacity-50"
+                    >
+                      {forgotLoading ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 size={18} className="animate-spin" />
+                          Enviando...
+                        </span>
+                      ) : (
+                        'Enviar Link de Recuperação'
+                      )}
+                    </button>
+                    <button
+                      onClick={() => { setShowForgot(false); setForgotEmail(''); }}
+                      className="w-full text-sm text-gray-500 hover:text-gray-700 font-semibold transition"
+                    >
+                      Voltar ao Login
+                    </button>
+                  </>
+                )}
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Senha</label>
-                <input
-                  type="password"
-                  value={senha}
-                  onChange={(e) => setSenha(e.target.value)}
-                  className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
-                  placeholder="Senha"
-                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                />
+            ) : (
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Email</label>
+                  <input
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                    placeholder="email@empresa.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Senha</label>
+                  <input
+                    type="password"
+                    value={senha}
+                    onChange={(e) => setSenha(e.target.value)}
+                    className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                    placeholder="Senha"
+                    onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                  />
+                </div>
+                <button
+                  onClick={handleLogin}
+                  className="w-full rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 text-white px-4 py-3 font-bold hover:from-cyan-700 hover:to-teal-700 shadow-lg transition"
+                >
+                  Entrar
+                </button>
+                <button
+                  onClick={() => { setShowForgot(true); setForgotEmail(email); }}
+                  className="w-full text-sm text-cyan-600 hover:text-cyan-700 font-semibold transition"
+                >
+                  Esqueci minha senha
+                </button>
               </div>
-              <button
-                onClick={handleLogin}
-                className="w-full rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 text-white px-4 py-3 font-bold hover:from-cyan-700 hover:to-teal-700 shadow-lg transition"
-              >
-                Entrar
-              </button>
-            </div>
+            )}
           </div>
         </div>
       )}

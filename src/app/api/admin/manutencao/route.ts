@@ -38,21 +38,16 @@ async function assertGhostOrDev(req: Request) {
 export async function GET() {
   try {
     const admin = getSupabaseAdmin();
-    const { data, error } = await admin.from('configuracoes').select('valor').eq('chave', 'manutencao').maybeSingle();
-    console.log('[manutencao GET] data:', data, 'error:', error);
+    const { data } = await admin.from('configuracoes').select('valor').eq('chave', 'manutencao').maybeSingle();
     return NextResponse.json({ ativo: data?.valor === 'true' });
-  } catch (e) {
-    console.error('[manutencao GET] exception:', e);
+  } catch {
     return NextResponse.json({ ativo: false });
   }
 }
 
 // POST — somente ghost ou desenvolvedora
 export async function POST(req: Request) {
-  console.log('[manutencao POST] iniciando...');
-
   const authz = await assertGhostOrDev(req);
-  console.log('[manutencao POST] auth result:', authz);
   if (!authz.ok) return NextResponse.json({ error: authz.message }, { status: authz.status });
 
   let body: { ativo: boolean };
@@ -62,17 +57,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'JSON inválido' }, { status: 400 });
   }
 
-  console.log('[manutencao POST] body:', body);
-
   const admin = getSupabaseAdmin();
-
-  // Verificar se a tabela existe e tem a linha
-  const { data: current, error: selectError } = await admin
-    .from('configuracoes')
-    .select('*')
-    .eq('chave', 'manutencao')
-    .maybeSingle();
-  console.log('[manutencao POST] current row:', current, 'selectError:', selectError);
 
   const { data: upsertData, error: upsertError } = await admin
     .from('configuracoes')
@@ -82,15 +67,12 @@ export async function POST(req: Request) {
     )
     .select();
 
-  console.log('[manutencao POST] upsert result:', upsertData, 'upsertError:', upsertError);
-
   if (upsertError) {
-    return NextResponse.json({ error: `Erro ao salvar: ${upsertError.message}`, detail: upsertError }, { status: 500 });
+    return NextResponse.json({ error: `Erro ao salvar: ${upsertError.message}` }, { status: 500 });
   }
 
   // Confirmar lendo de volta
   const { data: verify } = await admin.from('configuracoes').select('valor').eq('chave', 'manutencao').maybeSingle();
-  console.log('[manutencao POST] verify after save:', verify);
 
   return NextResponse.json({ ok: true, ativo: !!body.ativo, savedValue: verify?.valor });
 }
