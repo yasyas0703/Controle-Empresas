@@ -510,6 +510,31 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
     // Ensure all users referenced in responsáveis exist (local name -> id map)
     const userIdByName = new Map(usuarios.map((u) => [norm(u.nome), u.id]));
     const usedEmails = new Set(usuarios.map((u) => u.email.toLowerCase().trim()));
+
+    // Map de primeiro nome → id (só quando único — evita ambiguidade)
+    const userIdByFirstName = new Map<string, string>();
+    for (const u of usuarios) {
+      const firstName = norm(u.nome).split(' ')[0];
+      if (!firstName) continue;
+      if (userIdByFirstName.has(firstName)) {
+        userIdByFirstName.set(firstName, '__ambiguo__');
+      } else {
+        userIdByFirstName.set(firstName, u.id);
+      }
+    }
+
+    // Resolve nome da planilha → userId: primeiro tenta exato, depois pelo primeiro nome
+    const resolveUserId = (nome: string): string | null => {
+      const key = norm(nome);
+      if (userIdByName.has(key)) return userIdByName.get(key)!;
+      const firstName = key.split(' ')[0];
+      if (firstName) {
+        const id = userIdByFirstName.get(firstName);
+        if (id && id !== '__ambiguo__') return id;
+      }
+      return null;
+    };
+
     const allPeople = new Set<string>();
     for (const row of parsed) {
       for (const personName of Object.values(row.responsaveis)) {
@@ -528,8 +553,11 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
     const usersToCreate: Array<{ nome: string; key: string; email: string; autoDeptId: string | null }> = [];
     for (const personName of peopleArray) {
       const key = norm(personName);
-      if (userIdByName.has(key)) {
+      const existingId = resolveUserId(personName);
+      if (existingId !== null) {
         existingUserNames.add(personName);
+        // Garantir que a chave exata também resolve corretamente
+        if (!userIdByName.has(key)) userIdByName.set(key, existingId);
         continue;
       }
 

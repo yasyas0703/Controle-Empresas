@@ -7,7 +7,7 @@ import ConfirmModal from '@/app/components/ConfirmModal';
 import type { Role, Usuario } from '@/app/types';
 
 export default function UsuariosPage() {
-  const { canAdmin, usuarios, departamentos, criarUsuario, atualizarUsuario, toggleUsuarioAtivo, removerUsuario, mostrarAlerta } = useSistema();
+  const { canAdmin, currentUser, usuarios, departamentos, criarUsuario, atualizarUsuario, toggleUsuarioAtivo, removerUsuario, mostrarAlerta, isDeveloper, isGhost, protectedUserIds } = useSistema();
 
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
@@ -154,7 +154,16 @@ export default function UsuariosPage() {
         <div className="text-lg font-bold text-gray-900">Usuários Cadastrados ({usuariosOrdenados.length})</div>
 
         <div className="mt-4 space-y-3">
-          {usuariosOrdenados.map((u) => (
+          {usuariosOrdenados.map((u) => {
+            const isProtectedAccount = protectedUserIds.includes(u.id);
+            const isSelf = u.id === currentUser?.id;
+            // Dev e ghost podem agir sobre todos; admins só sobre si ou não-admins (exceto contas protegidas)
+            const canActOnUser =
+              isDeveloper || isGhost ||
+              (!isProtectedAccount && (u.role !== 'admin' || isSelf));
+            // Ninguém pode desativar ou excluir a si mesmo
+            const canToggleOrDelete = canActOnUser && !isSelf;
+            return (
             <div key={u.id} className="rounded-2xl bg-gray-50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 hover:shadow-sm transition-shadow">
               <div className="min-w-0 flex items-center gap-3">
                 <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${u.role === 'admin' ? 'bg-red-100' : u.role === 'gerente' ? 'bg-amber-100' : 'bg-gray-200'}`}>
@@ -179,32 +188,39 @@ export default function UsuariosPage() {
                   {u.ativo ? 'Ativo' : 'Inativo'}
                 </span>
 
-                <button
-                  onClick={() => toggleUsuarioAtivo(u.id)}
-                  className="rounded-xl bg-white p-2 hover:bg-gray-100 transition shadow-sm"
-                  title={u.ativo ? 'Desativar' : 'Ativar'}
-                >
-                  {u.ativo ? <XCircle className="text-amber-500" size={18} /> : <CheckCircle2 className="text-emerald-500" size={18} />}
-                </button>
+                {canToggleOrDelete && (
+                  <button
+                    onClick={() => toggleUsuarioAtivo(u.id)}
+                    className="rounded-xl bg-white p-2 hover:bg-gray-100 transition shadow-sm"
+                    title={u.ativo ? 'Desativar' : 'Ativar'}
+                  >
+                    {u.ativo ? <XCircle className="text-amber-500" size={18} /> : <CheckCircle2 className="text-emerald-500" size={18} />}
+                  </button>
+                )}
 
-                <button
-                  onClick={() => openEditModal(u)}
-                  className="rounded-xl bg-white p-2 hover:bg-teal-50 transition shadow-sm"
-                  title="Editar"
-                >
-                  <Pencil className="text-teal-600" size={18} />
-                </button>
+                {canActOnUser && (
+                  <button
+                    onClick={() => openEditModal(u)}
+                    className="rounded-xl bg-white p-2 hover:bg-teal-50 transition shadow-sm"
+                    title="Editar"
+                  >
+                    <Pencil className="text-teal-600" size={18} />
+                  </button>
+                )}
 
-                <button
-                  onClick={() => setConfirmDeleteUserId(u.id)}
-                  className="rounded-xl bg-white p-2 hover:bg-red-50 transition shadow-sm"
-                  title="Excluir"
-                >
-                  <Trash2 className="text-red-500" size={18} />
-                </button>
+                {canToggleOrDelete && !isProtectedAccount && (
+                  <button
+                    onClick={() => setConfirmDeleteUserId(u.id)}
+                    className="rounded-xl bg-white p-2 hover:bg-red-50 transition shadow-sm"
+                    title="Excluir"
+                  >
+                    <Trash2 className="text-red-500" size={18} />
+                  </button>
+                )}
               </div>
             </div>
-          ))}
+            );
+          })}
 
           {usuarios.length === 0 && <div className="text-sm text-gray-500">Sem usuários.</div>}
         </div>

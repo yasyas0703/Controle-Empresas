@@ -244,11 +244,42 @@ export default function ModalImportarResponsabilidadesFiscal({ onClose }: ModalI
     const usedEmails = new Set(usuarios.map((u) => u.email.toLowerCase().trim()));
     const usuariosCriados: string[] = [];
 
+    // Map de primeiro nome → id (só quando único — evita ambiguidade)
+    const userIdByFirstName = new Map<string, string>();
+    for (const u of usuarios) {
+      const firstName = norm(u.nome).split(' ')[0];
+      if (!firstName) continue;
+      if (userIdByFirstName.has(firstName)) {
+        userIdByFirstName.set(firstName, '__ambiguo__'); // dois usuários com mesmo primeiro nome
+      } else {
+        userIdByFirstName.set(firstName, u.id);
+      }
+    }
+
+    // Resolve nome da planilha → userId: primeiro tenta exato, depois pelo primeiro nome
+    const resolveUserId = (nome: string): string | null => {
+      const key = norm(nome);
+      if (userIdByName.has(key)) return userIdByName.get(key)!;
+      const firstName = key.split(' ')[0];
+      if (firstName) {
+        const id = userIdByFirstName.get(firstName);
+        if (id && id !== '__ambiguo__') return id;
+      }
+      return null;
+    };
+
     // Garantir que todos os responsáveis da planilha existam como usuários
     const responsaveisUnicos = [...new Set(blocks.map((b) => b.nome))];
     for (const nomeResp of responsaveisUnicos) {
       const key = norm(nomeResp);
-      if (userIdByName.has(key)) continue;
+      // Já existe por nome exato ou por primeiro nome (sem ambiguidade)?
+      if (resolveUserId(nomeResp) !== null) {
+        // Mapear a chave exata também para o ID encontrado (para o lookup posterior)
+        if (!userIdByName.has(key)) {
+          userIdByName.set(key, resolveUserId(nomeResp)!);
+        }
+        continue;
+      }
 
       const base = slug(nomeResp) || 'usuario';
       let email = `${base}@importado.local`;
@@ -283,7 +314,7 @@ export default function ModalImportarResponsabilidadesFiscal({ onClose }: ModalI
         continue;
       }
 
-      const userId = userIdByName.get(norm(match.responsavelNome)) ?? null;
+      const userId = resolveUserId(match.responsavelNome);
 
       // Atualizar apenas o responsável do departamento fiscal
       await atualizarEmpresa(match.empresaId, {

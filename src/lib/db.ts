@@ -15,6 +15,17 @@ import type {
 
 // ─── helpers ────────────────────────────────────────────────
 
+function newUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Fallback para contextos não-seguros (HTTP via IP, por exemplo)
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 function toIso(v: string | null | undefined): string {
   return v ? new Date(v).toISOString() : '';
 }
@@ -83,21 +94,24 @@ export async function fetchUsuarioById(id: UUID): Promise<Usuario[]> {
 }
 
 export async function fetchUsuariosBasic(): Promise<Usuario[]> {
+  const ghostId = process.env.GHOST_USER_ID;
   const { data, error } = await supabase
     .from('usuarios')
     .select('id, nome, email, role, departamento_id, ativo, criado_em, atualizado_em')
     .order('criado_em', { ascending: false });
   if (error) throw error;
-  return (data ?? []).map((u) => ({
-    id: u.id,
-    nome: u.nome,
-    email: u.email,
-    role: u.role as Usuario['role'],
-    departamentoId: u.departamento_id,
-    ativo: u.ativo,
-    criadoEm: toIso(u.criado_em),
-    atualizadoEm: toIso(u.atualizado_em),
-  }));
+  return (data ?? [])
+    .filter((u) => !ghostId || u.id !== ghostId)
+    .map((u) => ({
+      id: u.id,
+      nome: u.nome,
+      email: u.email,
+      role: u.role as Usuario['role'],
+      departamentoId: u.departamento_id,
+      ativo: u.ativo,
+      criadoEm: toIso(u.criado_em),
+      atualizadoEm: toIso(u.atualizado_em),
+    }));
 }
 
 export async function fetchUsuariosAdmin(): Promise<Usuario[]> {
@@ -796,7 +810,7 @@ export async function uploadDocumentoArquivo(empresaId: UUID, file: File): Promi
   }
 
   const BUCKET = 'documentos';
-  const path = `empresas/${empresaId}/${crypto.randomUUID()}.${ext || 'bin'}`;
+  const path = `empresas/${empresaId}/${newUUID()}.${ext || 'bin'}`;
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
   if (error) {
     if (error.message?.includes('Bucket not found') || error.message?.includes('not found')) {
@@ -865,18 +879,21 @@ export async function deleteObservacao(obsId: UUID) {
 // ─── Logs ───────────────────────────────────────────────────
 
 export async function fetchLogs(): Promise<LogEntry[]> {
+  const ghostId = process.env.GHOST_USER_ID;
   const all = await fetchAllRows<Record<string, any>>('logs', { order: { column: 'em', ascending: false } });
-  return all.map((l) => ({
-    id: l.id,
-    em: toIso(l.em),
-    userId: l.user_id,
-    userNome: l.user_nome ?? null,
-    action: l.action,
-    entity: l.entity,
-    entityId: l.entity_id,
-    message: l.message,
-    diff: l.diff ?? undefined,
-  }));
+  return all
+    .filter((l) => !ghostId || l.user_id !== ghostId)
+    .map((l) => ({
+      id: l.id,
+      em: toIso(l.em),
+      userId: l.user_id,
+      userNome: l.user_nome ?? null,
+      action: l.action,
+      entity: l.entity,
+      entityId: l.entity_id,
+      message: l.message,
+      diff: l.diff ?? undefined,
+    }));
 }
 
 export async function insertLog(entry: Omit<LogEntry, 'id' | 'em'>): Promise<LogEntry> {
