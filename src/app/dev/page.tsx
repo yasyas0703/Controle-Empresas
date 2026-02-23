@@ -80,16 +80,13 @@ export default function DevPage() {
     setLoadingManutencao(true);
     try {
       const token = await getToken();
-      console.log('[dev] token obtido:', token ? `${token.slice(0, 20)}...` : 'NULL');
       const payload = { ativo: !manutencao };
-      console.log('[dev] enviando POST /api/admin/manutencao com:', payload);
       const res = await fetch('/api/admin/manutencao', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify(payload),
       });
       const json = await res.json();
-      console.log('[dev] resposta status:', res.status, 'body:', json);
       if (!res.ok) throw new Error(json.error);
       setManutencao(json.ativo);
       mostrarAlerta(

@@ -151,7 +151,6 @@ function parseFile(text: string): ParsedRow[] {
   } else {
     separator = ',';
   }
-  console.log('[PARSE DEBUG] Separator counts — tab:', tabCount, 'semi:', semiCount, 'comma:', commaCount, '→ using:', JSON.stringify(separator));
 
   const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length < 1) return [];
@@ -169,9 +168,6 @@ function parseFile(text: string): ParsedRow[] {
   const HEADER_KEYWORDS = ['id', 'codigo', 'nome', 'cnpj', 'inscricao estadual', 'ativo/inativo', 'cadastro', 'contabil', 'fiscal', 'pessoal', 'declaracoes', 'parcelamentos'];
   const headerHits = headerLower.filter((h) => HEADER_KEYWORDS.some((kw) => h === kw || h.startsWith(kw))).length;
   const hasHeader = headerHits >= 3; // se pelo menos 3 colunas parecem cabeçalho
-
-  console.log(`%c[PARSE] DETECÇÃO DE CABEÇALHO: ${hasHeader ? '✅ TEM cabeçalho' : '⚠️ SEM cabeçalho — usando posições fixas do Gestta'}`, hasHeader ? 'color: green; font-weight: bold' : 'color: orange; font-weight: bold; font-size: 14px');
-  console.log(`[PARSE] Header keyword hits: ${headerHits} de ${HEADER_KEYWORDS.length} (threshold: 3)`);
 
   // Posições fixas do formato Gestta (quando CSV não tem cabeçalho):
   // [0]=Id [1]=Código [2]=Nome [3]=CNPJ [4]=InscEst [5]=Ativo [6]=RegFed [7]=RegEst [8]=RegMun [9]=CCM [10]=Administrativo
@@ -234,22 +230,6 @@ function parseFile(text: string): ParsedRow[] {
     dataLines = lines;
   }
 
-  console.log('%c═══════════════════════════════════════════════════════════', 'color: magenta; font-weight: bold');
-  console.log('%c[PARSE] CABEÇALHO DO CSV', 'color: magenta; font-weight: bold; font-size: 14px');
-  console.log('%c═══════════════════════════════════════════════════════════', 'color: magenta; font-weight: bold');
-  console.log('[PARSE] Separador:', JSON.stringify(separator));
-  console.log('[PARSE] Total de colunas no cabeçalho:', headerCols.length);
-  console.log('[PARSE] TODAS as colunas (índice → nome):');
-  headerCols.forEach((h, i) => console.log(`  [${i}] ${JSON.stringify(h)}`));
-  console.log('%c[PARSE] COLUNAS ACEITAS (departamentos canônicos):', 'color: green; font-weight: bold');
-  for (const [canonical, indices] of deptColsByCanonical) {
-    console.log(`  ✅ ${canonical} → colunas [${indices.join(', ')}] (headers: ${indices.map(i => JSON.stringify(headerCols[i])).join(', ')})`);
-  }
-  console.log('%c[PARSE] COLUNAS REJEITADAS (NÃO importadas):', 'color: orange; font-weight: bold');
-  for (const rj of rejectedHeaders) {
-    console.log(`  ❌ [${rj.col}] ${JSON.stringify(rj.name)} — ${rj.reason}`);
-  }
-
   let rowsWithNoResp = 0;
   let rowsWithPartialResp = 0;
   const problematicRows: Array<{ codigo: string; nome: string; deptsSemResp: string[]; colsRaw: Record<string, string> }> = [];
@@ -300,14 +280,6 @@ function parseFile(text: string): ParsedRow[] {
         rowsWithPartialResp++;
       }
 
-      // LOG DETALHADO PARA TODA EMPRESA
-      console.log(
-        `%c[PARSE ROW ${lineIdx + 1}] Cod=${codigo.trim()} | ${nome.trim().slice(0, 40)}`,
-        totalDeptsCsv === 0 ? 'color: red; font-weight: bold' : deptsSemResp.length > 0 ? 'color: orange' : 'color: green',
-        `| Responsáveis: ${JSON.stringify(responsaveis)}`,
-        deptsSemResp.length > 0 ? `| DEPTS SEM RESP: [${deptsSemResp.join(', ')}]` : '',
-      );
-
       return {
         codigo: codigo.trim(),
         razao_social: nome.trim(),
@@ -320,32 +292,6 @@ function parseFile(text: string): ParsedRow[] {
       } satisfies ParsedRow;
     })
     .filter(Boolean) as ParsedRow[];
-
-  // RESUMO FINAL DO PARSE
-  console.log('%c═══════════════════════════════════════════════════════════', 'color: magenta; font-weight: bold');
-  console.log('%c[PARSE] RESUMO DO PARSING', 'color: magenta; font-weight: bold; font-size: 14px');
-  console.log('%c═══════════════════════════════════════════════════════════', 'color: magenta; font-weight: bold');
-  console.log(`[PARSE] Total de linhas parseadas: ${result.length}`);
-  console.log(`[PARSE] Empresas com TODOS os depts sem responsável (mas tem dados em cols não-mapeadas): ${rowsWithNoResp}`);
-  console.log(`[PARSE] Empresas com ALGUNS depts sem responsável: ${rowsWithPartialResp}`);
-  if (problematicRows.length > 0) {
-    console.log('%c[PARSE] ⚠️ EMPRESAS PROBLEMÁTICAS (0 responsáveis mapeados, mas tem dados em colunas rejeitadas):', 'color: red; font-weight: bold; font-size: 13px');
-    for (const pr of problematicRows) {
-      console.log(`  🔴 Cod=${pr.codigo} | ${pr.nome}`);
-      console.log(`     Depts canônicos sem valor: [${pr.deptsSemResp.join(', ')}]`);
-      console.log(`     Colunas com valor (não-mapeadas):`, pr.colsRaw);
-    }
-  }
-
-  // Log de todos os responsáveis únicos encontrados
-  const allPeopleInParse = new Set<string>();
-  for (const row of result) {
-    for (const person of Object.values(row.responsaveis)) {
-      if (person) allPeopleInParse.add(person);
-    }
-  }
-  console.log(`[PARSE] Total de responsáveis únicos encontrados: ${allPeopleInParse.size}`);
-  console.log('[PARSE] Lista:', Array.from(allPeopleInParse).sort().join(', '));
 
   return result;
 }
@@ -376,11 +322,9 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
       reader.onload = (e) => {
         const text = e.target?.result as string;
         if (encoding === 'UTF-8' && text.includes('\uFFFD')) {
-          console.log('[PARSE DEBUG] UTF-8 produziu caracteres corrompidos, tentando Windows-1252...');
           tryRead('windows-1252');
           return;
         }
-        console.log('[PARSE DEBUG] Encoding usado:', encoding, '| Primeiros 200 chars:', text.slice(0, 200));
         const rows = parseFile(text);
         setParsed(rows);
       };
@@ -542,8 +486,6 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
         if (p) allPeople.add(p);
       }
     }
-    console.log('%c[IMPORT] CRIAÇÃO DE USUÁRIOS', 'color: yellow; font-weight: bold; font-size: 13px');
-    console.log(`[IMPORT] Total de pessoas únicas no CSV: ${allPeople.size}`);
     const existingUserNames = new Set<string>();
     const newUserNames: string[] = [];
     const failedUserCreations: Array<{ name: string; key: string; reason: string }> = [];
@@ -573,8 +515,6 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
       usersToCreate.push({ nome: personName, key, email, autoDeptId });
     }
 
-    console.log(`[IMPORT][USER] Já existem: ${existingUserNames.size} | A criar via batch: ${usersToCreate.length}`);
-
     // ── BATCH: criar todos os usuários de uma vez no servidor ──
     if (usersToCreate.length > 0) {
       setImportProgress({ done: 0, total: 1, phase: `Criando ${usersToCreate.length} usuários...` });
@@ -589,21 +529,19 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
         }));
 
         const batchResult = await db.insertUsuariosBatch(batchPayload);
-        console.log('%c[IMPORT][USER] Resultado do batch:', 'color: cyan; font-weight: bold', batchResult.summary);
 
         for (const r of batchResult.results) {
           const key = norm(r.nome);
           if (r.id) {
             userIdByName.set(key, r.id);
             newUserNames.push(r.nome);
-            console.log(`  ✅ ${r.status === 'created' ? 'Criado' : 'Existente'}: "${r.nome}" → ID ${r.id}`);
           } else {
             failedUserCreations.push({ name: r.nome, key, reason: r.error || 'Falha desconhecida' });
-            console.error(`  ❌ FALHOU: "${r.nome}" — ${r.error}`);
+            console.error(`[IMPORT][USER] FALHOU: "${r.nome}" — ${r.error}`);
           }
         }
       } catch (batchErr) {
-        console.error('%c[IMPORT][USER] BATCH FALHOU! Tentando criação individual...', 'color: red; font-weight: bold', batchErr);
+        console.error('[IMPORT][USER] BATCH FALHOU! Tentando criação individual...', batchErr);
 
         // Fallback: criar um a um (para os que ainda não estão no mapa)
         for (let pi = 0; pi < usersToCreate.length; pi++) {
@@ -643,7 +581,6 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
 
     // ── FETCH FRESCO: recapturar TODOS os usuários do banco ──
     // Pega qualquer usuário criado no Auth+DB que não voltou corretamente na resposta.
-    console.log('%c[IMPORT][USER] 🔄 Fazendo fetch fresco de todos os usuários...', 'color: cyan; font-weight: bold');
     try {
       const freshUsers = await db.fetchUsuariosAdmin();
       let recovered = 0;
@@ -654,7 +591,6 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
           recovered++;
         }
       }
-      console.log(`[IMPORT][USER] Fetch fresco: ${freshUsers.length} usuários no DB. Recuperados ${recovered} que faltavam no mapa.`);
       if (recovered > 0) {
         for (let fi = failedUserCreations.length - 1; fi >= 0; fi--) {
           if (userIdByName.has(failedUserCreations[fi].key)) {
@@ -666,11 +602,10 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
       console.error('[IMPORT][USER] Erro no fetch fresco de usuários (continuando com mapa parcial):', fetchErr);
     }
 
-    console.log(`[IMPORT][USER] Resumo: ${existingUserNames.size} já existiam, ${newUserNames.length} criados, ${failedUserCreations.length} FALHARAM`);
     if (failedUserCreations.length > 0) {
-      console.error('%c[IMPORT][USER] ⚠️ USUÁRIOS QUE NÃO FORAM CRIADOS:', 'color: red; font-weight: bold; font-size: 13px');
+      console.error('[IMPORT][USER] USUÁRIOS QUE NÃO FORAM CRIADOS:');
       for (const f of failedUserCreations) {
-        console.error(`  🔴 "${f.name}" (key="${f.key}") — ${f.reason}`);
+        console.error(`  "${f.name}" (key="${f.key}") — ${f.reason}`);
       }
     }
 
@@ -681,18 +616,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
     // Coletar todos os dept IDs para usar no insert
     const allDeptIds = Array.from(deptIdByName.values());
 
-    console.log('%c═══════════════════════════════════════════════════════════', 'color: cyan; font-weight: bold');
-    console.log('%c[IMPORT] INÍCIO DA IMPORTAÇÃO', 'color: cyan; font-weight: bold; font-size: 14px');
-    console.log('%c═══════════════════════════════════════════════════════════', 'color: cyan; font-weight: bold');
-    console.log('[IMPORT] Departamentos no sistema (nome normalizado → ID):');
-    for (const [name, id] of deptIdByName) {
-      console.log(`  📁 "${name}" → ${id}`);
-    }
-    console.log('[IMPORT] Usuários no sistema (nome normalizado → ID):');
-    for (const [name, id] of userIdByName) {
-      console.log(`  👤 "${name}" → ${id}`);
-    }
-    console.log(`[IMPORT] Novas empresas: ${newRows.length} | Existentes (atualizar): ${existingRows.length}`);
+    const empresasComProblema: Array<{ codigo: string; nome: string; csvResp: Record<string, string>; resolved: Record<string, string | null>; issues: Array<{ deptName: string; personName: string; reason: string }> }> = [];
 
     const totalOps = newRows.length + existingRows.length;
     setImportProgress({ done: 0, total: totalOps, phase: 'Criando empresas...' });
@@ -712,11 +636,6 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
     };
 
     // ── CRIAR novas empresas (direct DB, sem log/notif individual) ──
-    console.log('%c═══════════════════════════════════════════════════════════', 'color: lime; font-weight: bold');
-    console.log('%c[IMPORT] CRIANDO NOVAS EMPRESAS', 'color: lime; font-weight: bold; font-size: 14px');
-    console.log('%c═══════════════════════════════════════════════════════════', 'color: lime; font-weight: bold');
-    const empresasComProblema: Array<{ codigo: string; nome: string; csvResp: Record<string, string>; resolved: Record<string, string | null>; issues: Array<{ deptName: string; personName: string; reason: string }> }> = [];
-
     for (let i = 0; i < newRows.length; i++) {
       const row = newRows[i];
       const { resolved: responsaveis, issues } = debugResolution(row, deptIdByName, userIdByName, norm);
@@ -724,32 +643,8 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
         if (iss.reason.includes('usuário')) failedUsers++;
       }
 
-      const hadRespInCsv = Object.keys(row.responsaveis).length > 0;
-      const hasAnyResolved = Object.values(responsaveis).some((v) => !!v);
-      const resolvedCount = Object.values(responsaveis).filter((v) => !!v).length;
-
-      // LOG DETALHADO POR EMPRESA
-      const logColor = !hadRespInCsv ? 'color: gray' : hasAnyResolved ? (issues.length > 0 ? 'color: orange' : 'color: green') : 'color: red; font-weight: bold';
-      console.log(
-        `%c[IMPORT][NEW ${i + 1}/${newRows.length}] Cod=${row.codigo} | ${row.razao_social.slice(0, 40)}`,
-        logColor,
-        `| CSV depts: ${JSON.stringify(row.responsaveis)}`,
-        `| Resolvidos: ${resolvedCount}/${Object.keys(row.responsaveis).length}`,
-        issues.length > 0 ? `| PROBLEMAS: ${issues.map(iss => `${iss.deptName}→"${iss.personName}": ${iss.reason}`).join('; ')}` : '',
-      );
-
       if (issues.length > 0) {
         empresasComProblema.push({ codigo: row.codigo, nome: row.razao_social, csvResp: row.responsaveis, resolved: responsaveis, issues });
-      }
-
-      if (hadRespInCsv && !hasAnyResolved) {
-        console.groupCollapsed(`%c  🔴 NENHUM vínculo resolvido para ${row.codigo}`, 'color: red; font-weight: bold');
-        console.log('CSV responsaveis:', row.responsaveis);
-        console.log('Resolvido (depId -> userId|null):', responsaveis);
-        console.log('deptIdByName completo:', Object.fromEntries(deptIdByName));
-        console.log('userIdByName completo:', Object.fromEntries(userIdByName));
-        if (issues.length > 0) console.table(issues);
-        console.groupEnd();
       }
 
       const cnpjDigits = onlyDigits(row.cnpj);
@@ -790,9 +685,6 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
     // ── ATUALIZAR responsáveis das empresas existentes ──
     let updated = 0;
     setImportProgress((prev) => ({ ...prev, phase: 'Atualizando existentes...' }));
-    console.log('%c═══════════════════════════════════════════════════════════', 'color: dodgerblue; font-weight: bold');
-    console.log('%c[IMPORT] ATUALIZANDO EMPRESAS EXISTENTES', 'color: dodgerblue; font-weight: bold; font-size: 14px');
-    console.log('%c═══════════════════════════════════════════════════════════', 'color: dodgerblue; font-weight: bold');
 
     for (let i = 0; i < existingRows.length; i++) {
       const row = existingRows[i];
@@ -817,31 +709,8 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
         }
       }
 
-      const hadRespInCsv = Object.keys(row.responsaveis).length > 0;
-      const resolvedCount = Object.values(resolvedMap).filter((v) => !!v).length;
-      const logColor = !hadRespInCsv ? 'color: gray' : hasAny ? (issues.length > 0 ? 'color: orange' : 'color: green') : 'color: red; font-weight: bold';
-      console.log(
-        `%c[IMPORT][UPD ${i + 1}/${existingRows.length}] Cod=${row.codigo} | ${row.razao_social.slice(0, 40)}`,
-        logColor,
-        `| CSV depts: ${JSON.stringify(row.responsaveis)}`,
-        `| Resolvidos: ${resolvedCount}/${Object.keys(row.responsaveis).length}`,
-        `| Vai atualizar: ${hasAny}`,
-        issues.length > 0 ? `| PROBLEMAS: ${issues.map(iss => `${iss.deptName}→"${iss.personName}": ${iss.reason}`).join('; ')}` : '',
-      );
-
       if (issues.length > 0) {
         empresasComProblema.push({ codigo: row.codigo, nome: row.razao_social, csvResp: row.responsaveis, resolved: resolvedMap, issues });
-      }
-
-      if (hadRespInCsv && !hasAny) {
-        console.groupCollapsed(`%c  🔴 Empresa existente ${row.codigo}: CSV tem responsáveis, mas nenhuma mudança aplicável`, 'color: red; font-weight: bold');
-        console.log('CSV responsaveis:', row.responsaveis);
-        console.log('empresa.responsaveis atual:', empresa.responsaveis);
-        console.log('resolvedMap (depId -> userId|null):', resolvedMap);
-        console.log('deptIdByName completo:', Object.fromEntries(deptIdByName));
-        console.log('userIdByName completo:', Object.fromEntries(userIdByName));
-        if (issues.length > 0) console.table(issues);
-        console.groupEnd();
       }
 
       if (hasAny) {
@@ -862,9 +731,6 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
     // ── RE-LINK PASS: re-vincular responsáveis que falharam na primeira passada ──
     // Após criar TODAS as empresas e usuários, faz uma segunda passada para garantir
     // que nenhuma empresa ficou sem responsáveis por timing/rate-limit.
-    console.log('%c═══════════════════════════════════════════════════════════', 'color: hotpink; font-weight: bold');
-    console.log('%c[RELINK] 🔗 RE-VINCULAÇÃO DE RESPONSÁVEIS', 'color: hotpink; font-weight: bold; font-size: 14px');
-    console.log('%c═══════════════════════════════════════════════════════════', 'color: hotpink; font-weight: bold');
     setImportProgress((prev) => ({ ...prev, phase: 'Re-vinculando responsáveis...' }));
 
     let relinked = 0;
@@ -903,16 +769,14 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
             `Relink ${row.codigo}`
           );
           relinked++;
-          console.log(`[RELINK] ✅ ${row.codigo} — responsáveis re-vinculados`);
         }
       } catch (relinkErr) {
-        console.warn(`[RELINK] ⚠️ Falha ao re-vincular ${row.codigo}:`, relinkErr);
+        console.warn(`[RELINK] Falha ao re-vincular ${row.codigo}:`, relinkErr);
       }
 
       // Pequeno delay para não sobrecarregar
       await new Promise((r) => setTimeout(r, 50));
     }
-    console.log(`[RELINK] Total re-vinculados: ${relinked} de ${parsed.length} empresas`);
 
     // Recarregar tudo do banco (sincroniza state completo de uma vez)
     // Delay de 2s para dar tempo ao Supabase propagar escritas recentes (replication lag)
@@ -922,60 +786,18 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
     setImportProgress((prev) => ({ ...prev, phase: 'Sincronizando...' }));
     try {
       await reloadData();
-      console.log('%c[IMPORT] ✅ reloadData() concluído com sucesso', 'color: green; font-weight: bold');
     } catch (reloadErr) {
-      console.error('%c[IMPORT] ❌❌❌ reloadData() FALHOU! Os dados podem estar desatualizados na tela!', 'color: red; font-weight: bold; font-size: 14px');
-      console.error('[IMPORT] Erro do reloadData:', reloadErr);
+      console.error('[IMPORT] reloadData() FALHOU! Os dados podem estar desatualizados na tela!', reloadErr);
       // Tentar reloadData novamente após 3s
       await new Promise((r) => setTimeout(r, 3000));
       try {
         await reloadData();
-        console.log('%c[IMPORT] ✅ reloadData() segunda tentativa OK', 'color: green; font-weight: bold');
       } catch (reloadErr2) {
         console.error('[IMPORT] reloadData segunda tentativa também falhou:', reloadErr2);
       }
     }
 
-    // ═══ DIAGNÓSTICO PÓS-RELOAD: verificar se o state está correto ═══
-    // Fazemos um fetch fresco DIRETO (não dependemos do React state que pode ser stale)
-    console.log('%c═══════════════════════════════════════════════════════════', 'color: lime; font-weight: bold');
-    console.log('%c[DIAG] 🔍 DIAGNÓSTICO PÓS-RELOAD (fetch direto)', 'color: lime; font-weight: bold; font-size: 14px');
-    console.log('%c═══════════════════════════════════════════════════════════', 'color: lime; font-weight: bold');
-    try {
-      const diagUsers = await db.fetchUsuariosAdmin();
-      const diagDepts = await db.fetchDepartamentos();
-      const diagEmpresas = await db.fetchEmpresas();
-      console.log(`[DIAG] Usuários no DB: ${diagUsers.length}`);
-      console.log(`[DIAG] Departamentos no DB: ${diagDepts.length}`);
-      console.log(`[DIAG] Empresas no DB: ${diagEmpresas.length}`);
-
-      const diagUserMap = new Map(diagUsers.map(u => [u.id, u.nome]));
-      const diagDeptMap = new Map(diagDepts.map(d => [d.id, d.nome]));
-
-      // Checar TROPICAL GAS e outras empresas do CSV
-      const checkCodes = ['382', '195', '224']; // Tropical Gas codes + primeiros do CSV
-      const parsedCodes = parsed.slice(0, 5).map(r => r.codigo);
-      const allChecks = [...new Set([...checkCodes, ...parsedCodes])];
-
-      for (const code of allChecks) {
-        const emp = diagEmpresas.find(e => e.codigo === code);
-        if (!emp) continue;
-        const respEntries = Object.entries(emp.responsaveis || {}).filter(([, uid]) => uid);
-        const resolved = respEntries.map(([dId, uid]) => ({
-          dept: diagDeptMap.get(dId) || `❌ DEPT ${dId.slice(0,8)} NÃO ENCONTRADO`,
-          user: diagUserMap.get(uid!) || `❌ USER ${String(uid).slice(0,8)} NÃO ENCONTRADO`,
-        }));
-        console.log(`[DIAG] Cod=${code} | ${emp.razao_social?.slice(0,30)} | ${respEntries.length} resps → `,
-          resolved.length > 0 ? resolved.map(r => `${r.dept}:${r.user}`).join(', ') : '⚠️ SEM RESPONSÁVEIS');
-      }
-    } catch (diagErr) {
-      console.error('[DIAG] Erro no diagnóstico:', diagErr);
-    }
-
     // ═══ VERIFICAÇÃO PÓS-IMPORT: consultar o banco diretamente ═══
-    console.log('%c═══════════════════════════════════════════════════════════', 'color: gold; font-weight: bold');
-    console.log('%c[VERIFY] 🔍 VERIFICAÇÃO PÓS-IMPORT — Consultando banco de dados...', 'color: gold; font-weight: bold; font-size: 14px');
-    console.log('%c═══════════════════════════════════════════════════════════', 'color: gold; font-weight: bold');
     try {
       // Pegar amostra: até 10 empresas do CSV (mistura novas e existentes)
       const sampleRows = parsed.slice(0, Math.min(parsed.length, 10));
@@ -991,7 +813,6 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
         console.error('[VERIFY] Erro ao buscar empresas amostra:', sampleErr);
       } else {
         const sampleEmpresaIds = (sampleEmpresas || []).map((e: any) => e.id);
-        console.log(`[VERIFY] Empresas encontradas no DB: ${sampleEmpresas?.length ?? 0} de ${sampleCodigos.length} buscadas`);
 
         // Buscar responsáveis dessas empresas
         if (sampleEmpresaIds.length > 0) {
@@ -1002,98 +823,11 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
 
           if (respErr) {
             console.error('[VERIFY] Erro ao buscar responsáveis amostra:', respErr);
-          } else {
-            console.log(`[VERIFY] Total de registros em responsaveis para amostra: ${sampleResps?.length ?? 0}`);
-
-            // Agrupar por empresa
-            const respByEmpresa = new Map<string, Array<{ dept: string; user: string | null }>>();
-            for (const r of sampleResps || []) {
-              const list = respByEmpresa.get(r.empresa_id) ?? [];
-              list.push({ dept: r.departamento_id, user: r.usuario_id });
-              respByEmpresa.set(r.empresa_id, list);
-            }
-
-            for (const emp of sampleEmpresas || []) {
-              const csvRow = sampleRows.find((r) => r.codigo === emp.codigo);
-              const dbResps = respByEmpresa.get(emp.id) ?? [];
-              const withUser = dbResps.filter((r) => r.user);
-
-              const logColor = withUser.length > 0 ? 'color: green' : (dbResps.length > 0 ? 'color: orange' : 'color: red; font-weight: bold');
-              console.log(
-                `%c[VERIFY] Cod=${emp.codigo} | ${(emp.razao_social || '').slice(0, 35)}`,
-                logColor,
-                `| CSV resps: ${JSON.stringify(csvRow?.responsaveis ?? {})}`,
-                `| DB registros: ${dbResps.length} (${withUser.length} com usuario_id)`,
-              );
-              if (dbResps.length > 0) {
-                for (const r of dbResps) {
-                  console.log(`    dept=${r.dept} → user=${r.user ?? 'NULL'}`);
-                }
-              }
-            }
           }
         }
-      }
-
-      // Verificar via fetch direto (evita stale closure do React — empresas/departamentos/usuarios
-      // capturados no início da função NÃO refletem o novo state após reloadData)
-      console.log('%c[VERIFY] 📋 Verificando dados pós-reload via fetch direto...', 'color: gold; font-weight: bold');
-      try {
-        const dbMod = await import('@/lib/db');
-        const freshEmpresas = await dbMod.fetchEmpresas();
-        const freshDepts = await dbMod.fetchDepartamentos();
-        console.log(`  Empresas no DB (fresh fetch): ${freshEmpresas.length}`);
-        console.log(`  Departamentos no DB (fresh fetch): ${freshDepts.length}`);
-
-        const empresasComResp = freshEmpresas.filter((e) => {
-          const uids = Object.values(e.responsaveis || {}).filter(Boolean);
-          return uids.length > 0;
-        });
-        console.log(`  Empresas com pelo menos 1 responsável vinculado: ${empresasComResp.length} de ${freshEmpresas.length}`);
-
-        // Checar amostra no fetch fresco
-        for (const csvRow of sampleRows) {
-          const empFresh = freshEmpresas.find((e) => e.codigo === csvRow.codigo);
-          if (!empFresh) {
-            console.warn(`%c[VERIFY] ⚠️ Empresa ${csvRow.codigo} NÃO encontrada no fetch fresco!`, 'color: red; font-weight: bold');
-            continue;
-          }
-          const freshResps = empFresh.responsaveis || {};
-          const withUser = Object.entries(freshResps).filter(([, uid]) => uid);
-          const deptNames = withUser.map(([dId]) => freshDepts.find((d) => d.id === dId)?.nome ?? dId);
-          console.log(
-            `[VERIFY][FRESH] Cod=${csvRow.codigo} | responsaveis: ${withUser.length} com userId | depts: [${deptNames.join(', ')}]`,
-          );
-        }
-      } catch (freshErr) {
-        console.error('[VERIFY] Erro no fetch fresco:', freshErr);
       }
     } catch (verifyErr) {
       console.error('[VERIFY] Erro na verificação pós-import:', verifyErr);
-    }
-
-    // ═══ RELATÓRIO FINAL ═══
-    console.log('%c═══════════════════════════════════════════════════════════', 'color: magenta; font-weight: bold');
-    console.log('%c[IMPORT] ★ RELATÓRIO FINAL DA IMPORTAÇÃO ★', 'color: magenta; font-weight: bold; font-size: 16px');
-    console.log('%c═══════════════════════════════════════════════════════════', 'color: magenta; font-weight: bold');
-    console.log(`  Criadas: ${created}`);
-    console.log(`  Atualizadas: ${updated}`);
-    console.log(`  Erros: ${errors}`);
-    console.log(`  Usuários com falha no vínculo: ${failedUsers}`);
-    console.log(`  Departamentos criados: [${deptCreated.join(', ')}]`);
-
-    if (empresasComProblema.length > 0) {
-      console.log('%c[IMPORT] ⚠️⚠️⚠️ EMPRESAS COM PROBLEMAS DE RESPONSÁVEIS ⚠️⚠️⚠️', 'color: red; font-weight: bold; font-size: 14px');
-      console.log(`Total: ${empresasComProblema.length} empresas`);
-      for (const ep of empresasComProblema) {
-        console.groupCollapsed(`🔴 Cod=${ep.codigo} | ${ep.nome}`);
-        console.log('Responsáveis no CSV:', ep.csvResp);
-        console.log('Resolução (deptId → userId):', ep.resolved);
-        console.table(ep.issues);
-        console.groupEnd();
-      }
-    } else {
-      console.log('%c[IMPORT] ✅ Todas as empresas tiveram responsáveis resolvidos com sucesso!', 'color: green; font-weight: bold');
     }
 
     setResult({ created, updated, skipped: parsed.length - created - updated, errors, deptCreated });
