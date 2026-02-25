@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { AlertTriangle, Building2, Plus, Search, Pencil, Trash2, Eye, FileText, CalendarClock, Upload, Users, Globe, Loader2, Clock } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Building2, Plus, Search, Pencil, Trash2, Eye, FileText, CalendarClock, Upload, Users, Clock } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import type { Empresa, UUID, Limiares } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
@@ -10,9 +10,8 @@ import { daysUntil } from '@/app/utils/date';
 import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import ModalImportarPlanilha from '@/app/components/ModalImportarPlanilha';
-import ModalImportarResponsabilidadesFiscal from '@/app/components/ModalImportarResponsabilidadesFiscal';
+import ModalImportarResponsabilidadesPorDep from '@/app/components/ModalImportarResponsabilidadesPorDep';
 import ConfirmModal from '@/app/components/ConfirmModal';
-import { api } from '@/app/utils/api';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 
 function canEditEmpresa(currentUserId: UUID | null, canManage: boolean, empresa: Empresa): boolean {
@@ -33,7 +32,7 @@ const DEPT_COLORS: Record<number, { bg: string; text: string; border: string }> 
 };
 
 export default function EmpresasPage() {
-  const { empresas, currentUserId, canManage, removerEmpresa, atualizarEmpresa, departamentos, usuarios, mostrarAlerta } = useSistema();
+  const { empresas, currentUserId, canManage, removerEmpresa, departamentos, usuarios } = useSistema();
 
   const [limiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
 
@@ -48,9 +47,9 @@ export default function EmpresasPage() {
   const [searchCodigo, setSearchCodigo] = useState('');
   const [modalCreate, setModalCreate] = useState(false);
   const [modalImport, setModalImport] = useState(false);
-  const [modalImportFiscal, setModalImportFiscal] = useState(false);
   const [empresaEdit, setEmpresaEdit] = useState<Empresa | null>(null);
   const [empresaView, setEmpresaView] = useState<Empresa | null>(null);
+  const [modalImportPorDep, setModalImportPorDep] = useState(false);
 
   const [selectedIds, setSelectedIds] = useState<UUID[]>([]);
   const selectAllRef = useRef<HTMLInputElement | null>(null);
@@ -121,86 +120,6 @@ export default function EmpresasPage() {
     setConfirmBulk(false);
   };
 
-  // ── Enriquecer CNPJ em lote ──
-  const [enriching, setEnriching] = useState(false);
-  const [enrichProgress, setEnrichProgress] = useState({ done: 0, total: 0, success: 0, skipped: 0 });
-  const enrichAbortRef = useRef(false);
-
-  const empresasSemEndereco = useMemo(() => {
-    return empresas.filter((e) => {
-      const digits = (e.cnpj || '').replace(/\D/g, '');
-      if (digits.length !== 14) return false;
-      // Se já tem cidade preenchida, já foi enriquecida
-      if (e.cidade) return false;
-      return true;
-    });
-  }, [empresas]);
-
-  const handleEnrichCnpj = useCallback(async () => {
-    if (enriching) {
-      enrichAbortRef.current = true;
-      return;
-    }
-    enrichAbortRef.current = false;
-    const pending = empresasSemEndereco;
-    if (pending.length === 0) {
-      mostrarAlerta('CNPJ', 'Todas as empresas já possuem endereço preenchido.', 'aviso');
-      return;
-    }
-    setEnriching(true);
-    setEnrichProgress({ done: 0, total: pending.length, success: 0, skipped: 0 });
-
-    let success = 0;
-    let skipped = 0;
-    const DELAY_MS = 1500; // 1.5s entre consultas (~40/min — dentro do limite da BrasilAPI)
-
-    for (let i = 0; i < pending.length; i++) {
-      if (enrichAbortRef.current) break;
-      const emp = pending[i];
-      const digits = (emp.cnpj || '').replace(/\D/g, '');
-
-      try {
-        const data = await api.consultarCnpj(digits);
-        if (data?.cidade || data?.estado || data?.logradouro) {
-          await atualizarEmpresa(emp.id, {
-            apelido: data.nome_fantasia || emp.apelido || undefined,
-            data_abertura: data.data_abertura || emp.data_abertura || undefined,
-            estado: data.estado || emp.estado || undefined,
-            cidade: data.cidade || emp.cidade || undefined,
-            bairro: data.bairro || emp.bairro || undefined,
-            logradouro: data.logradouro || emp.logradouro || undefined,
-            numero: data.numero || emp.numero || undefined,
-            cep: data.cep || emp.cep || undefined,
-            email: data.email || emp.email || undefined,
-            telefone: data.telefone || emp.telefone || undefined,
-          });
-          success++;
-        } else {
-          skipped++;
-        }
-      } catch (err: unknown) {
-        skipped++;
-        // rate-limited — esperar mais tempo (30s se 429, senão 3s)
-        const isRateLimit = err instanceof Error && err.message.toLowerCase().includes('limite');
-        await new Promise((r) => setTimeout(r, isRateLimit ? 30000 : 3000));
-      }
-
-      setEnrichProgress({ done: i + 1, total: pending.length, success, skipped });
-
-      // Delay entre consultas
-      if (i < pending.length - 1 && !enrichAbortRef.current) {
-        await new Promise((r) => setTimeout(r, DELAY_MS));
-      }
-    }
-
-    setEnriching(false);
-    mostrarAlerta(
-      'Enriquecimento CNPJ',
-      `${success} empresa(s) atualizadas, ${skipped} sem dados. ${enrichAbortRef.current ? '(interrompido)' : ''}`,
-      success > 0 ? 'sucesso' : 'aviso'
-    );
-  }, [enriching, empresasSemEndereco, atualizarEmpresa, mostrarAlerta]);
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -217,27 +136,13 @@ export default function EmpresasPage() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-            {canManage && empresasSemEndereco.length > 0 && (
-              <button
-                onClick={handleEnrichCnpj}
-                className={
-                  'inline-flex items-center gap-2 rounded-xl border-2 px-3 sm:px-4 py-2 sm:py-2.5 text-sm font-bold transition ' +
-                  (enriching
-                    ? 'border-orange-300 text-orange-700 bg-orange-50'
-                    : 'border-violet-200 text-violet-700 hover:bg-violet-50')
-                }
-              >
-                {enriching ? <Loader2 size={18} className="animate-spin" /> : <Globe size={18} />}
-                {enriching ? 'Parar' : `CNPJ (${empresasSemEndereco.length})`}
-              </button>
-            )}
             {canManage && (
               <button
-                onClick={() => setModalImportFiscal(true)}
+                onClick={() => setModalImportPorDep(true)}
                 className="inline-flex items-center gap-2 rounded-xl border-2 border-emerald-200 text-emerald-700 px-3 sm:px-4 py-2 sm:py-2.5 text-sm font-bold hover:bg-emerald-50 transition"
               >
                 <Users size={18} />
-                <span className="hidden sm:inline">Importar</span> Resp. Fiscal
+                <span className="hidden sm:inline">Importar</span> por DEP
               </button>
             )}
             {canManage && (
@@ -260,27 +165,6 @@ export default function EmpresasPage() {
             )}
           </div>
         </div>
-
-        {/* Barra de progresso do enriquecimento CNPJ */}
-        {enriching && enrichProgress.total > 0 && (
-          <div className="mt-4 rounded-xl bg-violet-50 border border-violet-200 p-4">
-            <div className="flex items-center justify-between text-sm font-semibold text-violet-700 mb-2">
-              <span className="flex items-center gap-2">
-                <Loader2 size={16} className="animate-spin" />
-                Consultando CNPJs... {enrichProgress.done}/{enrichProgress.total}
-              </span>
-              <span className="text-xs text-violet-500">
-                {enrichProgress.success} atualizadas • {enrichProgress.skipped} sem dados
-              </span>
-            </div>
-            <div className="h-2 rounded-full bg-violet-200 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-violet-500 transition-all duration-300"
-                style={{ width: `${(enrichProgress.done / enrichProgress.total) * 100}%` }}
-              />
-            </div>
-          </div>
-        )}
 
         <div className="mt-5 flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1 max-w-lg">
@@ -505,9 +389,9 @@ export default function EmpresasPage() {
 
       {modalCreate && <ModalCadastrarEmpresa onClose={() => setModalCreate(false)} />}
       {modalImport && <ModalImportarPlanilha onClose={() => setModalImport(false)} />}
-      {modalImportFiscal && <ModalImportarResponsabilidadesFiscal onClose={() => setModalImportFiscal(false)} />}
       {empresaEdit && <ModalCadastrarEmpresa empresa={empresaEdit} onClose={() => setEmpresaEdit(null)} />}
       {empresaView && <ModalDetalhesEmpresa empresa={empresaView} onClose={() => setEmpresaView(null)} />}
+      {modalImportPorDep && <ModalImportarResponsabilidadesPorDep onClose={() => setModalImportPorDep(false)} />}
 
       <ConfirmModal
         open={!!confirmDelete}
