@@ -135,7 +135,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         db.fetchDepartamentos(),
         db.fetchServicos(),
         db.fetchNotificacoes(userId),
-        db.fetchLogs(),
+        db.fetchLogs().catch(() => []),
         isManager ? db.fetchLixeira() : Promise.resolve([]),
         isManager ? db.fetchUsuariosAdmin() : db.fetchUsuariosBasic().catch(() => (me ? [me] : [])),
       ]);
@@ -336,10 +336,12 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         userNome: nomeOverride !== undefined ? nomeOverride : (currentUser?.nome ?? null),
         ...entry,
       });
-      setState((prev) => ({
-        ...prev,
-        logs: [newLog, ...prev.logs],
-      }));
+      queueMicrotask(() => {
+        setState((prev) => ({
+          ...prev,
+          logs: [newLog, ...prev.logs],
+        }));
+      });
     } catch (err) {
       console.error('Erro ao inserir log:', err);
     }
