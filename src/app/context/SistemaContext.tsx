@@ -37,6 +37,10 @@ function diffObjects(before: Record<string, unknown>, after: Record<string, unkn
   return diff;
 }
 
+function hasOwnField<T extends object>(value: T, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
 type AutorHistorico = {
   autorId: UUID | null;
   autorNome?: string;
@@ -47,8 +51,13 @@ function enriquecerDocumentoComHistorico(
   patch: Partial<DocumentoEmpresa>,
   autor: AutorHistorico
 ): Partial<DocumentoEmpresa> {
-  const historicoBase = normalizarHistoricoVencimento(patch.historicoVencimento ?? documentoAtual?.historicoVencimento);
+  const historicoBase = hasOwnField(patch, 'historicoVencimento')
+    ? normalizarHistoricoVencimento(patch.historicoVencimento)
+    : normalizarHistoricoVencimento(documentoAtual?.historicoVencimento);
   let historico = historicoBase;
+  const tagVencimento = hasOwnField(patch, 'tagVencimento')
+    ? limparTagVencimento(patch.tagVencimento)
+    : limparTagVencimento(documentoAtual?.tagVencimento);
 
   if (documentoAtual && patch.validade !== undefined && patch.validade !== documentoAtual.validade) {
     const anterior = documentoAtual.validade ? formatBR(documentoAtual.validade) : 'sem validade';
@@ -67,9 +76,7 @@ function enriquecerDocumentoComHistorico(
 
   return {
     ...patch,
-    tagVencimento: patch.tagVencimento !== undefined
-      ? limparTagVencimento(patch.tagVencimento)
-      : limparTagVencimento(documentoAtual?.tagVencimento),
+    tagVencimento,
     historicoVencimento: historico,
   };
 }
@@ -77,7 +84,12 @@ function enriquecerDocumentoComHistorico(
 function enriquecerRetsComHistorico(retsAtuais: RetItem[], proximosRets: RetItem[], autor: AutorHistorico): RetItem[] {
   return proximosRets.map((ret) => {
     const retAtual = retsAtuais.find((item) => item.id === ret.id);
-    let historico = normalizarHistoricoVencimento(ret.historicoVencimento ?? retAtual?.historicoVencimento);
+    let historico = hasOwnField(ret, 'historicoVencimento')
+      ? normalizarHistoricoVencimento(ret.historicoVencimento)
+      : normalizarHistoricoVencimento(retAtual?.historicoVencimento);
+    const tagVencimento = hasOwnField(ret, 'tagVencimento')
+      ? limparTagVencimento(ret.tagVencimento)
+      : limparTagVencimento(retAtual?.tagVencimento);
 
     if (retAtual && ret.vencimento !== retAtual.vencimento) {
       const anterior = retAtual.vencimento ? formatBR(retAtual.vencimento) : 'sem vencimento';
@@ -109,7 +121,7 @@ function enriquecerRetsComHistorico(retsAtuais: RetItem[], proximosRets: RetItem
 
     return {
       ...ret,
-      tagVencimento: limparTagVencimento(ret.tagVencimento ?? retAtual?.tagVencimento),
+      tagVencimento,
       historicoVencimento: historico,
     };
   });
