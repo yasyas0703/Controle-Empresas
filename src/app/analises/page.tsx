@@ -5,7 +5,7 @@ import { BarChart3, PieChart, TrendingUp, Building2, MapPin, Briefcase, FileChec
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil } from '@/app/utils/date';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
-import { detectTipoEstabelecimento, getTipoInscricaoDisplay, formatarDocumento, detectTipoInscricao } from '@/app/utils/validation';
+import { formatarDocumento, detectTipoInscricao } from '@/app/utils/validation';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import type { Empresa, Limiares } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
@@ -19,6 +19,31 @@ function countBy(values: string[]) {
   }
   return Object.entries(map).sort((a, b) => b[1] - a[1]);
 }
+
+function requerTipoEstabelecimento(empresa: Empresa) {
+  const tipoInscricao = detectTipoInscricao(empresa.cnpj || '', empresa.tipoInscricao);
+  return tipoInscricao === 'CNPJ' || tipoInscricao === 'MEI';
+}
+
+function getTipoEstabelecimentoAnalise(empresa: Empresa) {
+  if (empresa.tipoEstabelecimento === 'matriz') return 'Matriz';
+  if (empresa.tipoEstabelecimento === 'filial') return 'Filial';
+}
+
+
+function getBadgeTipoAnalise(empresa: Empresa) {
+  if (empresa.tipoEstabelecimento === 'matriz') {
+    return { label: 'Matriz', cls: 'bg-teal-100 text-teal-700' };
+  }
+  if (empresa.tipoEstabelecimento === 'filial') {
+    return { label: 'Filial', cls: 'bg-teal-100 text-teal-700' };
+  }
+  if (empresa.tipoInscricao) {
+    return { label: empresa.tipoInscricao, cls: 'bg-gray-100 text-gray-600' };
+  }
+  return { label: 'Nao informado', cls: 'bg-amber-100 text-amber-700' };
+}
+
 
 const barColors = [
   'bg-blue-500', 'bg-emerald-500', 'bg-orange-500', 'bg-rose-500',
@@ -39,7 +64,9 @@ export default function AnalisesPage() {
 
   const [filtroRegime, setFiltroRegime] = useState('');
   const [filtroTipo, setFiltroTipo] = useState('');
+  const [filtroTipoInscricao, setFiltroTipoInscricao] = useState('');
   const [filtroDep, setFiltroDep] = useState('');
+  const [filtroResponsavel, setFiltroResponsavel] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
   const [statusVenc, setStatusVenc] = useState('');
   const [empresaView, setEmpresaView] = useState<Empresa | null>(null);
@@ -50,27 +77,47 @@ export default function AnalisesPage() {
     return Array.from(set).sort();
   }, [empresas]);
 
+  const responsaveisOptions = useMemo(() => {
+    if (!filtroDep) return usuarios.filter((u) => u.ativo);
+    return usuarios.filter((u) => u.ativo && u.departamentoId === filtroDep);
+  }, [usuarios, filtroDep]);
+
+  const departamentoSelecionadoNome = filtroDep
+    ? departamentos.find((d) => d.id === filtroDep)?.nome || 'Departamento'
+    : '';
+
   const filteredEmpresas = useMemo(() => {
     return empresas.filter((e) => {
-      if (filtroRegime && (e.regime_federal || '') !== filtroRegime) return false;
+      if (filtroRegime) {
+        if (filtroRegime === '__nao_informado__') {
+          if (e.regime_federal && e.regime_federal.trim()) return false;
+        } else if ((e.regime_federal || '') !== filtroRegime) {
+          return false;
+        }
+      }
       if (filtroTipo) {
-        const computed = detectTipoEstabelecimento(e.cnpj || '');
-        const effective = computed || e.tipoEstabelecimento;
-        if (filtroTipo === 'cpf') {
-          const digits = (e.cnpj || '').replace(/\D/g, '');
-          if (digits.length !== 11) return false;
-        } else if (filtroTipo === 'caepf') {
-          if ((e.tipoInscricao || '') !== 'CAEPF') return false;
-        } else if (filtroTipo === 'cno') {
-          const digits = (e.cnpj || '').replace(/\D/g, '');
-          if (digits.length !== 12 && (e.tipoInscricao || '') !== 'CNO') return false;
-        } else if (effective !== filtroTipo) {
+        const tipoEstabelecimento = (e.tipoEstabelecimento || '').trim();
+        if (filtroTipo === '__nao_informado__') {
+          if (!requerTipoEstabelecimento(e) || tipoEstabelecimento) return false;
+        } else if (tipoEstabelecimento !== filtroTipo) {
+          return false;
+        }
+      }
+      if (filtroTipoInscricao) {
+        const tipoInscricao = (e.tipoInscricao || '').trim();
+        if (filtroTipoInscricao === '__nao_informado__') {
+          if (tipoInscricao) return false;
+        } else if (tipoInscricao !== filtroTipoInscricao) {
           return false;
         }
       }
       if (filtroDep) {
         const resp = (e.responsaveis || {})[filtroDep];
         if (!resp) return false;
+        if (filtroResponsavel && resp !== filtroResponsavel) return false;
+      } else if (filtroResponsavel) {
+        const anyResp = Object.values(e.responsaveis || {}).some((uid) => uid === filtroResponsavel);
+        if (!anyResp) return false;
       }
       if (filtroEstado && (e.estado || '') !== filtroEstado) return false;
       if (statusVenc) {
@@ -86,23 +133,15 @@ export default function AnalisesPage() {
       }
       return true;
     }).sort((a, b) => (a.razao_social || a.apelido || '').localeCompare(b.razao_social || b.apelido || ''));
-  }, [empresas, filtroRegime, filtroTipo, filtroDep, filtroEstado, statusVenc, limiares]);
+  }, [empresas, filtroRegime, filtroTipo, filtroTipoInscricao, filtroDep, filtroResponsavel, filtroEstado, statusVenc, limiares]);
 
   const stats = useMemo(() => {
     const servicos = filteredEmpresas.flatMap((e) => e.servicos || []);
     const regimes = filteredEmpresas.map((e) => e.regime_federal || 'Não informado');
     const estados = filteredEmpresas.map((e) => e.estado || 'Não informado');
-    const tipos = filteredEmpresas.map((e) => {
-      const digits = (e.cnpj || '').replace(/\D/g, '');
-      if (digits.length === 11) return 'CPF';
-      const computed = detectTipoEstabelecimento(e.cnpj || '');
-      const effective = computed || e.tipoEstabelecimento;
-      if (effective === 'matriz') return 'Matriz';
-      if (effective === 'filial') return 'Filial';
-      const tipoIns = getTipoInscricaoDisplay(e.cnpj, e.tipoInscricao);
-      if (tipoIns) return tipoIns;
-      return 'Não informado';
-    });
+    const tipos = filteredEmpresas
+      .filter(requerTipoEstabelecimento)
+      .map((e) => getTipoEstabelecimentoAnalise(e));
     const inscricoes = filteredEmpresas.map((e) => e.tipoInscricao || 'Não informado');
 
     const byServico = countBy(servicos);
@@ -121,6 +160,19 @@ export default function AnalisesPage() {
     const byDepartamento = Object.entries(byDep)
       .map(([dId, n]) => [departamentos.find(d => d.id === dId)?.nome || dId, n] as [string, number])
       .sort((a, b) => b[1] - a[1]);
+
+    const usuariosBase = (filtroDep
+      ? usuarios.filter((u) => u.ativo && u.departamentoId === filtroDep)
+      : usuarios.filter((u) => u.ativo)
+    ).map((u) => {
+      const totalEmpresas = filteredEmpresas.filter((empresa) => {
+        if (filtroDep) return (empresa.responsaveis || {})[filtroDep] === u.id;
+        return Object.values(empresa.responsaveis || {}).some((uid) => uid === u.id);
+      }).length;
+      return [u.nome, totalEmpresas] as [string, number];
+    });
+
+    const byResponsavel = usuariosBase.sort((a, b) => b[1] - a[1]);
 
     // Documentos por status
     let docOk = 0;
@@ -142,10 +194,27 @@ export default function AnalisesPage() {
       ['Vencido', docVencido],
     ] as Array<[string, number]>).filter(([, n]) => n > 0);
 
-    return { byServico, byRegime, byEstado, byTipo, byInscricao, byDepartamento, docStatus };
-  }, [filteredEmpresas, departamentos]);
+    // Departamento → Usuário drill-down (usa todas as empresas filtradas, mas ignora filtro de dep/resp para mostrar todos os deps)
+    const byDepUsuario = departamentos
+      .map((dept) => {
+        const usersInDept = usuarios.filter((u) => u.ativo && u.departamentoId === dept.id);
+        const usersData = usersInDept
+          .map((user) => {
+            const count = filteredEmpresas.filter((e) => (e.responsaveis || {})[dept.id] === user.id).length;
+            return { id: user.id, nome: user.nome, count };
+          })
+          .filter((u) => u.count > 0)
+          .sort((a, b) => b.count - a.count);
+        const total = filteredEmpresas.filter((e) => !!(e.responsaveis || {})[dept.id]).length;
+        return { dept, users: usersData, total };
+      })
+      .filter((d) => d.total > 0)
+      .sort((a, b) => b.total - a.total);
 
-  const hasFilters = filtroRegime || filtroTipo || filtroDep || filtroEstado || statusVenc;
+    return { byServico, byRegime, byEstado, byTipo, byInscricao, byDepartamento, byResponsavel, docStatus, byDepUsuario };
+  }, [filteredEmpresas, departamentos, usuarios, filtroDep]);
+
+  const hasFilters = filtroRegime || filtroTipo || filtroTipoInscricao || filtroDep || filtroResponsavel || filtroEstado || statusVenc;
 
   return (
     <div className="space-y-6">
@@ -163,7 +232,7 @@ export default function AnalisesPage() {
           </div>
           {hasFilters && (
             <button
-              onClick={() => { setFiltroRegime(''); setFiltroTipo(''); setFiltroDep(''); setFiltroEstado(''); setStatusVenc(''); }}
+              onClick={() => { setFiltroRegime(''); setFiltroTipo(''); setFiltroTipoInscricao(''); setFiltroDep(''); setFiltroResponsavel(''); setFiltroEstado(''); setStatusVenc(''); }}
               className="text-sm text-teal-600 hover:text-teal-700 font-bold"
             >
               Limpar filtros
@@ -177,18 +246,31 @@ export default function AnalisesPage() {
             <option value="Simples Nacional">Simples Nacional</option>
             <option value="Lucro Presumido">Lucro Presumido</option>
             <option value="Lucro Real">Lucro Real</option>
+            <option value="__nao_informado__">Não informado</option>
           </select>
           <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
-            <option value="">Todos os tipos</option>
+            <option value="">Matriz / Filial</option>
             <option value="matriz">Matriz</option>
             <option value="filial">Filial</option>
-            <option value="cpf">CPF</option>
-            <option value="caepf">CAEPF</option>
-            <option value="cno">CNO</option>
+            <option value="__nao_informado__">Não informado</option>
           </select>
-          <select value={filtroDep} onChange={(e) => setFiltroDep(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={filtroTipoInscricao} onChange={(e) => setFiltroTipoInscricao(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+            <option value="">Tipo de inscrição</option>
+            <option value="CNPJ">CNPJ</option>
+            <option value="CPF">CPF</option>
+            <option value="MEI">MEI</option>
+            <option value="CEI">CEI</option>
+            <option value="CAEPF">CAEPF</option>
+            <option value="CNO">CNO</option>
+            <option value="__nao_informado__">Não informado</option>
+          </select>
+          <select value={filtroDep} onChange={(e) => { setFiltroDep(e.target.value); setFiltroResponsavel(''); }} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Todos os departamentos</option>
             {departamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
+          </select>
+          <select value={filtroResponsavel} onChange={(e) => setFiltroResponsavel(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+            <option value="">Todos os responsáveis</option>
+            {responsaveisOptions.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
           </select>
           <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Todos os estados</option>
@@ -222,22 +304,36 @@ export default function AnalisesPage() {
           {stats.byTipo.length === 0 ? <Empty /> : <DonutChart rows={stats.byTipo} compact />}
         </Panel>
 
-        <Panel title="Por Estado (UF)" icon={<MapPin size={16} />} color="text-teal-600">
-          {stats.byEstado.length === 0 ? <Empty /> : <HorizontalBars rows={stats.byEstado} />}
-        </Panel>
-
         <Panel title="Por Departamento" icon={<Users size={16} />} color="text-rose-600">
           {stats.byDepartamento.length === 0 ? <Empty /> : <Bars rows={stats.byDepartamento} />}
+        </Panel>
+
+        <Panel title="Por Estado (UF)" icon={<MapPin size={16} />} color="text-teal-600">
+          {stats.byEstado.length === 0 ? <Empty /> : <HorizontalBars rows={stats.byEstado} />}
         </Panel>
       </div>
 
       {/* Gráficos secundários */}
+      <div className="grid grid-cols-1 gap-6">
+        <Panel
+          title={filtroDep ? `Responsáveis de ${departamentoSelecionadoNome}` : 'Empresas por Responsável'}
+          icon={<Users size={18} />}
+          color="text-violet-600"
+        >
+          {stats.byResponsavel.length === 0 ? (
+            <Empty />
+          ) : (
+            <Bars rows={stats.byResponsavel} limit={filtroDep ? Math.max(stats.byResponsavel.length, 1) : 12} />
+          )}
+        </Panel>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Panel title="Empresas por Serviço" icon={<BarChart3 size={18} />} color="text-cyan-600">
           {stats.byServico.length === 0 ? <Empty /> : <Bars rows={stats.byServico} />}
         </Panel>
 
-        <Panel title="Tipo de Inscrição" icon={<Briefcase size={18} />} color="text-teal-600">
+        <Panel title="Tipo de inscrição" icon={<Briefcase size={18} />} color="text-teal-600">
           {stats.byInscricao.length === 0 ? <Empty /> : <HorizontalBars rows={stats.byInscricao} />}
         </Panel>
       </div>
@@ -250,6 +346,59 @@ export default function AnalisesPage() {
         <Panel title="Status dos Documentos" icon={<FileCheck size={18} />} color="text-emerald-600">
           {stats.docStatus.length === 0 ? <Empty /> : <DonutChart rows={stats.docStatus} statusColors />}
         </Panel>
+      </div>
+
+      {/* Responsáveis e Departamentos */}
+      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-indigo-600"><Users size={18} /></span>
+          <div className="text-base sm:text-lg font-bold text-gray-900">Responsáveis e Departamentos</div>
+        </div>
+        <p className="text-xs text-gray-400 mb-4">Clique em um departamento para filtrar · Clique em um usuário para ver só as empresas dele</p>
+        {stats.byDepUsuario.length === 0 ? (
+          <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-500">Sem dados para exibir.</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            {stats.byDepUsuario.map(({ dept, users, total }) => {
+              const isDepSel = filtroDep === dept.id;
+              return (
+                <div
+                  key={dept.id}
+                  className={`rounded-xl border p-4 transition-all ${isDepSel ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200' : 'border-slate-200 bg-slate-50 hover:border-indigo-200 cursor-pointer'}`}
+                  onClick={() => { setFiltroDep(isDepSel ? '' : dept.id); setFiltroResponsavel(''); }}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="font-bold text-slate-800 truncate pr-2">{dept.nome}</div>
+                    <span className="shrink-0 text-xs font-bold text-slate-600 bg-white rounded-full px-2.5 py-0.5 border border-slate-200">{total} empresa{total !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {users.map((u) => {
+                      const isUserSel = isDepSel && filtroResponsavel === u.id;
+                      return (
+                        <div
+                          key={u.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isUserSel) {
+                              setFiltroResponsavel('');
+                            } else {
+                              setFiltroDep(dept.id);
+                              setFiltroResponsavel(u.id);
+                            }
+                          }}
+                          className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm cursor-pointer transition ${isUserSel ? 'bg-indigo-500 text-white' : 'bg-white hover:bg-indigo-50 border border-slate-100'}`}
+                        >
+                          <span className="font-medium truncate">{u.nome}</span>
+                          <span className={`font-bold shrink-0 ${isUserSel ? 'text-white' : 'text-slate-700'}`}>{u.count}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Lista de Empresas Filtradas */}
@@ -285,17 +434,7 @@ export default function AnalisesPage() {
                 <tbody>
                   {filteredEmpresas.map((emp) => {
                     const nome = emp.razao_social || emp.apelido || '-';
-                    const digits = (emp.cnpj || '').replace(/\D/g, '');
-                    const tipo = (() => {
-                      if (digits.length === 11) return { label: 'CPF', cls: 'bg-sky-100 text-sky-700' };
-                      const computed = detectTipoEstabelecimento(emp.cnpj || '');
-                      const effective = computed || emp.tipoEstabelecimento;
-                      if (effective === 'matriz') return { label: 'Matriz', cls: 'bg-teal-100 text-teal-700' };
-                      if (effective === 'filial') return { label: 'Filial', cls: 'bg-teal-100 text-teal-700' };
-                      const tipoIns = getTipoInscricaoDisplay(emp.cnpj, emp.tipoInscricao);
-                      if (tipoIns && tipoIns !== 'CNPJ') return { label: tipoIns, cls: 'bg-gray-100 text-gray-600' };
-                      return { label: 'CNPJ', cls: 'bg-gray-100 text-gray-600' };
-                    })();
+                    const tipo = getBadgeTipoAnalise(emp);
                     const docFormatted = emp.cnpj ? formatarDocumento(emp.cnpj, detectTipoInscricao(emp.cnpj) || emp.tipoInscricao || '') : '-';
                     return (
                       <tr key={emp.id} className="border-b border-gray-50 hover:bg-gray-50 transition">
@@ -333,17 +472,7 @@ export default function AnalisesPage() {
             <div className="md:hidden divide-y divide-gray-100">
               {filteredEmpresas.map((emp) => {
                 const nome = emp.razao_social || emp.apelido || '-';
-                const digits = (emp.cnpj || '').replace(/\D/g, '');
-                const tipo = (() => {
-                  if (digits.length === 11) return { label: 'CPF', cls: 'bg-sky-100 text-sky-700' };
-                  const computed = detectTipoEstabelecimento(emp.cnpj || '');
-                  const effective = computed || emp.tipoEstabelecimento;
-                  if (effective === 'matriz') return { label: 'Matriz', cls: 'bg-teal-100 text-teal-700' };
-                  if (effective === 'filial') return { label: 'Filial', cls: 'bg-teal-100 text-teal-700' };
-                  const tipoIns = getTipoInscricaoDisplay(emp.cnpj, emp.tipoInscricao);
-                  if (tipoIns && tipoIns !== 'CNPJ') return { label: tipoIns, cls: 'bg-gray-100 text-gray-600' };
-                  return { label: 'CNPJ', cls: 'bg-gray-100 text-gray-600' };
-                })();
+                const tipo = getBadgeTipoAnalise(emp);
                 const docFormatted = emp.cnpj ? formatarDocumento(emp.cnpj, detectTipoInscricao(emp.cnpj) || emp.tipoInscricao || '') : '-';
                 return (
                   <div key={emp.id} className="p-3 hover:bg-gray-50 transition">
@@ -412,11 +541,11 @@ function Panel({ title, icon, color, children }: { title: string; icon?: React.R
   );
 }
 
-function Bars({ rows }: { rows: Array<[string, number]> }) {
+function Bars({ rows, limit = 12 }: { rows: Array<[string, number]>; limit?: number }) {
   const max = Math.max(1, ...rows.map(([, n]) => n));
   return (
     <div className="space-y-3">
-      {rows.slice(0, 12).map(([label, n], idx) => (
+      {rows.slice(0, limit).map(([label, n], idx) => (
         <div key={label} className="space-y-1">
           <div className="flex justify-between text-sm">
             <div className="font-semibold text-gray-800 truncate pr-3">{label}</div>
@@ -425,7 +554,7 @@ function Bars({ rows }: { rows: Array<[string, number]> }) {
           <div className="h-3 rounded-full bg-gray-100 overflow-hidden">
             <div
               className={`h-3 rounded-full ${barColors[idx % barColors.length]} transition-all duration-500`}
-              style={{ width: `${(n / max) * 100}%` }}
+              style={{ width: `${n > 0 ? Math.max((n / max) * 100, 6) : 0}%` }}
             />
           </div>
         </div>
@@ -465,14 +594,13 @@ function DonutChart({ rows, statusColors, compact }: { rows: Array<[string, numb
     'Vencido': '#ef4444',
   };
 
-  let cumPercent = 0;
-  const segments = rows.map(([label, n], idx) => {
+  const segments = rows.reduce<Array<{ label: string; n: number; percent: number; offset: number; color: string }>>((acc, [label, n], idx) => {
     const percent = n / total;
-    const offset = cumPercent;
-    cumPercent += percent;
+    const offset = acc.length === 0 ? 0 : acc[acc.length - 1].offset + acc[acc.length - 1].percent;
     const color = statusColors ? (statusColorMap[label] || donutColors[idx % donutColors.length]) : donutColors[idx % donutColors.length];
-    return { label, n, percent, offset, color };
-  });
+    acc.push({ label, n, percent, offset, color });
+    return acc;
+  }, []);
 
   const radius = compact ? 44 : 60;
   const size = compact ? 110 : 150;
@@ -564,3 +692,4 @@ function RankingList({ rows }: { rows: Array<[string, number]> }) {
 function Empty() {
   return <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-500">Sem dados para exibir.</div>;
 }
+

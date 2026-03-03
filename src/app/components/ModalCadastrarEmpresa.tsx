@@ -357,6 +357,9 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
         <form
           onSubmit={handleSubmit}
           className="p-4 sm:p-6 space-y-6"
+          autoComplete="off"
+          data-lpignore="true"
+          data-form-type="other"
           onKeyDown={(e) => {
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
               e.preventDefault();
@@ -367,6 +370,9 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
             }
           }}
         >
+          <input type="text" name="prevent-autofill-text" autoComplete="off" className="hidden" tabIndex={-1} aria-hidden="true" />
+          <input type="password" name="prevent-autofill-password" autoComplete="new-password" className="hidden" tabIndex={-1} aria-hidden="true" />
+
           {/* Tipo de Empresa */}
           <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
             <h4 className="font-semibold text-blue-800 mb-4">Tipo de Empresa</h4>
@@ -797,6 +803,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                 <input
                   type="text"
                   value={String(formData.cep || '')}
+                  autoComplete="new-password"
                   onChange={(e) => {
                     const apenasNumeros = e.target.value.replace(/\D/g, '');
                     const valorFormatado = formatarCEP(apenasNumeros);
@@ -823,6 +830,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Estado</label>
                 <select
                   value={String(formData.estado || '')}
+                  autoComplete="new-password"
                   onChange={(e) => handleChange('estado', e.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 bg-white text-gray-900"
                 >
@@ -838,6 +846,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                 <input
                   type="text"
                   value={String(formData.cidade || '')}
+                  autoComplete="new-password"
                   onChange={(e) => handleChange('cidade', e.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 bg-white text-gray-900"
                 />
@@ -850,6 +859,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                 <input
                   type="text"
                   value={String(formData.bairro || '')}
+                  autoComplete="new-password"
                   onChange={(e) => handleChange('bairro', e.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 bg-white text-gray-900"
                 />
@@ -860,6 +870,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                 <input
                   type="text"
                   value={String(formData.logradouro || '')}
+                  autoComplete="new-password"
                   onChange={(e) => handleChange('logradouro', e.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 bg-white text-gray-900"
                   placeholder="Rua, Avenida..."
@@ -872,6 +883,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
               <input
                 type="text"
                 value={String(formData.numero || '')}
+                autoComplete="new-password"
                 onChange={(e) => {
                   const apenasNumeros = e.target.value.replace(/\D/g, '');
                   handleChange('numero', apenasNumeros);

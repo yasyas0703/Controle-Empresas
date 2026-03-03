@@ -29,6 +29,8 @@ export interface DocumentoEmpresa {
   nome: string;
   validade: string; // ISO date (YYYY-MM-DD) — pode ser vazio se sem validade
   arquivoUrl?: string; // Caminho no Storage (ou URL legada)
+  tagVencimento?: string;
+  historicoVencimento?: HistoricoVencimentoItem[];
   departamentosIds: UUID[]; // Departamentos responsáveis pelo documento
   visibilidade: Visibilidade;
   criadoPorId?: UUID; // Quem fez o upload
@@ -43,6 +45,18 @@ export interface RetItem {
   nome: string;
   vencimento: string; // ISO date
   ultimaRenovacao: string; // ISO date
+  tagVencimento?: string;
+  historicoVencimento?: HistoricoVencimentoItem[];
+}
+
+export interface HistoricoVencimentoItem {
+  id: UUID;
+  titulo: string;
+  descricao?: string;
+  dataEvento?: string; // ISO date (YYYY-MM-DD)
+  autorId?: UUID | null;
+  autorNome?: string;
+  criadoEm: string; // ISO
 }
 
 export type TipoEstabelecimento = '' | 'matriz' | 'filial';

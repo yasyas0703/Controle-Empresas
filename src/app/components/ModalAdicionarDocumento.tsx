@@ -6,6 +6,8 @@ import ModalBase from '@/app/components/ModalBase';
 import { useSistema } from '@/app/context/SistemaContext';
 import type { Departamento, Usuario, UUID, Visibilidade } from '@/app/types';
 
+const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
+
 export default function ModalAdicionarDocumento({
   isOpen,
   onClose,
@@ -15,7 +17,7 @@ export default function ModalAdicionarDocumento({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (doc: { nome: string; validade: string; arquivoUrl?: string; departamentosIds: UUID[]; visibilidade: Visibilidade; usuariosPermitidos: UUID[] }, file?: File) => void;
+  onSubmit: (doc: { nome: string; validade: string; arquivoUrl?: string; departamentosIds: UUID[]; visibilidade: Visibilidade; usuariosPermitidos: UUID[] }, file?: File) => Promise<boolean> | boolean | void;
   departamentos: Departamento[];
   usuarios?: Usuario[];
 }) {
@@ -44,6 +46,21 @@ export default function ModalAdicionarDocumento({
     if (fileRef.current) fileRef.current.value = '';
   };
 
+  const handleFileChange = (nextFile: File | null) => {
+    if (!nextFile) {
+      handleRemoveFile();
+      return;
+    }
+
+    if (nextFile.size > MAX_DOCUMENT_SIZE) {
+      mostrarAlerta('Arquivo muito grande', 'O arquivo deve ter no maximo 10MB.', 'aviso');
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
+
+    setFile(nextFile);
+  };
+
   const resetForm = () => {
     setNome('');
     setValidade('');
@@ -67,8 +84,8 @@ export default function ModalAdicionarDocumento({
   ];
 
   // Usuários ativos para o seletor (sem o usuário logado — ele é incluído automaticamente)
-  const { currentUserId, currentUser } = useSistema();
-  const activeUsers = usuarios.filter((u) => u.ativo && u.id !== currentUserId);
+  const { currentUser, mostrarAlerta } = useSistema();
+  const activeUsers = usuarios.filter((u) => u.ativo);
 
   return (
     <ModalBase
@@ -92,18 +109,35 @@ export default function ModalAdicionarDocumento({
 
         <form
           className="p-5 space-y-4"
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            onSubmit(
+            const departamentosIds = visibilidade === 'departamento' ? selectedDepts : [];
+            const usuariosPermitidos = visibilidade === 'usuarios' ? selectedUsers : [];
+
+            if (!file) {
+              mostrarAlerta('Arquivo obrigatorio', 'Envie um arquivo antes de adicionar o documento.', 'aviso');
+              return;
+            }
+            if (visibilidade === 'departamento' && departamentosIds.length === 0) {
+              mostrarAlerta('Departamento obrigatorio', 'Selecione pelo menos um departamento.', 'aviso');
+              return;
+            }
+            if (visibilidade === 'usuarios' && usuariosPermitidos.length === 0) {
+              mostrarAlerta('Usuario obrigatorio', 'Selecione pelo menos um usuario.', 'aviso');
+              return;
+            }
+
+            const ok = await Promise.resolve(onSubmit(
               {
                 nome: nome.trim(),
                 validade,
-                departamentosIds: selectedDepts,
+                departamentosIds,
                 visibilidade,
-                usuariosPermitidos: visibilidade === 'usuarios' ? selectedUsers : [],
+                usuariosPermitidos,
               },
-              file ?? undefined
-            );
+              file
+            ));
+            if (ok === false) return;
             resetForm();
             onClose();
           }}
@@ -141,7 +175,11 @@ export default function ModalAdicionarDocumento({
                 <button
                   key={opt.value}
                   type="button"
-                  onClick={() => setVisibilidade(opt.value)}
+                  onClick={() => {
+                    setVisibilidade(opt.value);
+                    if (opt.value !== 'departamento') setSelectedDepts([]);
+                    if (opt.value !== 'usuarios') setSelectedUsers([]);
+                  }}
                   className={`flex flex-col items-center gap-1.5 rounded-xl border-2 px-3 py-3 transition text-center ${
                     visibilidade === opt.value
                       ? `${opt.bg} ${opt.border} ${opt.color}`
@@ -159,7 +197,7 @@ export default function ModalAdicionarDocumento({
           </div>
 
           {/* Departamentos responsáveis — visível para público e departamento */}
-          {(visibilidade === 'publico' || visibilidade === 'departamento') && (
+          {visibilidade === 'departamento' && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Departamentos responsáveis
@@ -201,7 +239,7 @@ export default function ModalAdicionarDocumento({
               <p className="text-xs text-gray-500 mb-2">
                 Apenas os usuários marcados abaixo terão acesso a este documento.
               </p>
-              <div className="rounded-lg bg-purple-50 border border-purple-200 px-3 py-2 mb-2 text-xs text-purple-700 font-semibold">
+              <div className="hidden rounded-lg bg-purple-50 border border-purple-200 px-3 py-2 mb-2 text-xs text-purple-700 font-semibold">
                 {currentUser?.nome ?? 'Você'} — incluído automaticamente
               </div>
               {activeUsers.length === 0 ? (
@@ -240,13 +278,13 @@ export default function ModalAdicionarDocumento({
           )}
 
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Arquivo (opcional)</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Arquivo <span className="text-red-500">*</span></label>
             <div className="relative">
               <input
                 ref={fileRef}
                 type="file"
                 accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
                 className="hidden"
                 id="doc-file-input"
               />
@@ -290,7 +328,7 @@ export default function ModalAdicionarDocumento({
             <button
               type="submit"
               className="flex-1 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white px-4 py-3 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={!nome.trim() || (visibilidade === 'usuarios' && selectedUsers.length === 0)}
+              disabled={!nome.trim() || !file || (visibilidade === 'departamento' && selectedDepts.length === 0) || (visibilidade === 'usuarios' && selectedUsers.length === 0)}
             >
               Adicionar
             </button>
