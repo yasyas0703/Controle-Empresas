@@ -67,7 +67,9 @@ create table rets (
   numero_pta text not null,
   nome text not null,
   vencimento date not null,
-  ultima_renovacao date
+  ultima_renovacao date,
+  tag_vencimento text,
+  historico_vencimento jsonb not null default '[]'::jsonb
 );
 
 -- 6. Responsáveis (empresa <-> departamento -> usuário)
@@ -86,6 +88,8 @@ create table documentos (
   nome text not null,
   validade date not null,
   arquivo_url text,
+  tag_vencimento text,
+  historico_vencimento jsonb not null default '[]'::jsonb,
   departamentos_ids uuid[] not null default '{}',
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
@@ -168,6 +172,22 @@ create index idx_responsaveis_empresa on responsaveis(empresa_id);
 create index idx_logs_em on logs(em desc);
 create index idx_notificacoes_criado on notificacoes(criado_em desc);
 create index idx_lixeira_excluido on lixeira(excluido_em desc);
+
+-- ============================================================
+-- Upgrade: colunas de tag/histÃ³rico dos vencimentos
+-- Rode este bloco tambÃ©m em bases jÃ¡ existentes.
+-- ============================================================
+alter table if exists rets
+  add column if not exists tag_vencimento text;
+
+alter table if exists rets
+  add column if not exists historico_vencimento jsonb not null default '[]'::jsonb;
+
+alter table if exists documentos
+  add column if not exists tag_vencimento text;
+
+alter table if exists documentos
+  add column if not exists historico_vencimento jsonb not null default '[]'::jsonb;
 
 -- ============================================================
 -- Storage: Bucket para documentos

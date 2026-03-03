@@ -1,15 +1,18 @@
 'use client';
 
 import React, { useMemo, useState, useCallback } from 'react';
-import { X, Plus, Trash2, Send, MessageSquare, Pencil, Download, Eye, Paperclip, FileText, Globe, Building2, Lock, Users, Loader2 } from 'lucide-react';
-import type { Empresa, DocumentoEmpresa, UUID } from '@/app/types';
+import { X, Plus, Trash2, Send, MessageSquare, Pencil, Download, Eye, Paperclip, FileText, Globe, Building2, Lock, Users, Loader2, History } from 'lucide-react';
+import type { Empresa, DocumentoEmpresa, HistoricoVencimentoItem, UUID } from '@/app/types';
 import ModalBase from '@/app/components/ModalBase';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR } from '@/app/utils/date';
 import ModalAdicionarDocumento from '@/app/components/ModalAdicionarDocumento';
 import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
+import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
 import { getDocumentoSignedUrl } from '@/lib/db';
+
+const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
 
 /** Formata número do RET no padrão XX.XXXXXXXXX-XX (13 dígitos) */
 function formatRetNumber(value: string): string {
@@ -26,6 +29,46 @@ const VIS_BADGE: Record<string, { icon: React.ReactNode; label: string; cls: str
   confidencial: { icon: <Lock size={11} />, label: 'Confidencial', cls: 'bg-red-100 text-red-700' },
 };
 
+function getHistoricoStatusMeta(dias: number | null) {
+  if (dias === null) {
+    return {
+      dias: 0,
+      statusLabel: 'SEM DATA',
+      statusClassName: 'bg-slate-100 text-slate-700 border-slate-200',
+    };
+  }
+
+  if (dias < 0) {
+    return {
+      dias,
+      statusLabel: 'VENCIDO',
+      statusClassName: 'bg-red-50 text-red-700 border-red-200',
+    };
+  }
+
+  if (dias <= 60) {
+    return {
+      dias,
+      statusLabel: 'CRITICO',
+      statusClassName: 'bg-amber-50 text-amber-700 border-amber-200',
+    };
+  }
+
+  if (dias <= 90) {
+    return {
+      dias,
+      statusLabel: 'PROXIMO',
+      statusClassName: 'bg-green-50 text-green-700 border-green-200',
+    };
+  }
+
+  return {
+    dias,
+    statusLabel: 'EM DIA',
+    statusClassName: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  };
+}
+
 export default function ModalDetalhesEmpresa({
   empresa: empresaProp,
   onClose,
@@ -33,7 +76,7 @@ export default function ModalDetalhesEmpresa({
   empresa: Empresa;
   onClose: () => void;
 }) {
-  const { adicionarDocumento, removerDocumento, atualizarDocumento, adicionarObservacao, removerObservacao, departamentos, usuarios, currentUser, canManage, empresas, currentUserId } = useSistema();
+  const { adicionarDocumento, removerDocumento, atualizarDocumento, atualizarEmpresa, adicionarObservacao, removerObservacao, departamentos, usuarios, currentUser, canManage, empresas, currentUserId, mostrarAlerta } = useSistema();
   // Sempre buscar a versão mais atualizada da empresa no contexto
   const empresa = empresas.find((e) => e.id === empresaProp.id) ?? empresaProp;
   const canEdit = canManage || (!!currentUserId && Object.values(empresa.responsaveis || {}).some((uid) => uid === currentUserId));
@@ -50,6 +93,20 @@ export default function ModalDetalhesEmpresa({
   const [editDocVis, setEditDocVis] = useState<import('@/app/types').Visibilidade>('publico');
   const [editDocUsers, setEditDocUsers] = useState<UUID[]>([]);
   const [editDocFile, setEditDocFile] = useState<File | null>(null);
+  const [historicoModal, setHistoricoModal] = useState<{
+    empresaCodigo: string;
+    empresaNome: string;
+    tipo: 'Documento' | 'RET';
+    nome: string;
+    vencimento: string;
+    dias: number;
+    statusLabel: string;
+    statusClassName: string;
+    tagVencimento?: string;
+    historicoVencimento?: HistoricoVencimentoItem[];
+    itemId: string;
+  } | null>(null);
+  const [savingHistorico, setSavingHistorico] = useState(false);
   const editFileRef = React.useRef<HTMLInputElement>(null);
 
   // Signed URLs cache & loading
@@ -103,6 +160,87 @@ export default function ModalDetalhesEmpresa({
     const url = await resolveUrl(doc);
     if (url) forceDownload(url, doc.nome);
   }, [resolveUrl, forceDownload]);
+
+  const handleEditFileChange = useCallback((nextFile: File | null) => {
+    if (!nextFile) {
+      setEditDocFile(null);
+      if (editFileRef.current) editFileRef.current.value = '';
+      return;
+    }
+
+    if (nextFile.size > MAX_DOCUMENT_SIZE) {
+      mostrarAlerta('Arquivo muito grande', 'O arquivo deve ter no maximo 10MB.', 'aviso');
+      if (editFileRef.current) editFileRef.current.value = '';
+      return;
+    }
+
+    setEditDocFile(nextFile);
+  }, [mostrarAlerta]);
+
+  const abrirHistorico = useCallback((tipo: 'Documento' | 'RET', itemId: string) => {
+    const metaBase = {
+      empresaCodigo: empresa.codigo,
+      empresaNome: empresa.razao_social || empresa.apelido || '-',
+      itemId,
+    };
+
+    if (tipo === 'Documento') {
+      const documento = empresa.documentos.find((item) => item.id === itemId);
+      if (!documento) return;
+      const meta = getHistoricoStatusMeta(daysUntil(documento.validade));
+      setHistoricoModal({
+        ...metaBase,
+        tipo,
+        nome: documento.nome,
+        vencimento: documento.validade,
+        dias: meta.dias,
+        statusLabel: meta.statusLabel,
+        statusClassName: meta.statusClassName,
+        tagVencimento: documento.tagVencimento,
+        historicoVencimento: documento.historicoVencimento,
+      });
+      return;
+    }
+
+    const ret = empresa.rets.find((item) => item.id === itemId);
+    if (!ret) return;
+    const meta = getHistoricoStatusMeta(daysUntil(ret.vencimento));
+    setHistoricoModal({
+      ...metaBase,
+      tipo,
+      nome: `RET: ${ret.nome}`,
+      vencimento: ret.vencimento,
+      dias: meta.dias,
+      statusLabel: meta.statusLabel,
+      statusClassName: meta.statusClassName,
+      tagVencimento: ret.tagVencimento,
+      historicoVencimento: ret.historicoVencimento,
+    });
+  }, [empresa]);
+
+  const salvarHistorico = useCallback(async (payload: { tagVencimento?: string; historicoVencimento: HistoricoVencimentoItem[] }) => {
+    if (!historicoModal) return;
+    setSavingHistorico(true);
+    try {
+      if (historicoModal.tipo === 'Documento') {
+        const ok = await atualizarDocumento(empresa.id, historicoModal.itemId, payload);
+        if (ok === false) return;
+      } else {
+        const rets = empresa.rets.map((item) =>
+          item.id === historicoModal.itemId
+            ? { ...item, tagVencimento: payload.tagVencimento, historicoVencimento: payload.historicoVencimento }
+            : item
+        );
+        const ok = await atualizarEmpresa(empresa.id, { rets, possuiRet: rets.length > 0 });
+        if (ok === false) return;
+      }
+
+      mostrarAlerta('Historico atualizado', 'As informacoes desse vencimento foram salvas.', 'sucesso');
+      setHistoricoModal(null);
+    } finally {
+      setSavingHistorico(false);
+    }
+  }, [atualizarDocumento, atualizarEmpresa, empresa, historicoModal, mostrarAlerta]);
 
   const nome = useMemo(() => empresa.razao_social || empresa.apelido || '-', [empresa]);
 
@@ -230,6 +368,20 @@ export default function ModalDetalhesEmpresa({
                       }`}>
                         <div className="min-w-0">
                           <div className="font-bold text-gray-900 break-words">{r.nome}</div>
+                          {(r.tagVencimento || (r.historicoVencimento?.length ?? 0) > 0) && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {r.tagVencimento && (
+                                <span className="rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
+                                  {r.tagVencimento}
+                                </span>
+                              )}
+                              {(r.historicoVencimento?.length ?? 0) > 0 && (
+                                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                                  {r.historicoVencimento?.length} andamento(s)
+                                </span>
+                              )}
+                            </div>
+                          )}
                           <div className="text-sm text-gray-600">PTA: {r.numeroPta ? formatRetNumber(r.numeroPta) : '-'}</div>
                           <div className="text-sm text-gray-600">
                             Vencimento: <span className={
@@ -241,6 +393,15 @@ export default function ModalDetalhesEmpresa({
                             {dias !== null ? ` • ${dias < 0 ? `${Math.abs(dias)}d atrás` : `${dias}d`}` : ''}
                           </div>
                           <div className="text-sm text-gray-600">Última renovação: {formatBR(r.ultimaRenovacao)}</div>
+                        </div>
+                        <div className="shrink-0">
+                          <button
+                            onClick={() => abrirHistorico('RET', r.id)}
+                            className="rounded-xl border p-2 hover:bg-slate-50 transition"
+                            title="Historico do vencimento"
+                          >
+                            <History className="text-slate-600" size={18} />
+                          </button>
                         </div>
                       </div>
                     );
@@ -287,6 +448,11 @@ export default function ModalDetalhesEmpresa({
                             <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${visBadge.cls}`}>
                               {visBadge.icon} {visBadge.label}
                             </span>
+                            {d.tagVencimento && (
+                              <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
+                                {d.tagVencimento}
+                              </span>
+                            )}
                           </div>
                           <div className="text-sm text-gray-600 mt-1">
                             {d.validade ? (
@@ -303,15 +469,15 @@ export default function ModalDetalhesEmpresa({
                               <span className="text-gray-400 italic">Sem validade definida</span>
                             )}
                           </div>
-                          {docDepts.length > 0 && (
+                          {d.visibilidade === 'departamento' && docDepts.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-1.5">
                               {docDepts.map((n) => (
                                 <span key={n} className="rounded-md bg-orange-100 text-orange-700 px-2 py-0.5 text-[10px] font-bold">{n}</span>
                               ))}
                             </div>
                           )}
-                          {docDepts.length === 0 && d.visibilidade !== 'confidencial' && d.visibilidade !== 'usuarios' && (
-                            <div className="text-[10px] text-gray-400 mt-1">Todos os departamentos</div>
+                          {d.visibilidade === 'publico' && (
+                            <div className="text-[10px] text-gray-400 mt-1">Visivel para todos</div>
                           )}
                           {d.visibilidade === 'usuarios' && docUsers.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-1.5">
@@ -320,14 +486,29 @@ export default function ModalDetalhesEmpresa({
                               ))}
                             </div>
                           )}
+                          {d.visibilidade === 'confidencial' && (
+                            <div className="text-[10px] text-gray-400 mt-1">Somente quem enviou pode ver</div>
+                          )}
                           {d.arquivoUrl && (
                             <div className="flex items-center gap-1.5 mt-1.5">
                               <Paperclip size={12} className="text-orange-400" />
                               <span className="text-xs text-orange-600 font-semibold">Arquivo anexado</span>
                             </div>
                           )}
+                          {(d.historicoVencimento?.length ?? 0) > 0 && (
+                            <div className="mt-1.5 text-[11px] font-semibold text-slate-500">
+                              {d.historicoVencimento?.length} registro(s) no histÃ³rico de vencimento
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            onClick={() => abrirHistorico('Documento', d.id)}
+                            className="rounded-xl border p-2 hover:bg-slate-50 transition"
+                            title="Historico do vencimento"
+                          >
+                            <History className="text-slate-600" size={18} />
+                          </button>
                           {d.arquivoUrl && (
                             <>
                               <button
@@ -359,7 +540,7 @@ export default function ModalDetalhesEmpresa({
                                   setEditDocValidade(d.validade ?? '');
                                   setEditDocDepts(d.departamentosIds ?? []);
                                   setEditDocVis(d.visibilidade ?? 'publico');
-                                  setEditDocUsers((d.usuariosPermitidos ?? []).filter((uid) => uid !== currentUserId));
+                                  setEditDocUsers(d.usuariosPermitidos ?? []);
                                   setEditDocFile(null);
                                 }
                               }}
@@ -423,7 +604,7 @@ export default function ModalDetalhesEmpresa({
                                 ref={editFileRef}
                                 type="file"
                                 accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
-                                onChange={(e) => setEditDocFile(e.target.files?.[0] ?? null)}
+                                onChange={(e) => handleEditFileChange(e.target.files?.[0] ?? null)}
                                 className="hidden"
                               />
                               {editDocFile ? (
@@ -462,7 +643,11 @@ export default function ModalDetalhesEmpresa({
                                   <button
                                     key={opt.value}
                                     type="button"
-                                    onClick={() => setEditDocVis(opt.value)}
+                                    onClick={() => {
+                                      setEditDocVis(opt.value);
+                                      if (opt.value !== 'departamento') setEditDocDepts([]);
+                                      if (opt.value !== 'usuarios') setEditDocUsers([]);
+                                    }}
                                     className={`flex items-center gap-1.5 rounded-lg border-2 px-2.5 py-2 transition text-xs font-bold ${
                                       editDocVis === opt.value
                                         ? `${opt.bg} ${opt.border} ${opt.color}`
@@ -477,7 +662,7 @@ export default function ModalDetalhesEmpresa({
                             </div>
 
                             {/* Departamentos — visível para público e departamento */}
-                            {(editDocVis === 'publico' || editDocVis === 'departamento') && (
+                            {editDocVis === 'departamento' && (
                               <div>
                                 <div className="text-xs font-bold text-gray-600 mb-2">Departamentos responsáveis:</div>
                                 <div className="grid grid-cols-2 gap-2">
@@ -509,11 +694,11 @@ export default function ModalDetalhesEmpresa({
                             {editDocVis === 'usuarios' && (
                               <div>
                                 <div className="text-xs font-bold text-gray-600 mb-2">Usuários que podem ver:</div>
-                                <div className="rounded-lg bg-purple-50 border border-purple-200 px-3 py-1.5 mb-2 text-[11px] text-purple-700 font-semibold">
+                                <div className="hidden rounded-lg bg-purple-50 border border-purple-200 px-3 py-1.5 mb-2 text-[11px] text-purple-700 font-semibold">
                                   {currentUser?.nome ?? 'Você'} — incluído automaticamente
                                 </div>
                                 <div className="grid grid-cols-1 gap-1.5 max-h-36 overflow-y-auto">
-                                  {usuarios.filter((u) => u.ativo && u.id !== currentUserId).map((u) => (
+                                  {usuarios.filter((u) => u.ativo).map((u) => (
                                     <label
                                       key={u.id}
                                       className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition text-sm ${
@@ -553,27 +738,20 @@ export default function ModalDetalhesEmpresa({
                                 Cancelar
                               </button>
                               <button
-                                onClick={() => {
-                                  const patch: Record<string, unknown> = {
+                                onClick={async () => {
+                                  const patch: Partial<Pick<DocumentoEmpresa, 'nome' | 'validade' | 'visibilidade' | 'departamentosIds' | 'usuariosPermitidos'>> = {
                                     nome: editDocNome.trim(),
                                     validade: editDocValidade,
                                     visibilidade: editDocVis,
-                                    departamentosIds: editDocDepts,
+                                    departamentosIds: editDocVis === 'departamento' ? editDocDepts : [],
+                                    usuariosPermitidos: editDocVis === 'usuarios' ? [...editDocUsers] : [],
                                   };
-                                  if (editDocVis === 'usuarios') {
-                                    const usersArr = [...editDocUsers];
-                                    if (currentUserId && !usersArr.includes(currentUserId)) {
-                                      usersArr.unshift(currentUserId);
-                                    }
-                                    patch.usuariosPermitidos = usersArr;
-                                  } else {
-                                    patch.usuariosPermitidos = [];
-                                  }
-                                  atualizarDocumento(empresa.id, d.id, patch as any, editDocFile ?? undefined);
+                                  const ok = await atualizarDocumento(empresa.id, d.id, patch, editDocFile ?? undefined);
+                                  if (ok === false) return;
                                   setEditingDocId(null);
                                   setEditDocFile(null);
                                 }}
-                                disabled={!editDocNome.trim() || (editDocVis === 'usuarios' && editDocUsers.length === 0)}
+                                disabled={!editDocNome.trim() || (editDocVis === 'departamento' && editDocDepts.length === 0) || (editDocVis === 'usuarios' && editDocUsers.length === 0)}
                                 className="rounded-lg bg-blue-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 Salvar
@@ -708,6 +886,19 @@ export default function ModalDetalhesEmpresa({
           onClose={() => setEditOpen(false)}
         />
       )}
+
+      <ModalHistoricoVencimento
+        key={historicoModal ? `${historicoModal.itemId}-${historicoModal.tagVencimento ?? ''}-${historicoModal.historicoVencimento?.length ?? 0}` : 'historico-detalhes-fechado'}
+        open={!!historicoModal}
+        item={historicoModal}
+        canEdit={canEdit}
+        saving={savingHistorico}
+        onClose={() => {
+          if (savingHistorico) return;
+          setHistoricoModal(null);
+        }}
+        onSave={salvarHistorico}
+      />
 
       <ConfirmModal
         open={!!confirmDeleteDocId}

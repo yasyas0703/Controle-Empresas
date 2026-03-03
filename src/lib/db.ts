@@ -12,6 +12,7 @@ import type {
   Usuario,
   UUID,
 } from '@/app/types';
+import { limparTagVencimento, normalizarHistoricoVencimento } from '@/app/utils/vencimentos';
 
 // ─── helpers ────────────────────────────────────────────────
 
@@ -28,6 +29,70 @@ function newUUID(): string {
 
 function toIso(v: string | null | undefined): string {
   return v ? new Date(v).toISOString() : '';
+}
+
+function stripColumns<T extends Record<string, unknown>>(row: T, keys: string[]): Record<string, unknown> {
+  const clone: Record<string, unknown> = { ...row };
+  for (const key of keys) delete clone[key];
+  return clone;
+}
+
+function hasMissingColumn(error: { message?: string } | null | undefined, columns: string[]): boolean {
+  const message = String(error?.message ?? '');
+  return columns.some((column) => message.includes(column));
+}
+
+function buildRetRow(empresaId: UUID, ret: RetItem, includeTracking = true): Record<string, unknown> {
+  const row: Record<string, unknown> = {
+    empresa_id: empresaId,
+    numero_pta: ret.numeroPta,
+    nome: ret.nome,
+    vencimento: ret.vencimento,
+    ultima_renovacao: ret.ultimaRenovacao || null,
+  };
+
+  if (includeTracking) {
+    row.tag_vencimento = limparTagVencimento(ret.tagVencimento) ?? null;
+    row.historico_vencimento = normalizarHistoricoVencimento(ret.historicoVencimento);
+  }
+
+  return row;
+}
+
+function buildDocumentoRow(
+  empresaId: UUID,
+  doc: Omit<DocumentoEmpresa, 'id' | 'criadoEm' | 'atualizadoEm'>,
+  options?: {
+    includeArquivo?: boolean;
+    includeUsers?: boolean;
+    includeVisibility?: boolean;
+    includeTracking?: boolean;
+  }
+): Record<string, unknown> {
+  const includeArquivo = options?.includeArquivo ?? true;
+  const includeUsers = options?.includeUsers ?? true;
+  const includeVisibility = options?.includeVisibility ?? true;
+  const includeTracking = options?.includeTracking ?? true;
+
+  const row: Record<string, unknown> = {
+    empresa_id: empresaId,
+    nome: doc.nome,
+    validade: doc.validade || null,
+    departamentos_ids: doc.departamentosIds ?? [],
+  };
+
+  if (includeArquivo) row.arquivo_url = doc.arquivoUrl || null;
+  if (includeVisibility) {
+    row.visibilidade = doc.visibilidade ?? 'publico';
+    row.criado_por_id = doc.criadoPorId ?? null;
+  }
+  if (includeUsers) row.usuarios_permitidos = doc.usuariosPermitidos ?? [];
+  if (includeTracking) {
+    row.tag_vencimento = limparTagVencimento(doc.tagVencimento) ?? null;
+    row.historico_vencimento = normalizarHistoricoVencimento(doc.historicoVencimento);
+  }
+
+  return row;
 }
 
 async function getAccessToken(): Promise<string> {
@@ -296,6 +361,8 @@ async function fetchRetsForEmpresa(empresaId: UUID): Promise<RetItem[]> {
     nome: r.nome,
     vencimento: r.vencimento,
     ultimaRenovacao: r.ultima_renovacao,
+    tagVencimento: limparTagVencimento(r.tag_vencimento),
+    historicoVencimento: normalizarHistoricoVencimento(r.historico_vencimento),
   }));
 }
 
@@ -306,6 +373,8 @@ async function fetchDocsForEmpresa(empresaId: UUID): Promise<DocumentoEmpresa[]>
     nome: d.nome,
     validade: d.validade ?? '',
     arquivoUrl: d.arquivo_url ?? undefined,
+    tagVencimento: limparTagVencimento(d.tag_vencimento),
+    historicoVencimento: normalizarHistoricoVencimento(d.historico_vencimento),
     departamentosIds: d.departamentos_ids ?? [],
     visibilidade: d.visibilidade ?? 'publico',
     criadoPorId: d.criado_por_id ?? undefined,
@@ -375,14 +444,35 @@ export async function fetchEmpresas(): Promise<Empresa[]> {
   const retsMap = new Map<string, RetItem[]>();
   for (const r of allRets) {
     const list = retsMap.get(r.empresa_id) ?? [];
-    list.push({ id: r.id, numeroPta: r.numero_pta, nome: r.nome, vencimento: r.vencimento, ultimaRenovacao: r.ultima_renovacao });
+    list.push({
+      id: r.id,
+      numeroPta: r.numero_pta,
+      nome: r.nome,
+      vencimento: r.vencimento,
+      ultimaRenovacao: r.ultima_renovacao,
+      tagVencimento: limparTagVencimento(r.tag_vencimento),
+      historicoVencimento: normalizarHistoricoVencimento(r.historico_vencimento),
+    });
     retsMap.set(r.empresa_id, list);
   }
 
   const docsMap = new Map<string, DocumentoEmpresa[]>();
   for (const d of allDocs) {
     const list = docsMap.get(d.empresa_id) ?? [];
-    list.push({ id: d.id, nome: d.nome, validade: d.validade ?? '', arquivoUrl: d.arquivo_url ?? undefined, departamentosIds: d.departamentos_ids ?? [], visibilidade: d.visibilidade ?? 'publico', criadoPorId: d.criado_por_id ?? undefined, usuariosPermitidos: d.usuarios_permitidos ?? [], criadoEm: toIso(d.criado_em), atualizadoEm: toIso(d.atualizado_em) });
+    list.push({
+      id: d.id,
+      nome: d.nome,
+      validade: d.validade ?? '',
+      arquivoUrl: d.arquivo_url ?? undefined,
+      tagVencimento: limparTagVencimento(d.tag_vencimento),
+      historicoVencimento: normalizarHistoricoVencimento(d.historico_vencimento),
+      departamentosIds: d.departamentos_ids ?? [],
+      visibilidade: d.visibilidade ?? 'publico',
+      criadoPorId: d.criado_por_id ?? undefined,
+      usuariosPermitidos: d.usuarios_permitidos ?? [],
+      criadoEm: toIso(d.criado_em),
+      atualizadoEm: toIso(d.atualizado_em),
+    });
     docsMap.set(d.empresa_id, list);
   }
 
@@ -563,14 +653,13 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
 
   // RETs
   if (payload.rets && payload.rets.length > 0) {
-    const retRows = payload.rets.map((r) => ({
-      empresa_id: empresaId,
-      numero_pta: r.numeroPta,
-      nome: r.nome,
-      vencimento: r.vencimento,
-      ultima_renovacao: r.ultimaRenovacao || null,
-    }));
-    const { error: retErr } = await supabase.from('rets').insert(retRows);
+    let retRows = payload.rets.map((r) => buildRetRow(empresaId, r));
+    let { error: retErr } = await supabase.from('rets').insert(retRows);
+    if (retErr && hasMissingColumn(retErr, ['tag_vencimento', 'historico_vencimento'])) {
+      retRows = payload.rets.map((r) => buildRetRow(empresaId, r, false));
+      const retry = await supabase.from('rets').insert(retRows);
+      retErr = retry.error;
+    }
     if (retErr) {
       console.error(`[DB] Erro ao inserir RETs para empresa ${empresaId}:`, retErr.message);
       throw retErr;
@@ -579,39 +668,32 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
 
   // Documentos
   if (payload.documentos && payload.documentos.length > 0) {
-    const docRows = payload.documentos.map((d) => ({
-      empresa_id: empresaId,
-      nome: d.nome,
-      validade: d.validade || null,
-      departamentos_ids: d.departamentosIds ?? [],
-      visibilidade: d.visibilidade ?? 'publico',
-      criado_por_id: d.criadoPorId ?? null,
-      usuarios_permitidos: d.usuariosPermitidos ?? [],
-    }));
+    let docRows = payload.documentos.map((d) => buildDocumentoRow(empresaId, d, { includeArquivo: false }));
     let { error: docErr } = await supabase.from('documentos').insert(docRows);
+    if (docErr && hasMissingColumn(docErr, ['tag_vencimento', 'historico_vencimento'])) {
+      docRows = payload.documentos.map((d) =>
+        buildDocumentoRow(empresaId, d, { includeArquivo: false, includeTracking: false })
+      );
+      const retry = await supabase.from('documentos').insert(docRows);
+      docErr = retry.error;
+    }
     // Fallback nível 1: sem usuarios_permitidos
     if (docErr && docErr.message?.includes('usuarios_permitidos')) {
-      const rowsSemUp = payload.documentos.map((d) => ({
-        empresa_id: empresaId,
-        nome: d.nome,
-        validade: d.validade || null,
-        departamentos_ids: d.departamentosIds ?? [],
-        visibilidade: d.visibilidade ?? 'publico',
-        criado_por_id: d.criadoPorId ?? null,
-      }));
-      const r1 = await supabase.from('documentos').insert(rowsSemUp);
-      docErr = r1.error;
+      docRows = payload.documentos.map((d) =>
+        buildDocumentoRow(empresaId, d, { includeArquivo: false, includeUsers: false, includeTracking: false })
+      );
+      const retry = await supabase.from('documentos').insert(docRows);
+      docErr = retry.error;
     }
     // Fallback nível 2: sem visibilidade/criado_por_id
     if (docErr && (docErr.message?.includes('visibilidade') || docErr.message?.includes('criado_por_id'))) {
-      const fallbackRows = payload.documentos.map((d) => ({
-        empresa_id: empresaId,
-        nome: d.nome,
-        validade: d.validade || null,
-        departamentos_ids: d.departamentosIds ?? [],
-      }));
-      await supabase.from('documentos').insert(fallbackRows);
+      docRows = payload.documentos.map((d) =>
+        buildDocumentoRow(empresaId, d, { includeArquivo: false, includeUsers: false, includeVisibility: false, includeTracking: false })
+      );
+      const retry = await supabase.from('documentos').insert(docRows);
+      docErr = retry.error;
     }
+    if (docErr) throw docErr;
   }
 
   // Observações
@@ -665,14 +747,13 @@ export async function updateEmpresa(id: UUID, patch: Partial<Empresa>) {
       throw delErr;
     }
     if (patch.rets.length > 0) {
-      const retRows = patch.rets.map((r) => ({
-        empresa_id: id,
-        numero_pta: r.numeroPta,
-        nome: r.nome,
-        vencimento: r.vencimento,
-        ultima_renovacao: r.ultimaRenovacao || null,
-      }));
-      const { error: insErr } = await supabase.from('rets').insert(retRows);
+      let retRows = patch.rets.map((r) => buildRetRow(id, r));
+      let { error: insErr } = await supabase.from('rets').insert(retRows);
+      if (insErr && hasMissingColumn(insErr, ['tag_vencimento', 'historico_vencimento'])) {
+        retRows = patch.rets.map((r) => buildRetRow(id, r, false));
+        const retry = await supabase.from('rets').insert(retRows);
+        insErr = retry.error;
+      }
       if (insErr) {
         console.error(`[DB] Erro ao inserir RETs para empresa ${id}:`, insErr.message);
         throw insErr;
@@ -734,22 +815,19 @@ export async function deleteEmpresa(id: UUID) {
 // ─── Documentos ─────────────────────────────────────────────
 
 export async function insertDocumento(empresaId: UUID, doc: Omit<DocumentoEmpresa, 'id' | 'criadoEm' | 'atualizadoEm'>): Promise<DocumentoEmpresa> {
-  const fullRow = {
-    empresa_id: empresaId,
-    nome: doc.nome,
-    validade: doc.validade || null,
-    arquivo_url: doc.arquivoUrl || null,
-    departamentos_ids: doc.departamentosIds ?? [],
-    visibilidade: doc.visibilidade ?? 'publico',
-    criado_por_id: doc.criadoPorId ?? null,
-    usuarios_permitidos: doc.usuariosPermitidos ?? [],
-  };
+  let fullRow = buildDocumentoRow(empresaId, doc);
 
   let { data, error } = await supabase.from('documentos').insert(fullRow).select().single();
+  if (error && hasMissingColumn(error, ['tag_vencimento', 'historico_vencimento'])) {
+    fullRow = buildDocumentoRow(empresaId, doc, { includeTracking: false });
+    const retry = await supabase.from('documentos').insert(fullRow).select().single();
+    data = retry.data;
+    error = retry.error;
+  }
 
   // Fallback nível 1: se coluna usuarios_permitidos não existe ainda, tenta sem ela
   if (error && error.message?.includes('usuarios_permitidos')) {
-    const { usuarios_permitidos, ...rowSemUsuarios } = fullRow;
+    const rowSemUsuarios = stripColumns(fullRow, ['usuarios_permitidos']);
     const r1 = await supabase.from('documentos').insert(rowSemUsuarios).select().single();
     data = r1.data;
     error = r1.error;
@@ -757,13 +835,7 @@ export async function insertDocumento(empresaId: UUID, doc: Omit<DocumentoEmpres
 
   // Fallback nível 2: se visibilidade/criado_por_id também não existem
   if (error && (error.message?.includes('visibilidade') || error.message?.includes('criado_por_id'))) {
-    const fallbackRow = {
-      empresa_id: empresaId,
-      nome: doc.nome,
-      validade: doc.validade || null,
-      arquivo_url: doc.arquivoUrl || null,
-      departamentos_ids: doc.departamentosIds ?? [],
-    };
+    const fallbackRow = buildDocumentoRow(empresaId, doc, { includeUsers: false, includeVisibility: false, includeTracking: false });
     const r2 = await supabase.from('documentos').insert(fallbackRow).select().single();
     data = r2.data;
     error = r2.error;
@@ -775,6 +847,8 @@ export async function insertDocumento(empresaId: UUID, doc: Omit<DocumentoEmpres
     nome: data.nome,
     validade: data.validade ?? '',
     arquivoUrl: data.arquivo_url ?? undefined,
+    tagVencimento: limparTagVencimento(data.tag_vencimento),
+    historicoVencimento: normalizarHistoricoVencimento(data.historico_vencimento),
     departamentosIds: data.departamentos_ids ?? [],
     visibilidade: data.visibilidade ?? 'publico',
     criadoPorId: data.criado_por_id ?? undefined,
@@ -837,15 +911,27 @@ export async function deleteDocumento(docId: UUID) {
   if (error) throw error;
 }
 
-export async function updateDocumento(docId: UUID, patch: Partial<Pick<DocumentoEmpresa, 'nome' | 'validade' | 'departamentosIds' | 'visibilidade' | 'usuariosPermitidos' | 'arquivoUrl'>>) {
+export async function updateDocumento(
+  docId: UUID,
+  patch: Partial<Pick<DocumentoEmpresa, 'nome' | 'validade' | 'departamentosIds' | 'visibilidade' | 'usuariosPermitidos' | 'arquivoUrl' | 'tagVencimento' | 'historicoVencimento' | 'criadoPorId'>>
+) {
+  const hasOwn = <K extends string>(key: K) => Object.prototype.hasOwnProperty.call(patch, key);
   const row: Record<string, unknown> = { atualizado_em: new Date().toISOString() };
-  if (patch.nome !== undefined) row.nome = patch.nome;
-  if (patch.validade !== undefined) row.validade = patch.validade || null;
-  if (patch.departamentosIds !== undefined) row.departamentos_ids = patch.departamentosIds;
-  if (patch.visibilidade !== undefined) row.visibilidade = patch.visibilidade;
-  if (patch.usuariosPermitidos !== undefined) row.usuarios_permitidos = patch.usuariosPermitidos;
-  if (patch.arquivoUrl !== undefined) row.arquivo_url = patch.arquivoUrl || null;
-  const { error } = await supabase.from('documentos').update(row).eq('id', docId);
+  if (hasOwn('nome')) row.nome = patch.nome;
+  if (hasOwn('validade')) row.validade = patch.validade || null;
+  if (hasOwn('departamentosIds')) row.departamentos_ids = patch.departamentosIds ?? [];
+  if (hasOwn('visibilidade')) row.visibilidade = patch.visibilidade;
+  if (hasOwn('usuariosPermitidos')) row.usuarios_permitidos = patch.usuariosPermitidos ?? [];
+  if (hasOwn('arquivoUrl')) row.arquivo_url = patch.arquivoUrl || null;
+  if (hasOwn('criadoPorId')) row.criado_por_id = patch.criadoPorId ?? null;
+  if (hasOwn('tagVencimento')) row.tag_vencimento = limparTagVencimento(patch.tagVencimento) ?? null;
+  if (hasOwn('historicoVencimento')) row.historico_vencimento = normalizarHistoricoVencimento(patch.historicoVencimento);
+  let { error } = await supabase.from('documentos').update(row).eq('id', docId);
+  if (error && hasMissingColumn(error, ['tag_vencimento', 'historico_vencimento'])) {
+    const fallbackRow = stripColumns(row, ['tag_vencimento', 'historico_vencimento']);
+    const retry = await supabase.from('documentos').update(fallbackRow).eq('id', docId);
+    error = retry.error;
+  }
   if (error) throw error;
 }
 
@@ -1036,15 +1122,13 @@ export async function restoreDocumento(doc: DocumentoEmpresa, empresaId: UUID) {
     // Documento já existe — nada a fazer, apenas limpar a lixeira
     return;
   }
-  const { error } = await supabase
-    .from('documentos')
-    .insert({
-      empresa_id: empresaId,
-      nome: doc.nome,
-      validade: doc.validade,
-      arquivo_url: doc.arquivoUrl ?? null,
-      departamentos_ids: doc.departamentosIds ?? [],
-    });
+  let row = buildDocumentoRow(empresaId, doc);
+  let { error } = await supabase.from('documentos').insert(row);
+  if (error && hasMissingColumn(error, ['tag_vencimento', 'historico_vencimento'])) {
+    row = buildDocumentoRow(empresaId, doc, { includeTracking: false });
+    const retry = await supabase.from('documentos').insert(row);
+    error = retry.error;
+  }
   if (error) throw error;
 }
 

@@ -2,20 +2,22 @@
 
 import React, { useMemo, useState } from 'react';
 import {
-  AlertTriangle, Clock, Shield, Search, Download, ChevronDown, ChevronUp,
-  FileText, CalendarClock, Building2, Users, Filter, XCircle, Eye, User, Settings
+  Shield, Search, Download, ChevronDown, ChevronUp,
+  FileText, CalendarClock, Filter, XCircle, Eye, User, Settings
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR } from '@/app/utils/date';
-import type { UUID, Limiares } from '@/app/types';
+import type { HistoricoVencimentoItem, UUID, Limiares } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import ModalLimiares from '@/app/components/ModalLimiares';
+import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
 
 type StatusVenc = 'vencido' | 'critico' | 'atencao' | 'proximo' | 'ok';
 
 interface VencimentoItem {
   empresaId: UUID;
+  itemId: UUID;
   empresaCodigo: string;
   empresaNome: string;
   tipo: 'Documento' | 'RET';
@@ -23,6 +25,8 @@ interface VencimentoItem {
   vencimento: string;
   dias: number;
   status: StatusVenc;
+  tagVencimento?: string;
+  historicoVencimento?: HistoricoVencimentoItem[];
   responsaveis: Record<string, string | null>;
   departamentosIds: UUID[]; // departamentos responsáveis pelo documento (vazio = todos)
 }
@@ -55,7 +59,7 @@ const DEPT_COLORS: Record<number, { bg: string; text: string; border: string }> 
 };
 
 export default function VencimentosPage() {
-  const { empresas, departamentos, usuarios, currentUserId, canManage } = useSistema();
+  const { empresas, departamentos, usuarios, currentUserId, canManage, atualizarEmpresa, atualizarDocumento, mostrarAlerta } = useSistema();
 
   const [limiares, setLimiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
   const [showLimiares, setShowLimiares] = useState(false);
@@ -70,6 +74,8 @@ export default function VencimentosPage() {
   const [orderDir, setOrderDir] = useState<'asc' | 'desc'>('asc');
 
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [historicoItem, setHistoricoItem] = useState<VencimentoItem | null>(null);
+  const [savingHistorico, setSavingHistorico] = useState(false);
 
   const getDepName = (dId: string) => departamentos.find((d) => d.id === dId)?.nome ?? '';
   const getDepIndex = (dId: string) => departamentos.findIndex((d) => d.id === dId);
@@ -87,6 +93,7 @@ export default function VencimentosPage() {
         if (dias === null) continue;
         items.push({
           empresaId: e.id,
+          itemId: d.id,
           empresaCodigo: e.codigo,
           empresaNome: e.razao_social || e.apelido || '-',
           tipo: 'Documento',
@@ -94,6 +101,8 @@ export default function VencimentosPage() {
           vencimento: d.validade,
           dias,
           status: getStatus(dias, limiares),
+          tagVencimento: d.tagVencimento,
+          historicoVencimento: d.historicoVencimento,
           responsaveis: e.responsaveis,
           departamentosIds: d.departamentosIds ?? [],
         });
@@ -103,6 +112,7 @@ export default function VencimentosPage() {
         if (dias === null) continue;
         items.push({
           empresaId: e.id,
+          itemId: r.id,
           empresaCodigo: e.codigo,
           empresaNome: e.razao_social || e.apelido || '-',
           tipo: 'RET',
@@ -110,6 +120,8 @@ export default function VencimentosPage() {
           vencimento: r.vencimento,
           dias,
           status: getStatus(dias, limiares),
+          tagVencimento: r.tagVencimento,
+          historicoVencimento: r.historicoVencimento,
           responsaveis: e.responsaveis,
           departamentosIds: [],
         });
@@ -211,6 +223,45 @@ export default function VencimentosPage() {
   };
 
   const hasFilters = search || filtroStatus !== 'todos-risco' || filtroDep || filtroResp || filtroTipo || meusVencimentos;
+
+  const canEditHistoricoItem = (item: VencimentoItem | null) => {
+    if (!item) return false;
+    if (canManage) return true;
+    if (!currentUserId) return false;
+    if (item.departamentosIds.length > 0) {
+      return item.departamentosIds.some((depId) => item.responsaveis[depId] === currentUserId);
+    }
+    return Object.values(item.responsaveis).some((uid) => uid === currentUserId);
+  };
+
+  const salvarHistorico = async (payload: { tagVencimento?: string; historicoVencimento: HistoricoVencimentoItem[] }) => {
+    if (!historicoItem) return;
+    setSavingHistorico(true);
+    try {
+      if (historicoItem.tipo === 'Documento') {
+        const ok = await atualizarDocumento(historicoItem.empresaId, historicoItem.itemId, payload);
+        if (ok === false) return;
+      } else {
+        const empresa = empresas.find((item) => item.id === historicoItem.empresaId);
+        if (!empresa) {
+          mostrarAlerta('Empresa não encontrada', 'Não foi possível localizar a empresa desse RET.', 'erro');
+          return;
+        }
+        const rets = empresa.rets.map((ret) =>
+          ret.id === historicoItem.itemId
+            ? { ...ret, tagVencimento: payload.tagVencimento, historicoVencimento: payload.historicoVencimento }
+            : ret
+        );
+        const ok = await atualizarEmpresa(empresa.id, { rets, possuiRet: rets.length > 0 });
+        if (ok === false) return;
+      }
+
+      mostrarAlerta('Histórico atualizado', 'As informações desse vencimento foram salvas.', 'sucesso');
+      setHistoricoItem(null);
+    } finally {
+      setSavingHistorico(false);
+    }
+  };
 
   // Export CSV
   const exportCSV = () => {
@@ -452,6 +503,7 @@ export default function VencimentosPage() {
                 </th>
                 <th className="text-left px-5 py-4 font-semibold text-xs uppercase tracking-wider">Nome</th>
                 <th className="text-left px-5 py-4 font-semibold text-xs uppercase tracking-wider">Vencimento</th>
+                <th className="text-left px-5 py-4 font-semibold text-xs uppercase tracking-wider">Historico</th>
                 <th className="text-left px-5 py-4 font-semibold text-xs uppercase tracking-wider">Responsável</th>
               </tr>
             </thead>
@@ -512,8 +564,32 @@ export default function VencimentosPage() {
                     </td>
                     <td className="px-5 py-4" style={{ overflow: 'visible', textOverflow: 'clip' }}>
                       <div className="font-semibold text-gray-800" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflow: 'visible', textOverflow: 'clip' }}>{item.nome}</div>
+                      {(item.tagVencimento || (item.historicoVencimento?.length ?? 0) > 0) && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {item.tagVencimento && (
+                            <span className="inline-flex items-center rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
+                              {item.tagVencimento}
+                            </span>
+                          )}
+                          {(item.historicoVencimento?.length ?? 0) > 0 && (
+                            <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                              {item.historicoVencimento?.length} registro(s)
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="px-5 py-4 text-gray-700 whitespace-nowrap font-medium">{formatBR(item.vencimento)}</td>
+                    <td className="px-5 py-4">
+                      <button
+                        type="button"
+                        onClick={() => setHistoricoItem(item)}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
+                      >
+                        <Eye size={14} />
+                        Histórico
+                      </button>
+                    </td>
                     <td className="px-5 py-4">
                       {responsaveis.length === 0 ? (
                         <span className="text-xs text-gray-400 italic">Sem responsável</span>
@@ -556,7 +632,7 @@ export default function VencimentosPage() {
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-16 text-center">
+                  <td colSpan={8} className="px-5 py-16 text-center">
                     <div className="text-gray-400">
                       <Shield className="mx-auto mb-3 text-gray-300" size={40} />
                       <div className="font-semibold text-gray-500">Nenhum item encontrado</div>
@@ -600,6 +676,20 @@ export default function VencimentosPage() {
                   <span className="text-sm font-semibold text-gray-800 break-words">{item.nome}</span>
                   <span className="text-xs text-gray-500 ml-auto whitespace-nowrap">{formatBR(item.vencimento)}</span>
                 </div>
+                {(item.tagVencimento || (item.historicoVencimento?.length ?? 0) > 0) && (
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {item.tagVencimento && (
+                      <span className="rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
+                        {item.tagVencimento}
+                      </span>
+                    )}
+                    {(item.historicoVencimento?.length ?? 0) > 0 && (
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                        {item.historicoVencimento?.length} registro(s)
+                      </span>
+                    )}
+                  </div>
+                )}
                 {responsaveis.length > 0 && (
                   <div className="flex flex-wrap gap-1">
                     {responsaveis.map((r) => {
@@ -612,6 +702,14 @@ export default function VencimentosPage() {
                     })}
                   </div>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setHistoricoItem(item)}
+                  className="mt-3 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                >
+                  <Eye size={14} />
+                  Histórico
+                </button>
               </div>
             );
           })}
@@ -646,6 +744,23 @@ export default function VencimentosPage() {
           onClose={() => setShowLimiares(false)}
         />
       )}
+
+      <ModalHistoricoVencimento
+        key={historicoItem ? `${historicoItem.empresaId}-${historicoItem.itemId}-${historicoItem.tagVencimento ?? ''}-${historicoItem.historicoVencimento?.length ?? 0}` : 'historico-vencimentos-fechado'}
+        open={!!historicoItem}
+        item={historicoItem ? {
+          ...historicoItem,
+          statusLabel: statusConfig[historicoItem.status].label,
+          statusClassName: `${statusConfig[historicoItem.status].bg} ${statusConfig[historicoItem.status].text} ${statusConfig[historicoItem.status].border}`,
+        } : null}
+        canEdit={canEditHistoricoItem(historicoItem)}
+        saving={savingHistorico}
+        onClose={() => {
+          if (savingHistorico) return;
+          setHistoricoItem(null);
+        }}
+        onSave={salvarHistorico}
+      />
     </div>
   );
 }

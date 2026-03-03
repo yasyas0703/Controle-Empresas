@@ -9,12 +9,14 @@ import type {
   LogEntry,
   Notificacao,
   Observacao,
+  RetItem,
   Servico,
   SistemaState,
   Usuario,
   UUID,
 } from '@/app/types';
-import { isoNow } from '@/app/utils/date';
+import { formatBR, isoNow } from '@/app/utils/date';
+import { criarHistoricoVencimentoItem, limparTagVencimento, normalizarHistoricoVencimento } from '@/app/utils/vencimentos';
 import * as db from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 
@@ -33,6 +35,137 @@ function diffObjects(before: Record<string, unknown>, after: Record<string, unkn
     if (JSON.stringify(a) !== JSON.stringify(b)) diff[k] = { from: a, to: b };
   }
   return diff;
+}
+
+type AutorHistorico = {
+  autorId: UUID | null;
+  autorNome?: string;
+};
+
+function enriquecerDocumentoComHistorico(
+  documentoAtual: DocumentoEmpresa | undefined,
+  patch: Partial<DocumentoEmpresa>,
+  autor: AutorHistorico
+): Partial<DocumentoEmpresa> {
+  const historicoBase = normalizarHistoricoVencimento(patch.historicoVencimento ?? documentoAtual?.historicoVencimento);
+  let historico = historicoBase;
+
+  if (documentoAtual && patch.validade !== undefined && patch.validade !== documentoAtual.validade) {
+    const anterior = documentoAtual.validade ? formatBR(documentoAtual.validade) : 'sem validade';
+    const proximo = patch.validade ? formatBR(patch.validade) : 'sem validade';
+    historico = normalizarHistoricoVencimento([
+      criarHistoricoVencimentoItem({
+        titulo: patch.validade ? `Validade atualizada para ${proximo}` : 'Validade removida',
+        descricao: `Antes: ${anterior}`,
+        dataEvento: patch.validade || undefined,
+        autorId: autor.autorId,
+        autorNome: autor.autorNome,
+      }),
+      ...historico,
+    ]);
+  }
+
+  return {
+    ...patch,
+    tagVencimento: patch.tagVencimento !== undefined
+      ? limparTagVencimento(patch.tagVencimento)
+      : limparTagVencimento(documentoAtual?.tagVencimento),
+    historicoVencimento: historico,
+  };
+}
+
+function enriquecerRetsComHistorico(retsAtuais: RetItem[], proximosRets: RetItem[], autor: AutorHistorico): RetItem[] {
+  return proximosRets.map((ret) => {
+    const retAtual = retsAtuais.find((item) => item.id === ret.id);
+    let historico = normalizarHistoricoVencimento(ret.historicoVencimento ?? retAtual?.historicoVencimento);
+
+    if (retAtual && ret.vencimento !== retAtual.vencimento) {
+      const anterior = retAtual.vencimento ? formatBR(retAtual.vencimento) : 'sem vencimento';
+      const proximo = ret.vencimento ? formatBR(ret.vencimento) : 'sem vencimento';
+      historico = normalizarHistoricoVencimento([
+        criarHistoricoVencimentoItem({
+          titulo: ret.vencimento ? `Vencimento atualizado para ${proximo}` : 'Vencimento removido',
+          descricao: `Antes: ${anterior}`,
+          dataEvento: ret.vencimento || undefined,
+          autorId: autor.autorId,
+          autorNome: autor.autorNome,
+        }),
+        ...historico,
+      ]);
+    }
+
+    if (retAtual && ret.ultimaRenovacao !== retAtual.ultimaRenovacao && ret.ultimaRenovacao) {
+      historico = normalizarHistoricoVencimento([
+        criarHistoricoVencimentoItem({
+          titulo: 'Renovação registrada',
+          descricao: `Última renovação em ${formatBR(ret.ultimaRenovacao)}`,
+          dataEvento: ret.ultimaRenovacao,
+          autorId: autor.autorId,
+          autorNome: autor.autorNome,
+        }),
+        ...historico,
+      ]);
+    }
+
+    return {
+      ...ret,
+      tagVencimento: limparTagVencimento(ret.tagVencimento ?? retAtual?.tagVencimento),
+      historicoVencimento: historico,
+    };
+  });
+}
+
+function dedupeIds(ids?: UUID[] | null): UUID[] {
+  return Array.from(new Set((ids ?? []).filter(Boolean)));
+}
+
+function normalizarControleAcessoDocumento(
+  documento: Pick<DocumentoEmpresa, 'visibilidade' | 'departamentosIds' | 'usuariosPermitidos' | 'criadoPorId'>,
+  currentUserId?: UUID | null
+) {
+  const visibilidade = documento.visibilidade ?? 'publico';
+
+  return {
+    visibilidade,
+    departamentosIds: visibilidade === 'departamento' ? dedupeIds(documento.departamentosIds) : [],
+    usuariosPermitidos: visibilidade === 'usuarios' ? dedupeIds(documento.usuariosPermitidos) : [],
+    criadoPorId: documento.criadoPorId ?? currentUserId ?? undefined,
+  };
+}
+
+function canUserViewDocumento(documento: DocumentoEmpresa, usuario: Usuario | null): boolean {
+  if (!usuario || !usuario.ativo) return false;
+
+  const visibilidade = documento.visibilidade ?? 'publico';
+
+  if (visibilidade === 'confidencial') {
+    return !!documento.criadoPorId && documento.criadoPorId === usuario.id;
+  }
+
+  if (usuario.role === 'admin') {
+    return true;
+  }
+
+  if (visibilidade === 'publico') {
+    return true;
+  }
+
+  if (visibilidade === 'departamento') {
+    return !!usuario.departamentoId && (documento.departamentosIds ?? []).includes(usuario.departamentoId);
+  }
+
+  if (visibilidade === 'usuarios') {
+    return (documento.usuariosPermitidos ?? []).includes(usuario.id);
+  }
+
+  return true;
+}
+
+function filtrarEmpresasPorPermissaoDocumentos(empresas: Empresa[], usuario: Usuario | null): Empresa[] {
+  return empresas.map((empresa) => ({
+    ...empresa,
+    documentos: empresa.documentos.filter((documento) => canUserViewDocumento(documento, usuario)),
+  }));
 }
 
 type AlertType = 'sucesso' | 'aviso' | 'erro';
@@ -73,12 +206,12 @@ interface SistemaContextValue extends SistemaState {
 
   // Empresas
   criarEmpresa: (payload: Partial<Empresa>) => Promise<UUID>;
-  atualizarEmpresa: (id: UUID, patch: Partial<Empresa>) => Promise<void>;
+  atualizarEmpresa: (id: UUID, patch: Partial<Empresa>) => Promise<boolean>;
   removerEmpresa: (id: UUID) => Promise<void>;
 
   // Documentos
-  adicionarDocumento: (empresaId: UUID, doc: Omit<DocumentoEmpresa, 'id' | 'criadoEm' | 'atualizadoEm'>, file?: File) => Promise<void>;
-  atualizarDocumento: (empresaId: UUID, docId: UUID, patch: Partial<Pick<DocumentoEmpresa, 'nome' | 'validade' | 'departamentosIds' | 'visibilidade' | 'usuariosPermitidos' | 'arquivoUrl'>>, file?: File) => Promise<void>;
+  adicionarDocumento: (empresaId: UUID, doc: Omit<DocumentoEmpresa, 'id' | 'criadoEm' | 'atualizadoEm'>, file?: File) => Promise<boolean>;
+  atualizarDocumento: (empresaId: UUID, docId: UUID, patch: Partial<Pick<DocumentoEmpresa, 'nome' | 'validade' | 'departamentosIds' | 'visibilidade' | 'usuariosPermitidos' | 'arquivoUrl' | 'tagVencimento' | 'historicoVencimento' | 'criadoPorId'>>, file?: File) => Promise<boolean>;
   removerDocumento: (empresaId: UUID, docId: UUID) => Promise<void>;
 
   // Observações
@@ -326,6 +459,10 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
   const canManage = currentUser?.role === 'gerente' || currentUser?.role === 'admin';
   const canAdmin = currentUser?.role === 'admin';
+  const empresasVisiveis = useMemo(
+    () => filtrarEmpresasPorPermissaoDocumentos(state.empresas, currentUser),
+    [currentUser, state.empresas]
+  );
 
   const pushLog = async (entry: Omit<LogEntry, 'id' | 'em' | 'userId' | 'userNome'> & { diff?: LogEntry['diff'] }, nomeOverride?: string | null, userIdOverride?: string | null) => {
     const resolvedUserId = userIdOverride ?? state.currentUserId;
@@ -430,6 +567,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       me = await loadForUser(userId as UUID);
     } catch (err: any) {
       console.error(err);
+      return false;
       mostrarAlerta('Erro ao carregar dados', err?.message || 'Falha ao carregar dados do sistema após login.', 'erro');
     } finally {
       setLoading(false);
@@ -605,7 +743,11 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         tipoInscricao: payload.tipoInscricao ?? '',
         servicos: payload.servicos ?? [],
         possuiRet: payload.possuiRet ?? false,
-        rets: payload.rets ?? [],
+        rets: (payload.rets ?? []).map((ret) => ({
+          ...ret,
+          tagVencimento: limparTagVencimento(ret.tagVencimento),
+          historicoVencimento: normalizarHistoricoVencimento(ret.historicoVencimento),
+        })),
         inscricao_estadual: payload.inscricao_estadual,
         inscricao_municipal: payload.inscricao_municipal,
         regime_federal: payload.regime_federal,
@@ -620,7 +762,11 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         email: payload.email,
         telefone: payload.telefone,
         responsaveis,
-        documentos: payload.documentos ?? [],
+        documentos: (payload.documentos ?? []).map((doc) => ({
+          ...doc,
+          tagVencimento: limparTagVencimento(doc.tagVencimento),
+          historicoVencimento: normalizarHistoricoVencimento(doc.historicoVencimento),
+        })),
         observacoes: payload.observacoes ?? [],
         criadoEm: isoNow(),
         atualizadoEm: isoNow(),
@@ -639,23 +785,37 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
   const atualizarEmpresa = async (id: UUID, patch: Partial<Empresa>) => {
     const before = state.empresas.find((e) => e.id === id);
-    if (!before) return;
+    if (!before) return false;
+    const patchPreparado: Partial<Empresa> = {
+      ...patch,
+      ...(patch.rets !== undefined
+        ? {
+            rets: enriquecerRetsComHistorico(before.rets, patch.rets, {
+              autorId: state.currentUserId,
+              autorNome: currentUser?.nome,
+            }),
+          }
+        : {}),
+    };
     const after: Empresa = {
       ...before,
-      ...patch,
+      ...patchPreparado,
       responsaveis: { ...before.responsaveis, ...(patch.responsaveis ?? {}) },
       atualizadoEm: isoNow(),
     };
     const diff = diffObjects(before as any, after as any);
     try {
-      await db.updateEmpresa(id, patch);
+      await db.updateEmpresa(id, patchPreparado);
       await pushLog({ action: 'update', entity: 'empresa', entityId: id, message: `Atualizou empresa: ${before.codigo}`, diff });
       setState((prev) => ({
         ...prev,
         empresas: prev.empresas.map((e) => (e.id === id ? after : e)),
       }));
+      return true;
+      return true;
     } catch (err) {
       console.error(err);
+      return false;
     }
   };
 
@@ -783,6 +943,21 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
   const adicionarDocumento = async (empresaId: UUID, doc: Omit<DocumentoEmpresa, 'id' | 'criadoEm' | 'atualizadoEm'>, file?: File) => {
     try {
+      if (!file) {
+        mostrarAlerta('Arquivo obrigatorio', 'Envie um arquivo antes de adicionar o documento.', 'aviso');
+        return false;
+      }
+
+      const controleAcesso = normalizarControleAcessoDocumento(doc, state.currentUserId);
+      if (controleAcesso.visibilidade === 'departamento' && controleAcesso.departamentosIds.length === 0) {
+        mostrarAlerta('Departamento obrigatorio', 'Selecione pelo menos um departamento para essa visibilidade.', 'aviso');
+        return false;
+      }
+      if (controleAcesso.visibilidade === 'usuarios' && controleAcesso.usuariosPermitidos.length === 0) {
+        mostrarAlerta('Usuario obrigatorio', 'Selecione pelo menos um usuario para essa visibilidade.', 'aviso');
+        return false;
+      }
+
       let arquivoUrl = doc.arquivoUrl;
       if (file) {
         try {
@@ -790,16 +965,15 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         } catch (uploadErr: any) {
           console.error('Erro no upload:', uploadErr);
           mostrarAlerta('Erro no upload', uploadErr?.message || 'Não foi possível enviar o arquivo. Verifique se o bucket "documentos" existe no Supabase Storage.', 'erro');
-          // Continua criando o documento sem arquivo
-          arquivoUrl = undefined;
+          return false;
         }
       }
       // Garantir que o criador está em usuariosPermitidos quando visibilidade='usuarios'
-      let usuariosPermitidos = doc.usuariosPermitidos ?? [];
-      if (doc.visibilidade === 'usuarios' && state.currentUserId && !usuariosPermitidos.includes(state.currentUserId)) {
-        usuariosPermitidos = [state.currentUserId, ...usuariosPermitidos];
-      }
-      const novo = await db.insertDocumento(empresaId, { ...doc, arquivoUrl, criadoPorId: state.currentUserId ?? undefined, usuariosPermitidos });
+      const novo = await db.insertDocumento(empresaId, {
+        ...doc,
+        ...controleAcesso,
+        arquivoUrl,
+      });
       await pushLog({ action: 'create', entity: 'documento', entityId: novo.id, message: `Adicionou documento: ${doc.nome}` });
       setState((prev) => ({
         ...prev,
@@ -807,13 +981,20 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
           e.id === empresaId ? { ...e, documentos: [novo, ...e.documentos], atualizadoEm: isoNow() } : e
         ),
       }));
+      return true;
     } catch (err: any) {
       console.error(err);
       mostrarAlerta('Erro ao adicionar documento', err?.message || 'Falha ao salvar documento.', 'erro');
+      return false;
     }
   };
 
-  const atualizarDocumento = async (empresaId: UUID, docId: UUID, patch: Partial<Pick<DocumentoEmpresa, 'nome' | 'validade' | 'departamentosIds' | 'visibilidade' | 'usuariosPermitidos' | 'arquivoUrl'>>, file?: File) => {
+  const atualizarDocumento = async (
+    empresaId: UUID,
+    docId: UUID,
+    patch: Partial<Pick<DocumentoEmpresa, 'nome' | 'validade' | 'departamentosIds' | 'visibilidade' | 'usuariosPermitidos' | 'arquivoUrl' | 'tagVencimento' | 'historicoVencimento' | 'criadoPorId'>>,
+    file?: File
+  ) => {
     try {
       const finalPatch = { ...patch };
       if (file) {
@@ -823,23 +1004,50 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         } catch (uploadErr: any) {
           console.error('Erro no upload:', uploadErr);
           mostrarAlerta('Erro no upload', uploadErr?.message || 'Não foi possível enviar o arquivo.', 'erro');
+          return false;
         }
       }
       const empresa = state.empresas.find((e) => e.id === empresaId);
       const doc = empresa?.documentos.find((d) => d.id === docId);
-      await db.updateDocumento(docId, finalPatch);
+      if (!empresa || !doc) return false;
+      const visibilidadeFinal = patch.visibilidade ?? doc.visibilidade ?? 'publico';
+      const controleAcesso = normalizarControleAcessoDocumento({
+        visibilidade: visibilidadeFinal,
+        departamentosIds: patch.departamentosIds ?? doc.departamentosIds,
+        usuariosPermitidos: patch.usuariosPermitidos ?? doc.usuariosPermitidos,
+        criadoPorId: patch.criadoPorId ?? doc.criadoPorId,
+      }, state.currentUserId);
+      if (controleAcesso.visibilidade === 'departamento' && controleAcesso.departamentosIds.length === 0) {
+        mostrarAlerta('Departamento obrigatorio', 'Selecione pelo menos um departamento para essa visibilidade.', 'aviso');
+        return false;
+      }
+      if (controleAcesso.visibilidade === 'usuarios' && controleAcesso.usuariosPermitidos.length === 0) {
+        mostrarAlerta('Usuario obrigatorio', 'Selecione pelo menos um usuario para essa visibilidade.', 'aviso');
+        return false;
+      }
+      finalPatch.departamentosIds = controleAcesso.departamentosIds;
+      finalPatch.usuariosPermitidos = controleAcesso.usuariosPermitidos;
+      finalPatch.visibilidade = controleAcesso.visibilidade;
+      finalPatch.criadoPorId = controleAcesso.criadoPorId;
+      const patchPreparado = enriquecerDocumentoComHistorico(doc, finalPatch, {
+        autorId: state.currentUserId,
+        autorNome: currentUser?.nome,
+      });
+      await db.updateDocumento(docId, patchPreparado);
       await pushLog({ action: 'update', entity: 'documento', entityId: docId, message: `Atualizou documento: ${doc?.nome ?? docId} (empresa ${empresa?.codigo ?? empresaId})` });
       setState((prev) => ({
         ...prev,
         empresas: prev.empresas.map((e) =>
           e.id === empresaId
-            ? { ...e, documentos: e.documentos.map((d) => d.id === docId ? { ...d, ...finalPatch, atualizadoEm: isoNow() } : d), atualizadoEm: isoNow() }
+            ? { ...e, documentos: e.documentos.map((d) => d.id === docId ? { ...d, ...patchPreparado, atualizadoEm: isoNow() } : d), atualizadoEm: isoNow() }
             : e
         ),
       }));
+      return true;
     } catch (err: any) {
       console.error(err);
       mostrarAlerta('Erro ao atualizar documento', err?.message || 'Falha ao salvar alterações.', 'erro');
+      return false;
     }
   };
 
@@ -1005,6 +1213,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
   const value: SistemaContextValue = {
     ...state,
+    empresas: empresasVisiveis,
     currentUser,
     canManage,
     canAdmin,
