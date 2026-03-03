@@ -10,7 +10,7 @@ import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import type { Empresa, Limiares } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
 
-function countBy(values: string[]) {
+function countBy(values: Array<string | null | undefined>) {
   const map: Record<string, number> = {};
   for (const v of values) {
     const key = v?.trim();
