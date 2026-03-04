@@ -203,6 +203,25 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
     return `${apenasNumeros.slice(0, 5)}-${apenasNumeros.slice(5, 8)}`;
   };
 
+  const tipoEstabelecimentoSelectValue = formData.tipoInscricao === 'CNO'
+    ? 'cno'
+    : String(formData.tipoEstabelecimento || '');
+
+  const handleTipoEstabelecimentoChange = (value: string) => {
+    if (value === 'cno') {
+      handleChange('tipoEstabelecimento', '');
+      handleChange('tipoInscricao', 'CNO');
+      return;
+    }
+
+    handleChange('tipoEstabelecimento', value);
+
+    if (formData.tipoInscricao === 'CNO') {
+      const autoTipo = detectTipoInscricao(String(formData.cnpj || ''), '');
+      handleChange('tipoInscricao', autoTipo || '');
+    }
+  };
+
   const toggleServico = (servico: string) => {
     setFormData((prev) => {
       const current = prev.servicos ?? [];
@@ -490,8 +509,8 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Matriz/Filial</label>
                 <select
-                  value={formData.tipoEstabelecimento}
-                  onChange={(e) => handleChange('tipoEstabelecimento', e.target.value)}
+                  value={tipoEstabelecimentoSelectValue}
+                  onChange={(e) => handleTipoEstabelecimentoChange(e.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 bg-white text-gray-900"
                 >
                   <option value="">Selecione...</option>
