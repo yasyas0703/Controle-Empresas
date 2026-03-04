@@ -7,6 +7,7 @@ import type { Empresa, RetItem, UUID } from '@/app/types';
 import ModalBase from '@/app/components/ModalBase';
 import { cepSchema, cpfSchema, cnpjSchema, detectTipoInscricao, detectTipoEstabelecimento, formatarDocumento } from '@/app/utils/validation';
 import { api } from '@/app/utils/api';
+import { sortByPtBr, sortStringsPtBr } from '@/lib/sort';
 
 interface ModalCadastrarEmpresaProps {
   onClose: () => void;
@@ -76,8 +77,14 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
     const set = new Set<string>();
     for (const s of servicosCadastrados) set.add(s.nome);
     for (const s of formData.servicos ?? []) set.add(s);
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
+    return sortStringsPtBr(Array.from(set));
   }, [formData.servicos, servicosCadastrados]);
+
+  const sortedDepartamentos = useMemo(() => sortByPtBr(departamentos, (d) => d.nome), [departamentos]);
+  const activeUsers = useMemo(
+    () => sortByPtBr(usuarios.filter((u) => u.ativo), (u) => u.nome),
+    [usuarios]
+  );
 
   const cnpjDigits = useMemo(() => String(formData.cnpj || '').replace(/\D/g, ''), [formData.cnpj]);
   const podeBuscarCnpj = cnpjDigits.length === 14 && !buscandoCnpj;
@@ -717,33 +724,30 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
           <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
             <h4 className="font-semibold text-gray-800 mb-4">Responsáveis por Departamento</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {departamentos.map((d) => {
-                const activeUsers = usuarios.filter((u) => u.ativo);
-                return (
-                  <div key={d.id}>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">{d.nome}</label>
-                    <select
-                      value={(formData.responsaveis as any)?.[d.id] ?? ''}
-                      onChange={(e) => {
-                        const userId = e.target.value || null;
-                        setFormData((prev) => ({
-                          ...prev,
-                          responsaveis: { ...(prev.responsaveis ?? {}), [d.id]: userId },
-                        }));
-                      }}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-white"
-                    >
-                      <option value="">(Sem responsável)</option>
-                      {activeUsers.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.nome}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="text-xs text-gray-500 mt-1">Mostra todos os usuários ativos.</div>
-                  </div>
-                );
-              })}
+              {sortedDepartamentos.map((d) => (
+                <div key={d.id}>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">{d.nome}</label>
+                  <select
+                    value={(formData.responsaveis as any)?.[d.id] ?? ''}
+                    onChange={(e) => {
+                      const userId = e.target.value || null;
+                      setFormData((prev) => ({
+                        ...prev,
+                        responsaveis: { ...(prev.responsaveis ?? {}), [d.id]: userId },
+                      }));
+                    }}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-white"
+                  >
+                    <option value="">(Sem responsável)</option>
+                    {activeUsers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.nome}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="text-xs text-gray-500 mt-1">Mostra todos os usuários ativos.</div>
+                </div>
+              ))}
             </div>
           </div>
           )}

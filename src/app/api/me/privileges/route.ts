@@ -29,12 +29,9 @@ export async function GET(req: Request) {
   const isGhost = !!ghostId && data.user.id === ghostId;
   const isDeveloper = !!devId && data.user.id === devId;
 
-  // Retornar IDs protegidos apenas para usuários privilegiados (UX: esconder botões de ação)
   const protectedUserIds: string[] = [];
-  if (isGhost || isDeveloper) {
-    if (ghostId) protectedUserIds.push(ghostId);
-    if (devId) protectedUserIds.push(devId);
-  }
+  if (ghostId) protectedUserIds.push(ghostId);
+  if (devId) protectedUserIds.push(devId);
 
   return NextResponse.json({
     isGhost,

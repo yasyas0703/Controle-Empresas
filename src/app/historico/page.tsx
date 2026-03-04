@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ClipboardList, UserCircle, Search, ChevronDown, ChevronUp, ArrowRight, Calendar, Trash2, CheckSquare, Square } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { formatBR } from '@/app/utils/date';
 import type { LogEntry } from '@/app/types';
+import { sortByPtBr, sortResponsaveisByNome } from '@/lib/sort';
 
 /** Formata número do RET no padrão XX.XXXXXXXXX-XX (13 dígitos) */
 function formatRetNumber(value: string): string {
@@ -56,7 +57,7 @@ const FIELD_LABELS: Record<string, string> = {
 const IGNORED_FIELDS = new Set(['id', 'atualizadoEm', 'criadoEm']);
 
 export default function HistoricoPage() {
-  const { logs, usuarios, departamentos, canManage, canAdmin, limparHistorico, removerLogsSelecionados, mostrarAlerta } = useSistema();
+  const { logs, usuarios, departamentos, canAdmin, isGhost, limparHistorico, removerLogsSelecionados, mostrarAlerta } = useSistema();
   const [search, setSearch] = useState('');
   const [filtroAction, setFiltroAction] = useState('');
   const [filtroEntity, setFiltroEntity] = useState('');
@@ -70,9 +71,34 @@ export default function HistoricoPage() {
   const [excluindo, setExcluindo] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [excluindoSelecionados, setExcluindoSelecionados] = useState(false);
+  const canViewHistory = canAdmin || isGhost;
+  const canDeleteLogs = canAdmin && !isGhost;
+  const visibleLogs = useMemo(
+    () => (isGhost ? logs : logs.filter((log) => !log.deletedEm)),
+    [isGhost, logs]
+  );
+  const activeLogIds = useMemo(
+    () => new Set(visibleLogs.filter((log) => !log.deletedEm).map((log) => log.id)),
+    [visibleLogs]
+  );
+  const activeLogsCount = useMemo(
+    () => logs.filter((log) => !log.deletedEm).length,
+    [logs]
+  );
+  const selectedActiveIds = useMemo(
+    () => Array.from(selectedIds).filter((id) => activeLogIds.has(id)),
+    [activeLogIds, selectedIds]
+  );
 
-  // Controle de permissão: somente admins podem ver
-  if (!canAdmin) {
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const next = new Set(Array.from(prev).filter((id) => activeLogIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [activeLogIds]);
+
+  // Controle de permissão: admins e ghost podem ver; só admin comum pode excluir
+  if (!canViewHistory) {
     return (
       <div className="space-y-6">
         <div className="rounded-2xl bg-white p-12 shadow-sm text-center">
@@ -81,7 +107,7 @@ export default function HistoricoPage() {
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">Acesso Restrito</h2>
           <p className="text-gray-500 text-sm">
-            Apenas administradores têm acesso ao histórico de alterações do sistema.
+            Apenas administradores e a conta ghost têm acesso ao histórico de alterações do sistema.
           </p>
           <p className="text-gray-400 text-xs mt-2">
             Entre em contato com o administrador caso precise consultar o histórico.
@@ -102,6 +128,12 @@ export default function HistoricoPage() {
     return dep ? dep.nome : deptId;
   };
 
+  const getDeletedInfo = (log: LogEntry) => {
+    if (!log.deletedEm) return '';
+    const deletedBy = log.deletedByNome || 'Desconhecido';
+    return `Apagado por ${deletedBy} em ${new Date(log.deletedEm).toLocaleString('pt-BR')}`;
+  };
+
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
@@ -112,6 +144,7 @@ export default function HistoricoPage() {
   };
 
   const toggleSelect = (id: string) => {
+    if (!activeLogIds.has(id)) return;
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -121,7 +154,8 @@ export default function HistoricoPage() {
   };
 
   const toggleSelectAll = () => {
-    const exibidosIds = exibidos.map((l) => l.id);
+    const exibidosIds = exibidos.filter((l) => !l.deletedEm).map((l) => l.id);
+    if (exibidosIds.length === 0) return;
     const allSelected = exibidosIds.every((id) => selectedIds.has(id));
     if (allSelected) {
       setSelectedIds((prev) => {
@@ -139,12 +173,16 @@ export default function HistoricoPage() {
   };
 
   const handleExcluirSelecionados = async () => {
-    if (selectedIds.size === 0) return;
+    if (selectedActiveIds.length === 0) return;
     setExcluindoSelecionados(true);
     try {
-      await removerLogsSelecionados(Array.from(selectedIds));
-      mostrarAlerta('Registros excluídos', `${selectedIds.size} registro(s) excluído(s) do histórico.`, 'sucesso');
-      setSelectedIds(new Set());
+      await removerLogsSelecionados(selectedActiveIds);
+      mostrarAlerta('Registros excluídos', `${selectedActiveIds.length} registro(s) excluído(s) do histórico.`, 'sucesso');
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of selectedActiveIds) next.delete(id);
+        return next;
+      });
     } catch (err: any) {
       mostrarAlerta('Erro', err?.message || 'Não foi possível excluir os registros.', 'erro');
     } finally {
@@ -152,37 +190,38 @@ export default function HistoricoPage() {
     }
   };
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const deMs = dataDe ? new Date(dataDe + 'T00:00:00').getTime() : 0;
-    const ateMs = dataAte ? new Date(dataAte + 'T23:59:59').getTime() : Infinity;
-    return logs.filter((l) => {
-      if (filtroAction && l.action !== filtroAction) return false;
-      if (filtroEntity && l.entity !== filtroEntity) return false;
-      if (filtroUser && l.userId !== filtroUser) return false;
-      if (deMs || ateMs < Infinity) {
-        const logMs = new Date(l.em).getTime();
-        if (logMs < deMs || logMs > ateMs) return false;
-      }
-      if (q) {
-        const hay = [l.action, l.entity, l.message, getUserName(l.userId, l.userNome)].join(' ').toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-  }, [logs, search, filtroAction, filtroEntity, filtroUser, dataDe, dataAte, usuarios]);
+  const q = search.trim().toLowerCase();
+  const deMs = dataDe ? new Date(dataDe + 'T00:00:00').getTime() : 0;
+  const ateMs = dataAte ? new Date(dataAte + 'T23:59:59').getTime() : Infinity;
+  const filtered = visibleLogs.filter((l) => {
+    if (filtroAction && l.action !== filtroAction) return false;
+    if (filtroEntity && l.entity !== filtroEntity) return false;
+    if (filtroUser && l.userId !== filtroUser) return false;
+    if (deMs || ateMs < Infinity) {
+      const logMs = new Date(l.em).getTime();
+      if (logMs < deMs || logMs > ateMs) return false;
+    }
+    if (q) {
+      const hay = [l.action, l.entity, l.message, getUserName(l.userId, l.userNome)].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
 
   // Unique users that appear in logs
-  const logUsers = useMemo(() => {
+  const logUsers = (() => {
     const map = new Map<string, string>();
-    for (const l of logs) {
+    for (const l of visibleLogs) {
       if (l.userId && !map.has(l.userId)) {
         const user = usuarios.find((u) => u.id === l.userId);
         map.set(l.userId, user ? user.nome : (l.userNome || 'Desconhecido'));
       }
     }
-    return Array.from(map.entries()).map(([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome));
-  }, [logs, usuarios]);
+    return sortByPtBr(
+      Array.from(map.entries()).map(([id, nome]) => ({ id, nome })),
+      (user) => user.nome
+    );
+  })();
 
   const hasFilters = search || filtroAction || filtroEntity || filtroUser || dataDe || dataAte;
   const exibidos = filtered.slice(0, qtdExibir);
@@ -196,12 +235,12 @@ export default function HistoricoPage() {
     // Responsáveis: é um Record<deptId, userId | null>
     if (key === 'responsaveis' && typeof val === 'object' && !Array.isArray(val)) {
       const obj = val as Record<string, string | null>;
-      const parts: string[] = [];
-      for (const [deptId, userId] of Object.entries(obj)) {
-        const deptName = getDeptName(deptId);
-        const userName = userId ? getUserName(userId) : '(vazio)';
-        parts.push(`${deptName}: ${userName}`);
-      }
+      const parts = sortResponsaveisByNome(
+        Object.entries(obj).map(([deptId, userId]) => ({
+          dep: getDeptName(deptId),
+          user: userId ? getUserName(userId) : '(vazio)',
+        }))
+      ).map(({ dep, user }) => `${dep}: ${user}`);
       return parts.length > 0 ? parts.join(', ') : '(vazio)';
     }
 
@@ -267,11 +306,12 @@ export default function HistoricoPage() {
             }
 
             if (changedDepts.length === 0) return null;
+            const sortedChangedDepts = sortByPtBr(changedDepts, (item) => item.dept);
 
             return (
               <div key={key} className="rounded-lg border border-blue-100 bg-blue-50/50 p-3">
                 <div className="text-xs font-bold text-blue-800 mb-2">{label}</div>
-                {changedDepts.map((c, i) => (
+                {sortedChangedDepts.map((c, i) => (
                   <div key={i} className="flex items-center gap-2 text-xs ml-2 mb-1">
                     <span className="font-semibold text-gray-700 min-w-[100px]">{c.dept}:</span>
                     <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded line-through">{c.from}</span>
@@ -283,7 +323,7 @@ export default function HistoricoPage() {
             );
           }
 
-          {/* RETs: mostrar detalhes de quais RETs mudaram */}
+          // RETs: mostrar detalhes de quais RETs mudaram
           if (key === 'rets' && Array.isArray(change.from) && Array.isArray(change.to)) {
             const fromArr = change.from as any[];
             const toArr = change.to as any[];
@@ -412,18 +452,23 @@ export default function HistoricoPage() {
             <div>
               <div className="text-2xl font-bold text-gray-900">Histórico de Alterações</div>
               <div className="text-sm text-gray-500">Todas as ações registradas no sistema ({filtered.length} registros)</div>
+              {isGhost && (
+                <div className="mt-1 text-xs font-semibold text-amber-700">
+                  A conta ghost também enxerga registros apagados, com quem apagou e quando.
+                </div>
+              )}
             </div>
           </div>
-          {canAdmin && logs.length > 0 && (
+          {canDeleteLogs && activeLogsCount > 0 && (
             <div className="flex items-center gap-2 self-start flex-wrap">
-              {selectedIds.size > 0 && (
+              {selectedActiveIds.length > 0 && (
                 <button
                   onClick={handleExcluirSelecionados}
                   disabled={excluindoSelecionados}
                   className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl font-semibold text-sm hover:shadow-lg transition disabled:opacity-50"
                 >
                   <Trash2 size={16} />
-                  {excluindoSelecionados ? 'Excluindo...' : `Excluir ${selectedIds.size} selecionado(s)`}
+                  {excluindoSelecionados ? 'Excluindo...' : `Excluir ${selectedActiveIds.length} selecionado(s)`}
                 </button>
               )}
               <button
@@ -461,8 +506,8 @@ export default function HistoricoPage() {
             className="rounded-xl bg-gray-50 px-4 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400"
           >
             <option value="">Todas as ações</option>
-            <option value="create">Criação</option>
             <option value="update">Atualização</option>
+            <option value="create">Criação</option>
             <option value="delete">Exclusão</option>
             <option value="login">Login</option>
             <option value="logout">Logout</option>
@@ -473,12 +518,12 @@ export default function HistoricoPage() {
             className="rounded-xl bg-gray-50 px-4 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400"
           >
             <option value="">Todos os tipos</option>
-            <option value="empresa">Empresa</option>
-            <option value="documento">Documento</option>
-            <option value="ret">RET</option>
-            <option value="usuario">Usuário</option>
             <option value="departamento">Departamento</option>
+            <option value="documento">Documento</option>
+            <option value="empresa">Empresa</option>
+            <option value="ret">RET</option>
             <option value="servico">Serviço</option>
+            <option value="usuario">Usuário</option>
           </select>
         </div>
 
@@ -520,10 +565,10 @@ export default function HistoricoPage() {
           <table className="w-full text-sm">
             <thead className="bg-gradient-to-r from-teal-50 to-cyan-50 text-gray-600">
               <tr>
-                {canAdmin && (
+                {canDeleteLogs && (
                   <th className="px-3 py-4 w-10">
                     <button onClick={toggleSelectAll} className="text-gray-400 hover:text-teal-600 transition">
-                      {exibidos.length > 0 && exibidos.every((l) => selectedIds.has(l.id))
+                      {exibidos.filter((l) => !l.deletedEm).length > 0 && exibidos.filter((l) => !l.deletedEm).every((l) => selectedIds.has(l.id))
                         ? <CheckSquare size={18} className="text-teal-600" />
                         : <Square size={18} />}
                     </button>
@@ -545,10 +590,10 @@ export default function HistoricoPage() {
                 return (
                   <React.Fragment key={l.id}>
                     <tr
-                      className={`${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} ${isUpdate ? 'cursor-pointer hover:bg-blue-50/50' : ''} ${canAdmin && selectedIds.has(l.id) ? 'bg-red-50/40' : ''}`}
+                      className={`${l.deletedEm ? 'bg-amber-50/70' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} ${isUpdate ? 'cursor-pointer hover:bg-blue-50/50' : ''} ${canDeleteLogs && selectedIds.has(l.id) ? 'bg-red-50/40' : ''}`}
                       onClick={() => isUpdate && toggleExpand(l.id)}
                     >
-                      {canAdmin && (
+                      {canDeleteLogs && (
                         <td className="px-3 py-3.5" onClick={(e) => e.stopPropagation()}>
                           <button onClick={() => toggleSelect(l.id)} className="text-gray-400 hover:text-teal-600 transition">
                             {selectedIds.has(l.id)
@@ -575,8 +620,13 @@ export default function HistoricoPage() {
                         </span>
                       </td>
                       <td className="px-5 py-3.5 text-gray-700">
-                        <div className="flex items-center gap-2">
-                          <span className="flex-1">{l.message}</span>
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1">
+                            <div>{l.message}</div>
+                            {l.deletedEm && (
+                              <div className="mt-1 text-xs font-semibold text-amber-700">{getDeletedInfo(l)}</div>
+                            )}
+                          </div>
                           {isUpdate && hasDiff && (
                             <span className="inline-flex items-center gap-1 text-xs text-blue-500 font-semibold shrink-0">
                               {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -590,8 +640,8 @@ export default function HistoricoPage() {
                       </td>
                     </tr>
                     {isExpanded && isUpdate && (
-                      <tr className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-                        <td colSpan={canAdmin ? 6 : 5} className="border-t border-blue-100 bg-blue-50/30">
+                      <tr className={l.deletedEm ? 'bg-amber-50/70' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                        <td colSpan={canDeleteLogs ? 6 : 5} className="border-t border-blue-100 bg-blue-50/30">
                           {renderDiff(l)}
                         </td>
                       </tr>
@@ -601,7 +651,7 @@ export default function HistoricoPage() {
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={canAdmin ? 6 : 5} className="px-5 py-10 text-center text-gray-400">
+                  <td colSpan={canDeleteLogs ? 6 : 5} className="px-5 py-10 text-center text-gray-400">
                     Sem registros de atividade.
                   </td>
                 </tr>
@@ -619,12 +669,12 @@ export default function HistoricoPage() {
             return (
               <div
                 key={`mobile-${l.id}`}
-                className={`p-4 ${isUpdate ? 'cursor-pointer' : ''} ${canAdmin && selectedIds.has(l.id) ? 'bg-red-50/40' : ''}`}
+                className={`p-4 ${l.deletedEm ? 'bg-amber-50/70' : ''} ${isUpdate ? 'cursor-pointer' : ''} ${canDeleteLogs && selectedIds.has(l.id) ? 'bg-red-50/40' : ''}`}
                 onClick={() => isUpdate && toggleExpand(l.id)}
               >
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2">
-                    {canAdmin && (
+                    {canDeleteLogs && (
                       <button
                         onClick={(e) => { e.stopPropagation(); toggleSelect(l.id); }}
                         className="text-gray-400 hover:text-teal-600 transition"
@@ -648,6 +698,9 @@ export default function HistoricoPage() {
                   <span className="text-xs font-semibold text-teal-700">{getUserName(l.userId, l.userNome)}</span>
                 </div>
                 <div className="text-sm text-gray-700">{l.message}</div>
+                {l.deletedEm && (
+                  <div className="mt-1 text-xs font-semibold text-amber-700">{getDeletedInfo(l)}</div>
+                )}
                 {isUpdate && hasDiff && (
                   <div className="flex items-center gap-1 text-xs text-blue-500 font-semibold mt-2">
                     {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -671,7 +724,7 @@ export default function HistoricoPage() {
         <div className="p-4 border-t border-gray-100 text-center space-y-2">
           <div className="text-xs text-gray-500">
             Exibindo {exibidos.length} de {filtered.length} registros
-            {logs.length !== filtered.length && ` (total no sistema: ${logs.length})`}
+            {visibleLogs.length !== filtered.length && ` (total visível: ${visibleLogs.length})`}
           </div>
           {temMais && (
             <button
@@ -691,12 +744,12 @@ export default function HistoricoPage() {
           <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
             <div className="bg-gradient-to-r from-red-500 to-red-600 p-5">
               <div className="text-lg font-bold text-white">Excluir todo o histórico</div>
-              <div className="text-sm text-red-100 mt-1">Esta ação é irreversível.</div>
+              <div className="text-sm text-red-100 mt-1">Os registros sairão da visão padrão e ficarão preservados para auditoria ghost.</div>
             </div>
             <div className="p-5 space-y-4">
               <div className="bg-red-50 rounded-xl p-4 border border-red-200">
                 <p className="text-sm text-red-800 font-semibold">
-                  Todos os {logs.length} registros de histórico serão excluídos permanentemente.
+                  Todos os {activeLogsCount} registros ativos do histórico serão removidos da visão padrão.
                 </p>
                 <p className="text-sm text-red-700 mt-2">
                   Recomendação: faça um backup antes de excluir.
@@ -732,7 +785,7 @@ export default function HistoricoPage() {
                       await limparHistorico();
                       setConfirmExcluir(false);
                       setTextoConfirm('');
-                      mostrarAlerta('Histórico excluído', 'Todo o histórico foi excluído permanentemente.', 'sucesso');
+                      mostrarAlerta('Histórico excluído', 'Os registros foram removidos da visão padrão do histórico.', 'sucesso');
                     } catch (err: any) {
                       mostrarAlerta('Erro', err?.message || 'Não foi possível excluir o histórico.', 'erro');
                     } finally {

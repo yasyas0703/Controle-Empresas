@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Empresa, Departamento, Usuario } from '@/app/types';
+import { sortResponsaveisByNome } from '@/lib/sort';
 
 function formatDate(iso: string | undefined | null): string {
   if (!iso) return '—';
@@ -136,9 +137,14 @@ export function exportEmpresasPdf(
     }
 
     // ── Responsáveis ──
-    const resps = Object.entries(empresa.responsaveis || {})
-      .filter(([, uid]) => uid)
-      .map(([dId, uid]) => [depMap.get(dId) ?? dId, userMap.get(uid!) ?? uid!] as [string, string]);
+    const resps = sortResponsaveisByNome(
+      Object.entries(empresa.responsaveis || {})
+        .filter(([, uid]) => uid)
+        .map(([dId, uid]) => ({
+          dep: depMap.get(dId) ?? dId,
+          user: userMap.get(uid!) ?? uid!,
+        }))
+    ).map(({ dep, user }) => [dep, user] as [string, string]);
 
     if (resps.length > 0) {
       y += 2;

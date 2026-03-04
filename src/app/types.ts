@@ -143,6 +143,9 @@ export interface LogEntry {
   entityId: UUID | null;
   message: string;
   diff?: Record<string, { from: unknown; to: unknown }>;
+  deletedEm?: string | null;
+  deletedById?: UUID | null;
+  deletedByNome?: string | null;
 }
 
 export interface Servico {

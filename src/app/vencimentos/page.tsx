@@ -12,6 +12,7 @@ import { LIMIARES_DEFAULTS } from '@/app/types';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import ModalLimiares from '@/app/components/ModalLimiares';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
+import { sortByPtBr, sortResponsaveisByNome } from '@/lib/sort';
 
 type StatusVenc = 'vencido' | 'critico' | 'atencao' | 'proximo' | 'ok';
 
@@ -200,10 +201,14 @@ export default function VencimentosPage() {
     return c;
   }, [allItems]);
 
+  const sortedDepartamentos = useMemo(() => sortByPtBr(departamentos, (d) => d.nome), [departamentos]);
+
   // Responsáveis options based on department filter
   const responsaveisOptions = useMemo(() => {
-    if (!filtroDep) return usuarios.filter((u) => u.ativo);
-    return usuarios.filter((u) => u.ativo && u.departamentoId === filtroDep);
+    const base = filtroDep
+      ? usuarios.filter((u) => u.ativo && u.departamentoId === filtroDep)
+      : usuarios.filter((u) => u.ativo);
+    return sortByPtBr(base, (u) => u.nome);
   }, [usuarios, filtroDep]);
 
   const toggleSort = (col: typeof orderBy) => {
@@ -267,9 +272,13 @@ export default function VencimentosPage() {
   const exportCSV = () => {
     const header = ['Status', 'Dias', 'Código', 'Empresa', 'Tipo', 'Nome', 'Vencimento', 'Responsáveis'];
     const rows = filtered.map((item) => {
-      const responsaveis = Object.entries(item.responsaveis)
-        .filter(([, uid]) => uid)
-        .map(([dId, uid]) => `${getDepName(dId)}: ${getUserName(uid)}`)
+      const responsaveis = sortResponsaveisByNome(
+        Object.entries(item.responsaveis)
+          .filter(([, uid]) => uid)
+          .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid) }))
+          .filter((r) => r.dep && r.user)
+      )
+        .map(({ dep, user }) => `${dep}: ${user}`)
         .join(' | ');
       return [
         statusConfig[item.status].label,
@@ -313,9 +322,13 @@ export default function VencimentosPage() {
 
     const header = [['Status', 'Dias', 'Código', 'Empresa', 'Tipo', 'Nome', 'Vencimento', 'Responsáveis']];
     const rows = filtered.map((item) => {
-      const responsaveis = Object.entries(item.responsaveis)
-        .filter(([, uid]) => uid)
-        .map(([dId, uid]) => `${getDepName(dId)}: ${getUserName(uid)}`)
+      const responsaveis = sortResponsaveisByNome(
+        Object.entries(item.responsaveis)
+          .filter(([, uid]) => uid)
+          .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid) }))
+          .filter((r) => r.dep && r.user)
+      )
+        .map(({ dep, user }) => `${dep}: ${user}`)
         .join(' | ');
       return [
         statusConfig[item.status].label,
@@ -459,7 +472,7 @@ export default function VencimentosPage() {
           </div>
           <select value={filtroDep} onChange={(e) => { setFiltroDep(e.target.value); setFiltroResp(''); }} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Todos departamentos</option>
-            {departamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
+            {sortedDepartamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
           </select>
           <select value={filtroResp} onChange={(e) => setFiltroResp(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Todos responsáveis</option>
@@ -510,10 +523,12 @@ export default function VencimentosPage() {
             <tbody className="divide-y divide-gray-100">
               {filtered.slice(0, 200).map((item, idx) => {
                 const sc = statusConfig[item.status];
-                const responsaveis = Object.entries(item.responsaveis)
-                  .filter(([, uid]) => uid)
-                  .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid), depIdx: getDepIndex(dId) }))
-                  .filter((r) => r.dep && r.user);
+                const responsaveis = sortResponsaveisByNome(
+                  Object.entries(item.responsaveis)
+                    .filter(([, uid]) => uid)
+                    .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid), depIdx: getDepIndex(dId) }))
+                    .filter((r) => r.dep && r.user)
+                );
                 const rowKey = `${item.empresaId}-${item.nome}-${idx}`;
                 const isExpanded = expandedRows.has(rowKey);
                 const mainResp = responsaveis[0];
@@ -649,10 +664,12 @@ export default function VencimentosPage() {
         <div className="md:hidden divide-y divide-gray-100">
           {filtered.slice(0, 200).map((item, idx) => {
             const sc = statusConfig[item.status];
-            const responsaveis = Object.entries(item.responsaveis)
-              .filter(([, uid]) => uid)
-              .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid), depIdx: getDepIndex(dId) }))
-              .filter((r) => r.dep && r.user);
+            const responsaveis = sortResponsaveisByNome(
+              Object.entries(item.responsaveis)
+                .filter(([, uid]) => uid)
+                .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid), depIdx: getDepIndex(dId) }))
+                .filter((r) => r.dep && r.user)
+            );
             return (
               <div key={`mobile-${item.empresaId}-${item.nome}-${idx}`} className={`p-4 ${item.status === 'vencido' ? 'bg-red-50/70' : item.status === 'critico' ? 'bg-orange-50/50' : item.status === 'atencao' ? 'bg-amber-50/40' : item.status === 'proximo' ? 'bg-green-50/40' : ''}`}>
                 <div className="flex items-center justify-between gap-2 mb-2">

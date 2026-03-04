@@ -9,6 +9,7 @@ import { formatarDocumento, detectTipoEstabelecimento, detectTipoInscricao } fro
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import type { Empresa, Limiares } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
+import { comparePtBr, sortByPtBr, sortStringsPtBr } from '@/lib/sort';
 
 function countBy(values: Array<string | null | undefined>) {
   const map: Record<string, number> = {};
@@ -78,15 +79,19 @@ export default function AnalisesPage() {
   const [statusVenc, setStatusVenc] = useState('');
   const [empresaView, setEmpresaView] = useState<Empresa | null>(null);
 
+  const sortedDepartamentos = useMemo(() => sortByPtBr(departamentos, (d) => d.nome), [departamentos]);
+
   const allEstados = useMemo(() => {
     const set = new Set<string>();
     for (const e of empresas) if (e.estado) set.add(e.estado);
-    return Array.from(set).sort();
+    return sortStringsPtBr(Array.from(set));
   }, [empresas]);
 
   const responsaveisOptions = useMemo(() => {
-    if (!filtroDep) return usuarios.filter((u) => u.ativo);
-    return usuarios.filter((u) => u.ativo && u.departamentoId === filtroDep);
+    const base = filtroDep
+      ? usuarios.filter((u) => u.ativo && u.departamentoId === filtroDep)
+      : usuarios.filter((u) => u.ativo);
+    return sortByPtBr(base, (u) => u.nome);
   }, [usuarios, filtroDep]);
 
   const departamentoSelecionadoNome = filtroDep
@@ -139,7 +144,7 @@ export default function AnalisesPage() {
         if (statusVenc === 'emdia' && (temVencido || temRisco)) return false;
       }
       return true;
-    }).sort((a, b) => (a.razao_social || a.apelido || '').localeCompare(b.razao_social || b.apelido || ''));
+    }).sort((a, b) => comparePtBr(a.razao_social || a.apelido || '', b.razao_social || b.apelido || ''));
   }, [empresas, filtroRegime, filtroTipo, filtroTipoInscricao, filtroDep, filtroResponsavel, filtroEstado, statusVenc, limiares]);
 
   const stats = useMemo(() => {
@@ -168,9 +173,11 @@ export default function AnalisesPage() {
       .map(([dId, n]) => [departamentos.find(d => d.id === dId)?.nome || dId, n] as [string, number])
       .sort((a, b) => b[1] - a[1]);
 
-    const usuariosBase = (filtroDep
-      ? usuarios.filter((u) => u.ativo && u.departamentoId === filtroDep)
-      : usuarios.filter((u) => u.ativo)
+    const usuariosBase = sortByPtBr(
+      filtroDep
+        ? usuarios.filter((u) => u.ativo && u.departamentoId === filtroDep)
+        : usuarios.filter((u) => u.ativo),
+      (u) => u.nome
     ).map((u) => {
       const totalEmpresas = filteredEmpresas.filter((empresa) => {
         if (filtroDep) return (empresa.responsaveis || {})[filtroDep] === u.id;
@@ -179,7 +186,9 @@ export default function AnalisesPage() {
       return [u.nome, totalEmpresas] as [string, number];
     });
 
-    const byResponsavel = usuariosBase.sort((a, b) => b[1] - a[1]);
+    const byResponsavel = usuariosBase
+      .filter(([, totalEmpresas]) => totalEmpresas > 0)
+      .sort((a, b) => comparePtBr(a[0], b[0]));
 
     // Documentos por status
     let docOk = 0;
@@ -202,21 +211,22 @@ export default function AnalisesPage() {
     ] as Array<[string, number]>).filter(([, n]) => n > 0);
 
     // Departamento → Usuário drill-down (usa todas as empresas filtradas, mas ignora filtro de dep/resp para mostrar todos os deps)
-    const byDepUsuario = departamentos
+    const byDepUsuario = sortByPtBr(departamentos, (dept) => dept.nome)
       .map((dept) => {
-        const usersInDept = usuarios.filter((u) => u.ativo && u.departamentoId === dept.id);
+        const usersInDept = sortByPtBr(
+          usuarios.filter((u) => u.ativo && u.departamentoId === dept.id),
+          (u) => u.nome
+        );
         const usersData = usersInDept
           .map((user) => {
             const count = filteredEmpresas.filter((e) => (e.responsaveis || {})[dept.id] === user.id).length;
             return { id: user.id, nome: user.nome, count };
           })
-          .filter((u) => u.count > 0)
-          .sort((a, b) => b.count - a.count);
+          .filter((u) => u.count > 0);
         const total = filteredEmpresas.filter((e) => !!(e.responsaveis || {})[dept.id]).length;
         return { dept, users: usersData, total };
       })
-      .filter((d) => d.total > 0)
-      .sort((a, b) => b.total - a.total);
+      .filter((d) => d.total > 0);
 
     return { byServico, byRegime, byEstado, byTipo, byInscricao, byDepartamento, byResponsavel, docStatus, byDepUsuario };
   }, [filteredEmpresas, departamentos, usuarios, filtroDep]);
@@ -250,27 +260,27 @@ export default function AnalisesPage() {
         <div className="mt-4 grid grid-cols-2 sm:flex gap-3 flex-wrap">
           <select value={filtroRegime} onChange={(e) => setFiltroRegime(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Todos os regimes</option>
-            <option value="Simples Nacional">Simples Nacional</option>
             <option value="Lucro Presumido">Lucro Presumido</option>
             <option value="Lucro Real">Lucro Real</option>
             <option value="__nao_informado__">Não informado</option>
+            <option value="Simples Nacional">Simples Nacional</option>
           </select>
           <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Matriz / Filial</option>
-            <option value="matriz">Matriz</option>
             <option value="filial">Filial</option>
+            <option value="matriz">Matriz</option>
             <option value="__nao_informado__">Não informado</option>
           </select>
           <select value={filtroTipoInscricao} onChange={(e) => setFiltroTipoInscricao(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Tipo de inscrição</option>
+            <option value="CNO">CNO</option>
             <option value="CNPJ">CNPJ</option>
             <option value="CPF">CPF</option>
-            <option value="CNO">CNO</option>
             <option value="__nao_informado__">Não informado</option>
           </select>
           <select value={filtroDep} onChange={(e) => { setFiltroDep(e.target.value); setFiltroResponsavel(''); }} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Todos os departamentos</option>
-            {departamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
+            {sortedDepartamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
           </select>
           <select value={filtroResponsavel} onChange={(e) => setFiltroResponsavel(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Todos os responsáveis</option>
@@ -282,9 +292,9 @@ export default function AnalisesPage() {
           </select>
           <select value={statusVenc} onChange={(e) => setStatusVenc(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Vencimento</option>
-            <option value="vencidos">Tem vencidos</option>
-            <option value="risco">Em risco</option>
             <option value="emdia">Em dia</option>
+            <option value="risco">Em risco</option>
+            <option value="vencidos">Tem vencidos</option>
           </select>
         </div>
       </div>

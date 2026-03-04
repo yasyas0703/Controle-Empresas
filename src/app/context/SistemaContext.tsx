@@ -393,11 +393,19 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       });
       if (res.ok) {
         const json = await res.json();
-        setPrivileges({ isGhost: !!json.isGhost, isDeveloper: !!json.isDeveloper, isPrivileged: !!json.isPrivileged, protectedUserIds: Array.isArray(json.protectedUserIds) ? json.protectedUserIds : [] });
+        const nextPrivileges = {
+          isGhost: !!json.isGhost,
+          isDeveloper: !!json.isDeveloper,
+          isPrivileged: !!json.isPrivileged,
+          protectedUserIds: Array.isArray(json.protectedUserIds) ? json.protectedUserIds : [],
+        };
+        setPrivileges(nextPrivileges);
+        return nextPrivileges;
       }
     } catch {
       setPrivileges({ isGhost: false, isDeveloper: false, isPrivileged: false, protectedUserIds: [] });
     }
+    return { isGhost: false, isDeveloper: false, isPrivileged: false, protectedUserIds: [] as string[] };
   }, []);
 
   // Auth + initial load
@@ -468,6 +476,20 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     () => state.usuarios.find((u) => u.id === state.currentUserId) ?? null,
     [state.currentUserId, state.usuarios]
   );
+  const protectedUserIdSet = useMemo(() => new Set(privileges.protectedUserIds), [privileges.protectedUserIds]);
+  const usuariosVisiveis = useMemo(
+    () => state.usuarios.filter((u) => u.id === state.currentUserId || !protectedUserIdSet.has(u.id)),
+    [protectedUserIdSet, state.currentUserId, state.usuarios]
+  );
+  const logsVisiveis = useMemo(
+    () =>
+      state.logs.filter(
+        (log) =>
+          !((log.userId && protectedUserIdSet.has(log.userId)) ||
+            (log.entity === 'usuario' && log.entityId && protectedUserIdSet.has(log.entityId)))
+      ),
+    [protectedUserIdSet, state.logs]
+  );
 
   const canManage = currentUser?.role === 'gerente' || currentUser?.role === 'admin';
   const canAdmin = currentUser?.role === 'admin';
@@ -478,7 +500,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
   const pushLog = async (entry: Omit<LogEntry, 'id' | 'em' | 'userId' | 'userNome'> & { diff?: LogEntry['diff'] }, nomeOverride?: string | null, userIdOverride?: string | null) => {
     const resolvedUserId = userIdOverride ?? state.currentUserId;
-    if (privileges.isGhost) return;
+    if (privileges.isGhost || privileges.isDeveloper) return;
     try {
       const newLog = await db.insertLog({
         userId: resolvedUserId,
@@ -575,8 +597,10 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     const userId = data.session.user.id;
     setLoading(true);
     let me: { nome?: string } | null = null;
+    let nextPrivileges = privileges;
     try {
       me = await loadForUser(userId as UUID);
+      nextPrivileges = await fetchPrivileges(data.session.access_token);
     } catch (err: any) {
       console.error(err);
       return false;
@@ -584,7 +608,9 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-    await pushLog({ action: 'login', entity: 'usuario', entityId: userId, message: `Login` }, me?.nome ?? null, userId);
+    if (!nextPrivileges.isGhost && !nextPrivileges.isDeveloper) {
+      await pushLog({ action: 'login', entity: 'usuario', entityId: userId, message: `Login` }, me?.nome ?? null, userId);
+    }
     return true;
   };
 
@@ -1190,42 +1216,80 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   };
 
   const limparHistorico = async () => {
-    if (!canAdmin) return;
+    if (!canAdmin || privileges.isGhost) return;
+    const deletedById = state.currentUserId;
+    const deletedByNome = currentUser?.nome ?? 'Admin';
+    const deletedEm = isoNow();
+    const count = state.logs.filter((log) => !log.deletedEm).length;
+    if (count === 0) return;
     try {
-      const count = state.logs.length;
-      await db.clearLogs();
-      setState((prev) => ({ ...prev, logs: [] }));
+      await db.clearLogs(deletedById, deletedByNome, deletedEm);
+      setState((prev) => ({
+        ...prev,
+        logs: prev.logs.map((log) =>
+          log.deletedEm
+            ? log
+            : {
+                ...log,
+                deletedEm,
+                deletedById,
+                deletedByNome,
+              }
+        ),
+      }));
       await addNotification(
         'Histórico excluído',
-        `${currentUser?.nome ?? 'Admin'} excluiu todo o histórico (${count} registros)`,
+        `${deletedByNome} excluiu todo o histórico (${count} registros)`,
         'aviso'
       );
     } catch (err) {
       console.error(err);
+      throw err;
     }
   };
 
   const removerLogsSelecionados = async (ids: UUID[]) => {
-    if (!canAdmin || ids.length === 0) return;
+    if (!canAdmin || privileges.isGhost || ids.length === 0) return;
+    const idsParaExcluir = ids.filter((id) => {
+      const log = state.logs.find((item) => item.id === id);
+      return !!log && !log.deletedEm;
+    });
+    if (idsParaExcluir.length === 0) return;
+    const idsParaExcluirSet = new Set(idsParaExcluir);
+    const deletedById = state.currentUserId;
+    const deletedByNome = currentUser?.nome ?? 'Admin';
+    const deletedEm = isoNow();
     try {
-      await db.deleteLogsByIds(ids);
+      await db.deleteLogsByIds(idsParaExcluir, deletedById, deletedByNome, deletedEm);
       setState((prev) => ({
         ...prev,
-        logs: prev.logs.filter((l) => !ids.includes(l.id)),
+        logs: prev.logs.map((log) =>
+          idsParaExcluirSet.has(log.id) && !log.deletedEm
+            ? {
+                ...log,
+                deletedEm,
+                deletedById,
+                deletedByNome,
+              }
+            : log
+        ),
       }));
       await addNotification(
         'Registros do histórico excluídos',
-        `${currentUser?.nome ?? 'Admin'} excluiu ${ids.length} registro(s) do histórico`,
+        `${deletedByNome} excluiu ${idsParaExcluir.length} registro(s) do histórico`,
         'aviso'
       );
     } catch (err) {
       console.error(err);
+      throw err;
     }
   };
 
   const value: SistemaContextValue = {
     ...state,
     empresas: empresasVisiveis,
+    usuarios: usuariosVisiveis,
+    logs: logsVisiveis,
     currentUser,
     canManage,
     canAdmin,

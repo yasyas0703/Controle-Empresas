@@ -26,9 +26,8 @@ async function assertGhostOrDev(req: Request) {
   const { data, error } = await authClient.auth.getUser(token);
   if (error || !data.user) return { ok: false as const, status: 401, message: 'Sessão expirada.' };
 
-  const ghostId = process.env.GHOST_USER_ID;
-  const devId = process.env.DEVELOPER_USER_ID;
-  if ((!ghostId || data.user.id !== ghostId) && (!devId || data.user.id !== devId)) {
+  const hiddenUserIds = new Set([process.env.GHOST_USER_ID, process.env.DEVELOPER_USER_ID].filter(Boolean) as string[]);
+  if (!hiddenUserIds.has(data.user.id)) {
     return { ok: false as const, status: 403, message: 'Acesso negado.' };
   }
   return { ok: true as const, callerId: data.user.id };
@@ -47,13 +46,13 @@ export async function GET(req: Request) {
   const { data: usuarios } = await admin.from('usuarios').select('id, nome, email');
   const userMap = new Map((usuarios ?? []).map((u: any) => [u.id, u]));
 
-  const ghostId = process.env.GHOST_USER_ID;
+  const hiddenUserIds = new Set([process.env.GHOST_USER_ID, process.env.DEVELOPER_USER_ID].filter(Boolean) as string[]);
 
   // Deduplicar por userId — manter apenas a sessão mais recente por usuário
   const seenUsers = new Set<string>();
   const resultado: any[] = [];
   for (const s of sessoes ?? []) {
-    if (ghostId && s.user_id === ghostId) continue;
+    if (hiddenUserIds.has(s.user_id)) continue;
     if (seenUsers.has(s.user_id)) continue;
     seenUsers.add(s.user_id);
     const u = userMap.get(s.user_id) as any;
