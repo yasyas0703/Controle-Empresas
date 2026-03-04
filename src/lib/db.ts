@@ -42,6 +42,40 @@ function hasMissingColumn(error: { message?: string } | null | undefined, column
   return columns.some((column) => message.includes(column));
 }
 
+const LOG_SOFT_DELETE_COLUMNS = ['deleted_em', 'deleted_by_id', 'deleted_by_nome'];
+
+function getHiddenUserIds(): Set<string> {
+  return new Set([process.env.GHOST_USER_ID, process.env.DEVELOPER_USER_ID].filter(Boolean) as string[]);
+}
+
+function toLogEntry(row: Record<string, any>): LogEntry {
+  return {
+    id: row.id,
+    em: toIso(row.em),
+    userId: row.user_id,
+    userNome: row.user_nome ?? null,
+    action: row.action,
+    entity: row.entity,
+    entityId: row.entity_id,
+    message: row.message,
+    diff: row.diff ?? undefined,
+    deletedEm: row.deleted_em ? toIso(row.deleted_em) : null,
+    deletedById: row.deleted_by_id ?? null,
+    deletedByNome: row.deleted_by_nome ?? null,
+  };
+}
+
+function toLogSoftDeleteError(error: unknown): Error {
+  const message = String((error as { message?: string } | null | undefined)?.message ?? '');
+  if (
+    hasMissingColumn(error as { message?: string }, LOG_SOFT_DELETE_COLUMNS) ||
+    /row-level security|permission denied/i.test(message)
+  ) {
+    return new Error('Banco desatualizado para auditoria de logs. Rode o supabase-schema.sql atualizado.');
+  }
+  return error instanceof Error ? error : new Error('Falha ao atualizar o histórico.');
+}
+
 function buildRetRow(empresaId: UUID, ret: RetItem, includeTracking = true): Record<string, unknown> {
   const row: Record<string, unknown> = {
     empresa_id: empresaId,
@@ -159,14 +193,14 @@ export async function fetchUsuarioById(id: UUID): Promise<Usuario[]> {
 }
 
 export async function fetchUsuariosBasic(): Promise<Usuario[]> {
-  const ghostId = process.env.GHOST_USER_ID;
+  const hiddenUserIds = getHiddenUserIds();
   const { data, error } = await supabase
     .from('usuarios')
     .select('id, nome, email, role, departamento_id, ativo, criado_em, atualizado_em')
     .order('criado_em', { ascending: false });
   if (error) throw error;
   return (data ?? [])
-    .filter((u) => !ghostId || u.id !== ghostId)
+    .filter((u) => !hiddenUserIds.has(u.id))
     .map((u) => ({
       id: u.id,
       nome: u.nome,
@@ -955,56 +989,59 @@ export async function deleteObservacao(obsId: UUID) {
 // ─── Logs ───────────────────────────────────────────────────
 
 export async function fetchLogs(): Promise<LogEntry[]> {
-  const ghostId = process.env.GHOST_USER_ID;
+  const hiddenUserIds = getHiddenUserIds();
   const all = await fetchAllRows<Record<string, any>>('logs', { order: { column: 'em', ascending: false } });
   return all
-    .filter((l) => !ghostId || l.user_id !== ghostId)
-    .map((l) => ({
-      id: l.id,
-      em: toIso(l.em),
-      userId: l.user_id,
-      userNome: l.user_nome ?? null,
-      action: l.action,
-      entity: l.entity,
-      entityId: l.entity_id,
-      message: l.message,
-      diff: l.diff ?? undefined,
-    }));
+    .filter((l) => !hiddenUserIds.has(l.user_id))
+    .filter((l) => !(l.entity === 'usuario' && l.entity_id && hiddenUserIds.has(l.entity_id)))
+    .map(toLogEntry);
 }
 
-export async function insertLog(entry: Omit<LogEntry, 'id' | 'em'>): Promise<LogEntry> {
-  const { data, error } = await supabase.from('logs').insert({
-    user_id: entry.userId,
-    user_nome: entry.userNome ?? null,
-    action: entry.action,
-    entity: entry.entity,
-    entity_id: entry.entityId,
-    message: entry.message,
-    diff: entry.diff ?? null,
-  }).select().single();
+export async function insertLog(
+  entry: Omit<LogEntry, 'id' | 'em' | 'deletedEm' | 'deletedById' | 'deletedByNome'>
+): Promise<LogEntry> {
+  const { data, error } = await supabase
+    .from('logs')
+    .insert({
+      user_id: entry.userId,
+      user_nome: entry.userNome ?? null,
+      action: entry.action,
+      entity: entry.entity,
+      entity_id: entry.entityId,
+      message: entry.message,
+      diff: entry.diff ?? null,
+    })
+    .select()
+    .single();
   if (error) throw error;
-  return {
-    id: data.id,
-    em: toIso(data.em),
-    userId: data.user_id,
-    userNome: data.user_nome ?? null,
-    action: data.action,
-    entity: data.entity,
-    entityId: data.entity_id,
-    message: data.message,
-    diff: data.diff ?? undefined,
-  };
+  return toLogEntry(data);
 }
 
-export async function clearLogs() {
-  const { error } = await supabase.from('logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-  if (error) throw error;
+export async function clearLogs(deletedById: UUID | null, deletedByNome: string | null, deletedEm: string) {
+  const { error } = await supabase
+    .from('logs')
+    .update({
+      deleted_em: deletedEm,
+      deleted_by_id: deletedById,
+      deleted_by_nome: deletedByNome,
+    })
+    .is('deleted_em', null)
+    .neq('id', '00000000-0000-0000-0000-000000000000');
+  if (error) throw toLogSoftDeleteError(error);
 }
 
-export async function deleteLogsByIds(ids: UUID[]) {
+export async function deleteLogsByIds(ids: UUID[], deletedById: UUID | null, deletedByNome: string | null, deletedEm: string) {
   if (ids.length === 0) return;
-  const { error } = await supabase.from('logs').delete().in('id', ids);
-  if (error) throw error;
+  const { error } = await supabase
+    .from('logs')
+    .update({
+      deleted_em: deletedEm,
+      deleted_by_id: deletedById,
+      deleted_by_nome: deletedByNome,
+    })
+    .in('id', ids)
+    .is('deleted_em', null);
+  if (error) throw toLogSoftDeleteError(error);
 }
 
 // ─── Lixeira ────────────────────────────────────────────────

@@ -13,6 +13,7 @@ import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { exportEmpresasPdf } from '@/lib/exportPdf';
+import { comparePtBr, sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
 
 function canEditEmpresa(currentUserId: UUID | null, canManage: boolean, empresa: Empresa): boolean {
   if (canManage) return true;
@@ -55,9 +56,9 @@ function compareDashboardRiskItems(a: DashboardRiskItem, b: DashboardRiskItem): 
   const scoreDiff = getDashboardRiskMetaScore(b) - getDashboardRiskMetaScore(a);
   if (scoreDiff !== 0) return scoreDiff;
   if (a.dias !== b.dias) return a.dias - b.dias;
-  const empresaDiff = a.empresaCodigo.localeCompare(b.empresaCodigo);
+  const empresaDiff = comparePtBr(a.empresaCodigo, b.empresaCodigo);
   if (empresaDiff !== 0) return empresaDiff;
-  return a.nome.localeCompare(b.nome);
+  return comparePtBr(a.nome, b.nome);
 }
 
 const DASHBOARD_TAG_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-200 px-2.5 py-1 text-[10px] font-black text-amber-950 shadow-sm';
@@ -162,21 +163,25 @@ export default function DashboardPage() {
     }
   };
 
+  const sortedDepartamentos = useMemo(() => sortByPtBr(departamentos, (d) => d.nome), [departamentos]);
+
   const responsaveisOptions = useMemo(() => {
-    if (!depId) return usuarios.filter((u) => u.ativo);
-    return usuarios.filter((u) => u.ativo && u.departamentoId === depId);
+    const base = depId
+      ? usuarios.filter((u) => u.ativo && u.departamentoId === depId)
+      : usuarios.filter((u) => u.ativo);
+    return sortByPtBr(base, (u) => u.nome);
   }, [usuarios, depId]);
 
   const allServicos = useMemo(() => {
     const set = new Set<string>();
     for (const e of empresas) for (const s of e.servicos || []) set.add(s);
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
+    return sortStringsPtBr(Array.from(set));
   }, [empresas]);
 
   const allEstados = useMemo(() => {
     const set = new Set<string>();
     for (const e of empresas) if (e.estado) set.add(e.estado);
-    return Array.from(set).sort();
+    return sortStringsPtBr(Array.from(set));
   }, [empresas]);
 
   const filteredEmpresas = useMemo(() => {
@@ -242,7 +247,7 @@ export default function DashboardPage() {
         if (sortBy === 'recente') {
           return new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime();
         }
-        return (a.razao_social || a.apelido || '').localeCompare(b.razao_social || b.apelido || '');
+        return comparePtBr(a.razao_social || a.apelido || '', b.razao_social || b.apelido || '');
       });
   }, [empresas, search, depId, responsavelId, tipoEstabelecimento, tipoDocumento, regimeFederal, servico, estado, statusVenc, sortBy, limiares]);
 
@@ -550,7 +555,7 @@ export default function DashboardPage() {
           </div>
           <select value={depId} onChange={(e) => { setDepId(e.target.value); setResponsavelId(''); }} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Departamento</option>
-            {departamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
+            {sortedDepartamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
           </select>
           <select value={responsavelId} onChange={(e) => setResponsavelId(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Responsável</option>
@@ -558,20 +563,20 @@ export default function DashboardPage() {
           </select>
           <select value={tipoEstabelecimento} onChange={(e) => setTipoEstabelecimento(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Matriz / Filial</option>
-            <option value="matriz">Matriz</option>
             <option value="filial">Filial</option>
+            <option value="matriz">Matriz</option>
           </select>
           <select value={tipoDocumento} onChange={(e) => setTipoDocumento(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Tipo de inscrição</option>
+            <option value="CNO">CNO</option>
             <option value="CNPJ">CNPJ</option>
             <option value="CPF">CPF</option>
-            <option value="CNO">CNO</option>
           </select>
           <select value={regimeFederal} onChange={(e) => setRegimeFederal(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Regime Federal</option>
-            <option value="Simples Nacional">Simples Nacional</option>
             <option value="Lucro Presumido">Lucro Presumido</option>
             <option value="Lucro Real">Lucro Real</option>
+            <option value="Simples Nacional">Simples Nacional</option>
           </select>
           <select value={servico} onChange={(e) => setServico(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Serviço</option>
@@ -583,9 +588,9 @@ export default function DashboardPage() {
           </select>
           <select value={statusVenc} onChange={(e) => setStatusVenc(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Vencimento</option>
-            <option value="vencidos">Tem vencidos</option>
-            <option value="risco">Em risco</option>
             <option value="emdia">Em dia</option>
+            <option value="risco">Em risco</option>
+            <option value="vencidos">Tem vencidos</option>
           </select>
         </div>
       </div>
@@ -816,10 +821,12 @@ export default function DashboardPage() {
 
               {/* Responsáveis */}
               {Object.keys(e.responsaveis || {}).length > 0 && (() => {
-                const resps = Object.entries(e.responsaveis || {})
-                  .filter(([, uid]) => uid)
-                  .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid), depIdx: getDepIndex(dId) }))
-                  .filter(r => r.dep && r.user);
+                const resps = sortResponsaveisByNome(
+                  Object.entries(e.responsaveis || {})
+                    .filter(([, uid]) => uid)
+                    .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid), depIdx: getDepIndex(dId) }))
+                    .filter((r) => r.dep && r.user)
+                );
                 if (resps.length === 0) return null;
                 return (
                   <div className="mt-4 pt-4 border-t border-gray-100">

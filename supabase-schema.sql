@@ -115,7 +115,10 @@ create table logs (
   entity text not null check (entity in ('empresa', 'usuario', 'departamento', 'documento', 'ret', 'notificacao')),
   entity_id uuid,
   message text not null,
-  diff jsonb
+  diff jsonb,
+  deleted_em timestamptz,
+  deleted_by_id uuid references usuarios(id) on delete set null,
+  deleted_by_nome text
 );
 
 -- 10. Lixeira (itens excluídos: empresas, documentos, observações)
@@ -170,6 +173,7 @@ create index idx_observacoes_empresa on observacoes(empresa_id);
 create index idx_rets_empresa on rets(empresa_id);
 create index idx_responsaveis_empresa on responsaveis(empresa_id);
 create index idx_logs_em on logs(em desc);
+create index idx_logs_deleted_em on logs(deleted_em);
 create index idx_notificacoes_criado on notificacoes(criado_em desc);
 create index idx_lixeira_excluido on lixeira(excluido_em desc);
 
@@ -188,6 +192,15 @@ alter table if exists documentos
 
 alter table if exists documentos
   add column if not exists historico_vencimento jsonb not null default '[]'::jsonb;
+
+alter table if exists logs
+  add column if not exists deleted_em timestamptz;
+
+alter table if exists logs
+  add column if not exists deleted_by_id uuid references usuarios(id) on delete set null;
+
+alter table if exists logs
+  add column if not exists deleted_by_nome text;
 
 -- ============================================================
 -- Storage: Bucket para documentos
@@ -271,6 +284,22 @@ as $$
     where u.id = auth.uid()
       and u.ativo = true
       and (u.role = 'gerente' or u.role = 'admin')
+  );
+$$;
+
+-- Helper: admin
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists(
+    select 1 from public.usuarios u
+    where u.id = auth.uid()
+      and u.ativo = true
+      and u.role = 'admin'
   );
 $$;
 
@@ -411,13 +440,17 @@ create policy observacoes_write on observacoes
   for all using (public.can_access_empresa(empresa_id))
   with check (public.can_access_empresa(empresa_id));
 
--- Logs: qualquer autenticado pode inserir e ler (filtro de visível é no app)
+-- Logs: qualquer autenticado pode inserir e ler; update só admin (exclusão lógica)
 drop policy if exists logs_insert on logs;
 drop policy if exists logs_select on logs;
+drop policy if exists logs_update on logs;
 create policy logs_insert on logs
   for insert with check (public.is_active_user());
 create policy logs_select on logs
   for select using (public.is_active_user());
+create policy logs_update on logs
+  for update using (public.is_admin())
+  with check (public.is_admin());
 
 -- Lixeira: somente gerente
 drop policy if exists lixeira_all on lixeira;

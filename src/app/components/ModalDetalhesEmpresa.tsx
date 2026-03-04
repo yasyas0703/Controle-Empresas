@@ -11,6 +11,7 @@ import ModalAdicionarDocumento from '@/app/components/ModalAdicionarDocumento';
 import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
 import { getDocumentoSignedUrl } from '@/lib/db';
+import { sortResponsaveisByNome } from '@/lib/sort';
 
 const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
 
@@ -303,14 +304,16 @@ export default function ModalDetalhesEmpresa({
             <Section title="Responsáveis por Departamento" tone="cyan">
               {(() => {
                 const entries = Object.entries(empresa.responsaveis || {});
-                const mapped = entries
-                  .map(([depId, userId]) => {
-                    const dep = departamentos.find((d) => d.id === depId);
-                    const depIdx = departamentos.findIndex((d) => d.id === depId);
-                    const user = userId ? usuarios.find((u) => u.id === userId) : null;
-                    return dep ? { dep: dep.nome, user: user?.nome || null, depIdx } : null;
-                  })
-                  .filter(Boolean) as { dep: string; user: string | null; depIdx: number }[];
+                const mapped = sortResponsaveisByNome(
+                  entries
+                    .map(([depId, userId]) => {
+                      const dep = departamentos.find((d) => d.id === depId);
+                      const depIdx = departamentos.findIndex((d) => d.id === depId);
+                      const user = userId ? usuarios.find((u) => u.id === userId) : null;
+                      return dep ? { dep: dep.nome, user: user?.nome || null, depIdx } : null;
+                    })
+                    .filter(Boolean) as { dep: string; user: string | null; depIdx: number }[]
+                );
 
                 if (mapped.length === 0) return <div className="text-sm text-gray-600">Nenhum responsável vinculado.</div>;
 

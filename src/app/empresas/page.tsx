@@ -13,6 +13,7 @@ import ModalImportarPlanilha from '@/app/components/ModalImportarPlanilha';
 import ModalImportarResponsabilidadesPorDep from '@/app/components/ModalImportarResponsabilidadesPorDep';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
+import { sortResponsaveisByNome } from '@/lib/sort';
 
 function canEditEmpresa(currentUserId: UUID | null, canManage: boolean, empresa: Empresa): boolean {
   if (canManage) return true;
@@ -69,7 +70,7 @@ export default function EmpresasPage() {
         return true;
       })
       .sort((a, b) => (a.razao_social || a.apelido || '').localeCompare(b.razao_social || b.apelido || ''));
-  }, [empresas, search, searchCodigo, canManage, currentUserId]);
+  }, [empresas, search, searchCodigo]);
 
   const selectableIds = useMemo(() => {
     return filtered.filter((e) => canEditEmpresa(currentUserId, canManage, e)).map((e) => e.id);
@@ -318,10 +319,12 @@ export default function EmpresasPage() {
 
               {/* Responsáveis */}
               {(() => {
-                const resps = Object.entries(e.responsaveis || {})
-                  .filter(([, uid]) => uid)
-                  .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid), depIdx: getDepIndex(dId) }))
-                  .filter(r => r.dep && r.user);
+                const resps = sortResponsaveisByNome(
+                  Object.entries(e.responsaveis || {})
+                    .filter(([, uid]) => uid)
+                    .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid), depIdx: getDepIndex(dId) }))
+                    .filter((r) => r.dep && r.user)
+                );
                 if (resps.length === 0) return null;
                 return (
                   <div className="mt-3 pt-3 border-t border-gray-100">

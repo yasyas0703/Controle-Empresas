@@ -81,10 +81,10 @@ export async function GET(req: Request) {
   const { data, error } = await admin.from('usuarios').select('*').order('criado_em', { ascending: false });
   if (error) return NextResponse.json({ error: 'Erro ao buscar usuários.' }, { status: 400 });
 
-  const ghostId = process.env.GHOST_USER_ID;
+  const hiddenUserIds = new Set([process.env.GHOST_USER_ID, process.env.DEVELOPER_USER_ID].filter(Boolean) as string[]);
   return NextResponse.json(
     (data ?? [])
-      .filter((u) => !ghostId || u.id !== ghostId)
+      .filter((u) => !hiddenUserIds.has(u.id))
       .map((u) => ({
         id: u.id,
         nome: u.nome,
