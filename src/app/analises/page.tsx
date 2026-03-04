@@ -5,7 +5,7 @@ import { BarChart3, PieChart, TrendingUp, Building2, MapPin, Briefcase, FileChec
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil } from '@/app/utils/date';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
-import { formatarDocumento, detectTipoInscricao } from '@/app/utils/validation';
+import { formatarDocumento, detectTipoEstabelecimento, detectTipoInscricao } from '@/app/utils/validation';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import type { Empresa, Limiares } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
@@ -21,25 +21,32 @@ function countBy(values: Array<string | null | undefined>) {
 }
 
 function requerTipoEstabelecimento(empresa: Empresa) {
-  const tipoInscricao = detectTipoInscricao(empresa.cnpj || '', empresa.tipoInscricao);
+  const tipoInscricao = getTipoInscricaoAnalise(empresa);
   return tipoInscricao === 'CNPJ' || tipoInscricao === 'MEI';
 }
 
+function getTipoInscricaoAnalise(empresa: Empresa) {
+  return detectTipoInscricao(empresa.cnpj || '', empresa.tipoInscricao);
+}
+
 function getTipoEstabelecimentoAnalise(empresa: Empresa) {
-  if (empresa.tipoEstabelecimento === 'matriz') return 'Matriz';
-  if (empresa.tipoEstabelecimento === 'filial') return 'Filial';
+  const tipoEstabelecimento = detectTipoEstabelecimento(empresa.cnpj || '') || (empresa.tipoEstabelecimento || '').trim();
+  if (tipoEstabelecimento === 'matriz') return 'Matriz';
+  if (tipoEstabelecimento === 'filial') return 'Filial';
 }
 
 
 function getBadgeTipoAnalise(empresa: Empresa) {
-  if (empresa.tipoEstabelecimento === 'matriz') {
+  const tipoEstabelecimento = getTipoEstabelecimentoAnalise(empresa);
+  if (tipoEstabelecimento === 'Matriz') {
     return { label: 'Matriz', cls: 'bg-teal-100 text-teal-700' };
   }
-  if (empresa.tipoEstabelecimento === 'filial') {
+  if (tipoEstabelecimento === 'Filial') {
     return { label: 'Filial', cls: 'bg-teal-100 text-teal-700' };
   }
-  if (empresa.tipoInscricao) {
-    return { label: empresa.tipoInscricao, cls: 'bg-gray-100 text-gray-600' };
+  const tipoInscricao = getTipoInscricaoAnalise(empresa);
+  if (tipoInscricao) {
+    return { label: tipoInscricao, cls: 'bg-gray-100 text-gray-600' };
   }
   return { label: 'Nao informado', cls: 'bg-amber-100 text-amber-700' };
 }
@@ -96,7 +103,7 @@ export default function AnalisesPage() {
         }
       }
       if (filtroTipo) {
-        const tipoEstabelecimento = (e.tipoEstabelecimento || '').trim();
+        const tipoEstabelecimento = (detectTipoEstabelecimento(e.cnpj || '') || e.tipoEstabelecimento || '').trim();
         if (filtroTipo === '__nao_informado__') {
           if (!requerTipoEstabelecimento(e) || tipoEstabelecimento) return false;
         } else if (tipoEstabelecimento !== filtroTipo) {
@@ -104,7 +111,7 @@ export default function AnalisesPage() {
         }
       }
       if (filtroTipoInscricao) {
-        const tipoInscricao = (e.tipoInscricao || '').trim();
+        const tipoInscricao = getTipoInscricaoAnalise(e).trim();
         if (filtroTipoInscricao === '__nao_informado__') {
           if (tipoInscricao) return false;
         } else if (tipoInscricao !== filtroTipoInscricao) {
@@ -142,7 +149,7 @@ export default function AnalisesPage() {
     const tipos = filteredEmpresas
       .filter(requerTipoEstabelecimento)
       .map((e) => getTipoEstabelecimentoAnalise(e));
-    const inscricoes = filteredEmpresas.map((e) => e.tipoInscricao || 'Não informado');
+    const inscricoes = filteredEmpresas.map((e) => getTipoInscricaoAnalise(e) || 'Não informado');
 
     const byServico = countBy(servicos);
     const byRegime = countBy(regimes);
@@ -258,9 +265,6 @@ export default function AnalisesPage() {
             <option value="">Tipo de inscrição</option>
             <option value="CNPJ">CNPJ</option>
             <option value="CPF">CPF</option>
-            <option value="MEI">MEI</option>
-            <option value="CEI">CEI</option>
-            <option value="CAEPF">CAEPF</option>
             <option value="CNO">CNO</option>
             <option value="__nao_informado__">Não informado</option>
           </select>
@@ -294,7 +298,6 @@ export default function AnalisesPage() {
         <MiniCard label="Departamentos" value={stats.byDepartamento.length} gradient="from-rose-500 to-pink-500" icon={<Users size={20} />} />
       </div>
 
-      {/* Gráficos - Linha principal: Regime | Matriz/Filial | Estado | Departamento */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <Panel title="Regime Federal" icon={<PieChart size={16} />} color="text-blue-600">
           {stats.byRegime.length === 0 ? <Empty /> : <DonutChart rows={stats.byRegime} compact />}
@@ -435,7 +438,7 @@ export default function AnalisesPage() {
                   {filteredEmpresas.map((emp) => {
                     const nome = emp.razao_social || emp.apelido || '-';
                     const tipo = getBadgeTipoAnalise(emp);
-                    const docFormatted = emp.cnpj ? formatarDocumento(emp.cnpj, detectTipoInscricao(emp.cnpj) || emp.tipoInscricao || '') : '-';
+                    const docFormatted = emp.cnpj ? formatarDocumento(emp.cnpj, getTipoInscricaoAnalise(emp) || '') : '-';
                     return (
                       <tr key={emp.id} className="border-b border-gray-50 hover:bg-gray-50 transition">
                         <td className="px-4 py-3">
@@ -473,7 +476,7 @@ export default function AnalisesPage() {
               {filteredEmpresas.map((emp) => {
                 const nome = emp.razao_social || emp.apelido || '-';
                 const tipo = getBadgeTipoAnalise(emp);
-                const docFormatted = emp.cnpj ? formatarDocumento(emp.cnpj, detectTipoInscricao(emp.cnpj) || emp.tipoInscricao || '') : '-';
+                const docFormatted = emp.cnpj ? formatarDocumento(emp.cnpj, getTipoInscricaoAnalise(emp) || '') : '-';
                 return (
                   <div key={emp.id} className="p-3 hover:bg-gray-50 transition">
                     <div className="flex items-center justify-between gap-2 mb-2">

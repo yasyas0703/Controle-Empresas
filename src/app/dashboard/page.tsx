@@ -4,7 +4,7 @@ import React, { useMemo, useState, useCallback } from 'react';
 import { AlertTriangle, CalendarClock, FileText, Building2, Clock, Search, MapPin, Briefcase, Eye, Pencil, Trash2, CheckSquare, Square, FileDown, X, Tag, History } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR } from '@/app/utils/date';
-import { detectTipoEstabelecimento, formatarDocumento, getTipoInscricaoDisplay } from '@/app/utils/validation';
+import { detectTipoEstabelecimento, detectTipoInscricao, formatarDocumento, getTipoInscricaoDisplay } from '@/app/utils/validation';
 import type { Empresa, UUID, Limiares, HistoricoVencimentoItem } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
@@ -72,6 +72,7 @@ export default function DashboardPage() {
   const [depId, setDepId] = useState('');
   const [responsavelId, setResponsavelId] = useState('');
   const [tipoEstabelecimento, setTipoEstabelecimento] = useState('');
+  const [tipoDocumento, setTipoDocumento] = useState('');
   const [regimeFederal, setRegimeFederal] = useState('');
   const [servico, setServico] = useState('');
   const [estado, setEstado] = useState('');
@@ -189,19 +190,13 @@ export default function DashboardPage() {
         if (tipoEstabelecimento) {
           const computed = detectTipoEstabelecimento(e.cnpj || '');
           const effective = computed || e.tipoEstabelecimento;
-          if (tipoEstabelecimento === 'cpf') {
-            const digits = (e.cnpj || '').replace(/\D/g, '');
-            if (digits.length !== 11) return false;
-          } else if (tipoEstabelecimento === 'caepf') {
-            if ((e.tipoInscricao || '') !== 'CAEPF') return false;
-          } else if (tipoEstabelecimento === 'cno') {
-            const digits = (e.cnpj || '').replace(/\D/g, '');
-            if (digits.length !== 12 && (e.tipoInscricao || '') !== 'CNO') return false;
-          } else if (tipoEstabelecimento === 'cei') {
-            if ((e.tipoInscricao || '') !== 'CEI') return false;
-          } else if (effective !== tipoEstabelecimento) {
+          if (effective !== tipoEstabelecimento) {
             return false;
           }
+        }
+        if (tipoDocumento) {
+          const tipoInscricao = detectTipoInscricao(e.cnpj || '', e.tipoInscricao);
+          if (tipoInscricao !== tipoDocumento) return false;
         }
         if (regimeFederal && (e.regime_federal || '') !== regimeFederal) return false;
         if (estado && (e.estado || '') !== estado) return false;
@@ -249,7 +244,7 @@ export default function DashboardPage() {
         }
         return (a.razao_social || a.apelido || '').localeCompare(b.razao_social || b.apelido || '');
       });
-  }, [empresas, search, depId, responsavelId, tipoEstabelecimento, regimeFederal, servico, estado, statusVenc, sortBy, limiares]);
+  }, [empresas, search, depId, responsavelId, tipoEstabelecimento, tipoDocumento, regimeFederal, servico, estado, statusVenc, sortBy, limiares]);
 
   const riskItems = useMemo(() => {
     const risk: DashboardRiskItem[] = [];
@@ -318,7 +313,7 @@ export default function DashboardPage() {
     emRisco: criticos.length + atencao.length + proximo.length,
   }), [filteredEmpresas, vencidos, criticos, atencao, proximo]);
 
-  const hasFilters = search || depId || responsavelId || tipoEstabelecimento || regimeFederal || servico || estado || statusVenc;
+  const hasFilters = search || depId || responsavelId || tipoEstabelecimento || tipoDocumento || regimeFederal || servico || estado || statusVenc;
 
   const getDepName = (dId: string) => departamentos.find(d => d.id === dId)?.nome ?? '';
   const getDepIndex = (dId: string) => departamentos.findIndex(d => d.id === dId);
@@ -525,7 +520,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             {hasFilters && (
               <button
-                onClick={() => { setSearch(''); setDepId(''); setResponsavelId(''); setTipoEstabelecimento(''); setRegimeFederal(''); setServico(''); setEstado(''); setStatusVenc(''); setSortBy('alpha'); }}
+                onClick={() => { setSearch(''); setDepId(''); setResponsavelId(''); setTipoEstabelecimento(''); setTipoDocumento(''); setRegimeFederal(''); setServico(''); setEstado(''); setStatusVenc(''); setSortBy('alpha'); }}
                 className="text-xs text-teal-600 hover:text-teal-700 font-bold"
               >
                 Limpar filtros
@@ -543,7 +538,7 @@ export default function DashboardPage() {
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-10 gap-3">
           <div className="col-span-2 sm:col-span-1 md:col-span-2 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
@@ -562,13 +557,15 @@ export default function DashboardPage() {
             {responsaveisOptions.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
           </select>
           <select value={tipoEstabelecimento} onChange={(e) => setTipoEstabelecimento(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
-            <option value="">Tipo</option>
+            <option value="">Matriz / Filial</option>
             <option value="matriz">Matriz</option>
             <option value="filial">Filial</option>
-            <option value="cpf">CPF</option>
-            <option value="caepf">CAEPF</option>
-            <option value="cno">CNO</option>
-            <option value="cei">CEI</option>
+          </select>
+          <select value={tipoDocumento} onChange={(e) => setTipoDocumento(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+            <option value="">Tipo de inscrição</option>
+            <option value="CNPJ">CNPJ</option>
+            <option value="CPF">CPF</option>
+            <option value="CNO">CNO</option>
           </select>
           <select value={regimeFederal} onChange={(e) => setRegimeFederal(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Regime Federal</option>
