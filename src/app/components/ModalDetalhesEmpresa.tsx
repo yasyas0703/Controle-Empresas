@@ -497,7 +497,7 @@ export default function ModalDetalhesEmpresa({
                           )}
                           {(d.historicoVencimento?.length ?? 0) > 0 && (
                             <div className="mt-1.5 text-[11px] font-semibold text-slate-500">
-                              {d.historicoVencimento?.length} registro(s) no histÃ³rico de vencimento
+                              {d.historicoVencimento?.length} registro(s) no histórico de vencimento
                             </div>
                           )}
                         </div>
