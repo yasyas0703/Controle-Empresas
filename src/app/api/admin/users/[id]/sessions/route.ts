@@ -49,7 +49,7 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   }
 
   const admin = getSupabaseAdmin();
-  const { error } = await admin.rpc('invalidar_sessoes_usuario', { p_user_id: id });
+  const { error } = await admin.auth.admin.signOut(id, 'global');
   if (error) return NextResponse.json({ error: 'Erro ao invalidar sessões.' }, { status: 500 });
 
   return NextResponse.json({ ok: true });
