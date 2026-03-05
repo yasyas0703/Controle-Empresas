@@ -5,7 +5,6 @@ import { Upload, FileSpreadsheet, X, Check, AlertTriangle, Loader2 } from 'lucid
 import { useSistema } from '@/app/context/SistemaContext';
 import type { Empresa } from '@/app/types';
 import ModalBase from '@/app/components/ModalBase';
-import { api } from '@/app/utils/api';
 import { gerarSenhaSegura } from '@/app/utils/password';
 import * as db from '@/lib/db';
 
@@ -61,17 +60,6 @@ interface ParsedRow {
 
 function cleanQuotes(val: string): string {
   return val.replace(/^["']+|["']+$/g, '').trim();
-}
-
-function normalizeForMatch(input: string): string {
-  return String(input || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
 function splitDelimitedLine(line: string, separator: string): string[] {
@@ -231,12 +219,8 @@ function parseFile(text: string): ParsedRow[] {
     dataLines = lines;
   }
 
-  let rowsWithNoResp = 0;
-  let rowsWithPartialResp = 0;
-  const problematicRows: Array<{ codigo: string; nome: string; deptsSemResp: string[]; colsRaw: Record<string, string> }> = [];
-
   const result = dataLines
-    .map((line, lineIdx) => {
+    .map((line) => {
       const cols = splitDelimitedLine(line, separator).map(cleanQuotes);
       const codigo = cols[1] || '';
       const nome = cols[2] || '';
@@ -245,15 +229,12 @@ function parseFile(text: string): ParsedRow[] {
       if (!codigo && !nome && !cnpj) return null;
 
       const responsaveis: Record<string, string> = {};
-      const deptsSemResp: string[] = [];
-      const colsRawForDebug: Record<string, string> = {};
 
       for (const canonical of CANONICAL_DEPTS) {
         const indices = deptColsByCanonical.get(canonical) ?? [];
         let picked = '';
         for (const col of indices) {
           const val = String(cols[col] || '').trim();
-          colsRawForDebug[`${canonical}[col${col}]`] = val || '(vazio)';
           if (val) { picked = val; break; }
         }
         if (picked) {
@@ -262,25 +243,10 @@ function parseFile(text: string): ParsedRow[] {
           // Tem coluna mapeada mas valor vazio → departamento sem responsável
           // Incluir como string vazia para que a importação saiba que deve limpar
           responsaveis[canonical] = '';
-          deptsSemResp.push(canonical);
         }
       }
 
       // Checar se existem valores nas colunas NÃO-mapeadas (Guias, ²ª, etc.) — para detectar se o CSV tem dados que estamos ignorando
-      const allColsAfter10: Record<string, string> = {};
-      for (let ci = 10; ci < cols.length; ci++) {
-        const val = (cols[ci] || '').trim();
-        if (val) allColsAfter10[`[${ci}]${headerCols[ci] || '?'}`] = val;
-      }
-
-      const totalDeptsCsv = Object.keys(responsaveis).length;
-      if (totalDeptsCsv === 0 && Object.keys(allColsAfter10).length > 0) {
-        rowsWithNoResp++;
-        problematicRows.push({ codigo: codigo.trim(), nome: nome.trim(), deptsSemResp, colsRaw: allColsAfter10 });
-      } else if (deptsSemResp.length > 0) {
-        rowsWithPartialResp++;
-      }
-
       return {
         codigo: codigo.trim(),
         razao_social: nome.trim(),
@@ -734,7 +700,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
 
     let relinked = 0;
     for (const row of parsed) {
-      const { resolved: responsaveis, issues } = debugResolution(row, deptIdByName, userIdByName, norm);
+      const { resolved: responsaveis } = debugResolution(row, deptIdByName, userIdByName, norm);
       const hasAnyUser = Object.values(responsaveis).some((v) => !!v);
       if (!hasAnyUser) continue; // nada para vincular
 
@@ -817,7 +783,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
 
         // Buscar responsáveis dessas empresas
         if (sampleEmpresaIds.length > 0) {
-          const { data: sampleResps, error: respErr } = await (await import('@/lib/supabase')).supabase
+          const { error: respErr } = await (await import('@/lib/supabase')).supabase
             .from('responsaveis')
             .select('empresa_id, departamento_id, usuario_id')
             .in('empresa_id', sampleEmpresaIds);
@@ -837,6 +803,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
     const parts: string[] = [];
     if (created > 0) parts.push(`${created} criada(s)`);
     if (updated > 0) parts.push(`${updated} atualizada(s)`);
+    if (relinked > 0) parts.push(`${relinked} re-vinculada(s)`);
     if (errors > 0) parts.push(`${errors} erro(s)`);
     if (parts.length > 0) {
       mostrarAlerta('Importação concluída', parts.join(' • '), errors > 0 ? 'aviso' : 'sucesso');

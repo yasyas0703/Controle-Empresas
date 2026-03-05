@@ -44,7 +44,7 @@ const nav: NavItem[] = [
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { currentUser, canManage, canAdmin, isGhost, isPrivileged, logout, login, mostrarAlerta, empresas, notificacoes, marcarNotificacaoLida, marcarTodasLidas, limparNotificacoes, lixeira, loading, authReady } = useSistema();
+  const { currentUser, canManage, canAdmin, isGhost, isPrivileged, logout, login, mostrarAlerta, empresas, notificacoes, marcarNotificacaoLida, marcarTodasLidas, limparNotificacoes, lixeira, authReady } = useSistema();
   const [showLogin, setShowLogin] = useState(false);
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Shield, Power, Users, RefreshCw, LogOut, Loader2, WifiOff, Monitor } from 'lucide-react';
+import { Shield, Power, RefreshCw, LogOut, Loader2, WifiOff, Monitor } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { supabase } from '@/lib/supabase';
 

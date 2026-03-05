@@ -59,7 +59,7 @@ export async function POST(req: Request) {
 
   const admin = getSupabaseAdmin();
 
-  const { data: upsertData, error: upsertError } = await admin
+  const { error: upsertError } = await admin
     .from('configuracoes')
     .upsert(
       { chave: 'manutencao', valor: String(!!body.ativo), atualizado_em: new Date().toISOString() },

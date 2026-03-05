@@ -344,7 +344,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
     const temCnpjValido = cnpjDigits2.length === 14;
     const cadastrada = empresaCadastrada ? temCnpjValido : temCnpjValido;
 
-    const { responsaveis: _respForm, ...formDataSemResp } = formData;
+    const { responsaveis, ...formDataSemResp } = formData;
     const dadosParaSalvar: Partial<Empresa> = {
       ...formDataSemResp,
       cnpj: formData.cnpj ? String(formData.cnpj) : undefined,
@@ -352,7 +352,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
       servicos: (formData.servicos ?? []).filter(Boolean),
       possuiRet: Boolean(formData.possuiRet) && (formData.rets ?? []).length > 0,
       rets: Boolean(formData.possuiRet) ? (formData.rets ?? []) : [],
-      ...(canManage ? { responsaveis: formData.responsaveis ?? {} } : {}),
+      ...(canManage ? { responsaveis: responsaveis ?? {} } : {}),
     };
 
     if (empresa?.id) {

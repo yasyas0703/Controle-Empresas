@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Plus, Trash2, Briefcase, ChevronDown, ChevronUp, Search, Link2, Unlink, Building2 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import ConfirmModal from '@/app/components/ConfirmModal';

@@ -499,57 +499,6 @@ export async function deleteServico(id: UUID, servicoNome: string) {
 
 // ─── Empresas ───────────────────────────────────────────────
 
-async function fetchRetsForEmpresa(empresaId: UUID): Promise<RetItem[]> {
-  const { data } = await supabase.from('rets').select('*').eq('empresa_id', empresaId);
-  return (data ?? []).map((r) => ({
-    id: r.id,
-    numeroPta: r.numero_pta,
-    nome: r.nome,
-    vencimento: r.vencimento,
-    ultimaRenovacao: r.ultima_renovacao,
-    tagVencimento: limparTagVencimento(r.tag_vencimento),
-    historicoVencimento: normalizarHistoricoVencimento(r.historico_vencimento),
-  }));
-}
-
-async function fetchDocsForEmpresa(empresaId: UUID): Promise<DocumentoEmpresa[]> {
-  const { data } = await supabase.from('documentos').select('*').eq('empresa_id', empresaId).order('criado_em', { ascending: false });
-  return (data ?? []).map((d) => ({
-    id: d.id,
-    nome: d.nome,
-    validade: d.validade ?? '',
-    arquivoUrl: d.arquivo_url ?? undefined,
-    tagVencimento: limparTagVencimento(d.tag_vencimento),
-    historicoVencimento: normalizarHistoricoVencimento(d.historico_vencimento),
-    departamentosIds: d.departamentos_ids ?? [],
-    visibilidade: d.visibilidade ?? 'publico',
-    criadoPorId: d.criado_por_id ?? undefined,
-    usuariosPermitidos: d.usuarios_permitidos ?? [],
-    criadoEm: toIso(d.criado_em),
-    atualizadoEm: toIso(d.atualizado_em),
-  }));
-}
-
-async function fetchObsForEmpresa(empresaId: UUID): Promise<Observacao[]> {
-  const { data } = await supabase.from('observacoes').select('*').eq('empresa_id', empresaId).order('criado_em', { ascending: true });
-  return (data ?? []).map((o) => ({
-    id: o.id,
-    texto: o.texto,
-    autorId: o.autor_id ?? '',
-    autorNome: o.autor_nome,
-    criadoEm: toIso(o.criado_em),
-  }));
-}
-
-async function fetchResponsaveisForEmpresa(empresaId: UUID): Promise<Record<UUID, UUID | null>> {
-  const { data } = await supabase.from('responsaveis').select('*').eq('empresa_id', empresaId);
-  const map: Record<UUID, UUID | null> = {};
-  for (const r of data ?? []) {
-    map[r.departamento_id] = r.usuario_id;
-  }
-  return map;
-}
-
 /**
  * Busca TODOS os registros de uma tabela paginando em blocos de PAGE_SIZE,
  * pois o PostgREST do Supabase limita cada request a ~1000 linhas (max-rows).
@@ -561,7 +510,6 @@ async function fetchAllRows<T extends Record<string, unknown>>(
   const PAGE_SIZE = 1000;
   const all: T[] = [];
   let from = 0;
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     let q = supabase.from(table).select('*').range(from, from + PAGE_SIZE - 1);
     if (opts?.order) q = q.order(opts.order.column, { ascending: opts.order.ascending });
@@ -775,7 +723,7 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
     let lastErr: unknown = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const { error: respError, data: respData, status: respStatus, statusText } = await supabase
+        const { error: respError } = await supabase
           .from('responsaveis')
           .upsert(rows, { onConflict: 'empresa_id,departamento_id' })
           .select();
@@ -928,7 +876,7 @@ export async function updateEmpresa(id: UUID, patch: Partial<Empresa>) {
       let lastErr: unknown = null;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          const { error: respError, data: respData, status: respStatus, statusText } = await supabase
+          const { error: respError } = await supabase
             .from('responsaveis')
             .upsert(rows, { onConflict: 'empresa_id,departamento_id' })
             .select();

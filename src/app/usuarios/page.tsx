@@ -6,6 +6,8 @@ import { useSistema } from '@/app/context/SistemaContext';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import type { Role, Usuario } from '@/app/types';
 
+const ROLE_ORDER: Record<string, number> = { admin: 0, gerente: 1, usuario: 2 };
+
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === 'object' && error !== null && 'message' in error) {
@@ -34,7 +36,6 @@ export default function UsuariosPage() {
 
   const deps = useMemo(() => departamentos, [departamentos]);
 
-  const ROLE_ORDER: Record<string, number> = { admin: 0, gerente: 1, usuario: 2 };
   const usuariosOrdenados = useMemo(() =>
     [...usuarios].sort((a, b) => {
       const ra = ROLE_ORDER[a.role] ?? 9;
