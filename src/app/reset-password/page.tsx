@@ -69,8 +69,9 @@ export default function ResetPasswordPage() {
       const { error: updateError } = await supabase.auth.updateUser({ password: senha });
       if (updateError) throw updateError;
       setSuccess(true);
-    } catch (err: any) {
-      setError(err?.message || 'Não foi possível alterar a senha. Tente novamente.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Não foi possível alterar a senha. Tente novamente.';
+      setError(message);
     } finally {
       setLoading(false);
     }

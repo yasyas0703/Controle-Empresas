@@ -19,6 +19,16 @@ function getDocStatus(validade: string | undefined | null): { label: string; col
   return { label: 'Em dia', color: [22, 163, 74] };
 }
 
+type JsPdfWithAutoTable = jsPDF & {
+  lastAutoTable?: {
+    finalY?: number;
+  };
+};
+
+function getAutoTableFinalY(doc: jsPDF, fallback: number): number {
+  return (doc as JsPdfWithAutoTable).lastAutoTable?.finalY ?? fallback;
+}
+
 export function exportEmpresasPdf(
   empresas: Empresa[],
   departamentos: Departamento[],
@@ -164,7 +174,7 @@ export function exportEmpresasPdf(
         alternateRowStyles: { fillColor: [240, 253, 250] },
         columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
       });
-      y = (doc as any).lastAutoTable.finalY + 4;
+      y = getAutoTableFinalY(doc, y) + 4;
     }
 
     // ── Documentos ──
@@ -211,7 +221,7 @@ export function exportEmpresasPdf(
           }
         },
       });
-      y = (doc as any).lastAutoTable.finalY + 4;
+      y = getAutoTableFinalY(doc, y) + 4;
     } else {
       doc.setFontSize(8);
       doc.setFont('helvetica', 'italic');
@@ -237,7 +247,7 @@ export function exportEmpresasPdf(
         headStyles: { fillColor: [15, 118, 110], textColor: 255, fontStyle: 'bold' },
         alternateRowStyles: { fillColor: [240, 253, 250] },
       });
-      y = (doc as any).lastAutoTable.finalY + 4;
+      y = getAutoTableFinalY(doc, y) + 4;
     }
 
     // ── Observações ──
@@ -263,7 +273,7 @@ export function exportEmpresasPdf(
   });
 
   // Numeração de páginas
-  const totalPages = (doc.internal as any).getNumberOfPages();
+  const totalPages = (doc.internal as unknown as { getNumberOfPages: () => number }).getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
     doc.setFontSize(7);

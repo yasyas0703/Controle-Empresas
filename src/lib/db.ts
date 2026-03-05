@@ -3,6 +3,7 @@ import type {
   Departamento,
   DocumentoEmpresa,
   Empresa,
+  HistoricoVencimentoItem,
   LixeiraItem,
   LogEntry,
   Notificacao,
@@ -44,24 +45,132 @@ function hasMissingColumn(error: { message?: string } | null | undefined, column
 
 const LOG_SOFT_DELETE_COLUMNS = ['deleted_em', 'deleted_by_id', 'deleted_by_nome'];
 
+type GenericRow = Record<string, unknown>;
+
+type EmpresaRow = {
+  id: string;
+  cadastrada: boolean;
+  cnpj: string | null;
+  codigo: string;
+  razao_social: string | null;
+  apelido: string | null;
+  data_abertura: string | null;
+  tipo_estabelecimento: Empresa['tipoEstabelecimento'] | null;
+  tipo_inscricao: Empresa['tipoInscricao'] | null;
+  servicos: string[] | null;
+  possui_ret: boolean;
+  inscricao_estadual: string | null;
+  inscricao_municipal: string | null;
+  regime_federal: string | null;
+  regime_estadual: string | null;
+  regime_municipal: string | null;
+  estado: string | null;
+  cidade: string | null;
+  bairro: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  cep: string | null;
+  email: string | null;
+  telefone: string | null;
+  criado_em: string;
+  atualizado_em: string;
+};
+
+type RetRow = {
+  id: string;
+  empresa_id: string;
+  numero_pta: string;
+  nome: string;
+  vencimento: string;
+  ultima_renovacao: string;
+  tag_vencimento: string | null;
+  historico_vencimento: HistoricoVencimentoItem[] | null;
+};
+
+type DocumentoRow = {
+  id: string;
+  empresa_id: string;
+  nome: string;
+  validade: string | null;
+  arquivo_url: string | null;
+  tag_vencimento: string | null;
+  historico_vencimento: HistoricoVencimentoItem[] | null;
+  departamentos_ids: UUID[] | null;
+  visibilidade: DocumentoEmpresa['visibilidade'] | null;
+  criado_por_id: string | null;
+  usuarios_permitidos: UUID[] | null;
+  criado_em: string;
+  atualizado_em: string;
+};
+
+type ObservacaoRow = {
+  id: string;
+  empresa_id: string;
+  texto: string;
+  autor_id: string | null;
+  autor_nome: string;
+  criado_em: string;
+};
+
+type ResponsavelRow = {
+  empresa_id: string;
+  departamento_id: UUID;
+  usuario_id: UUID | null;
+};
+
+type LogRow = {
+  id: UUID;
+  em: string;
+  user_id: UUID | null;
+  user_nome: string | null;
+  action: LogEntry['action'];
+  entity: LogEntry['entity'];
+  entity_id: UUID | null;
+  message: string;
+  diff: LogEntry['diff'] | null;
+  deleted_em: string | null;
+  deleted_by_id: UUID | null;
+  deleted_by_nome: string | null;
+};
+
+function readErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return String((error as { message?: unknown }).message ?? '');
+  }
+  return '';
+}
+
+function readErrorStatus(error: unknown): number | null {
+  if (typeof error === 'object' && error !== null && 'status' in error) {
+    const status = (error as { status?: unknown }).status;
+    return typeof status === 'number' ? status : null;
+  }
+  return null;
+}
+
+function asRecord(value: unknown): GenericRow | null {
+  return typeof value === 'object' && value !== null ? (value as GenericRow) : null;
+}
+
 function getHiddenUserIds(): Set<string> {
   return new Set([process.env.GHOST_USER_ID, process.env.DEVELOPER_USER_ID].filter(Boolean) as string[]);
 }
 
-function toLogEntry(row: Record<string, any>): LogEntry {
+function toLogEntry(row: GenericRow): LogEntry {
   return {
-    id: row.id,
-    em: toIso(row.em),
-    userId: row.user_id,
-    userNome: row.user_nome ?? null,
-    action: row.action,
-    entity: row.entity,
-    entityId: row.entity_id,
-    message: row.message,
-    diff: row.diff ?? undefined,
-    deletedEm: row.deleted_em ? toIso(row.deleted_em) : null,
-    deletedById: row.deleted_by_id ?? null,
-    deletedByNome: row.deleted_by_nome ?? null,
+    id: String(row.id ?? ''),
+    em: toIso(String(row.em ?? '')),
+    userId: row.user_id ? String(row.user_id) : null,
+    userNome: row.user_nome ? String(row.user_nome) : null,
+    action: String(row.action ?? 'alert') as LogEntry['action'],
+    entity: String(row.entity ?? 'empresa') as LogEntry['entity'],
+    entityId: row.entity_id ? String(row.entity_id) : null,
+    message: String(row.message ?? ''),
+    diff: (row.diff as LogEntry['diff'] | null | undefined) ?? undefined,
+    deletedEm: row.deleted_em ? toIso(String(row.deleted_em)) : null,
+    deletedById: row.deleted_by_id ? String(row.deleted_by_id) : null,
+    deletedByNome: row.deleted_by_nome ? String(row.deleted_by_nome) : null,
   };
 }
 
@@ -223,16 +332,19 @@ export async function fetchUsuariosAdmin(): Promise<Usuario[]> {
   });
   const json = await resp.json().catch(() => ([]));
   if (!resp.ok) throw new Error(json?.error ?? 'Falha ao carregar usuários');
-  return (Array.isArray(json) ? json : []).map((u: any) => ({
-    id: u.id,
-    nome: u.nome,
-    email: u.email,
-    role: u.role,
-    departamentoId: u.departamentoId,
-    ativo: u.ativo,
-    criadoEm: toIso(u.criadoEm),
-    atualizadoEm: toIso(u.atualizadoEm),
-  })) as Usuario[];
+  return (Array.isArray(json) ? json : [])
+    .map((u) => asRecord(u))
+    .filter((u): u is GenericRow => u !== null)
+    .map((u) => ({
+      id: String(u.id ?? ''),
+      nome: String(u.nome ?? ''),
+      email: String(u.email ?? ''),
+      role: String(u.role ?? 'usuario') as Usuario['role'],
+      departamentoId: u.departamentoId ? String(u.departamentoId) : null,
+      ativo: Boolean(u.ativo),
+      criadoEm: toIso(String(u.criadoEm ?? '')),
+      atualizadoEm: toIso(String(u.atualizadoEm ?? '')),
+    })) as Usuario[];
 }
 
 export async function insertUsuario(payload: Omit<Usuario, 'id' | 'criadoEm' | 'atualizadoEm'>): Promise<Usuario> {
@@ -467,11 +579,11 @@ export async function fetchEmpresas(): Promise<Empresa[]> {
   // Batch-load: busca empresas e todos os relacionamentos em paralelo (evita N+1)
   // Usa fetchAllRows para paginar além do limite de 1000 do PostgREST
   const [empresas, allRets, allDocs, allObs, allResps] = await Promise.all([
-    fetchAllRows<Record<string, any>>('empresas', { order: { column: 'criado_em', ascending: false } }),
-    fetchAllRows<Record<string, any>>('rets'),
-    fetchAllRows<Record<string, any>>('documentos', { order: { column: 'criado_em', ascending: false } }),
-    fetchAllRows<Record<string, any>>('observacoes', { order: { column: 'criado_em', ascending: true } }),
-    fetchAllRows<Record<string, any>>('responsaveis'),
+    fetchAllRows<EmpresaRow>('empresas', { order: { column: 'criado_em', ascending: false } }),
+    fetchAllRows<RetRow>('rets'),
+    fetchAllRows<DocumentoRow>('documentos', { order: { column: 'criado_em', ascending: false } }),
+    fetchAllRows<ObservacaoRow>('observacoes', { order: { column: 'criado_em', ascending: true } }),
+    fetchAllRows<ResponsavelRow>('responsaveis'),
   ]);
 
   // Agrupar por empresa_id em memória
@@ -562,8 +674,8 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const isRetryableMessage = (msg: string) => /\b429\b|too many requests|rate limit|timed out|timeout|fetch failed|network|connection|econnreset|service unavailable|\b503\b/i.test(msg);
   const isRetryableSupabaseError = (err: unknown) => {
-    const msg = (err as any)?.message ?? '';
-    const status = (err as any)?.status;
+    const msg = readErrorMessage(err);
+    const status = readErrorStatus(err);
     if (status === 429 || status === 503) return true;
     return isRetryableMessage(String(msg));
   };
@@ -800,8 +912,8 @@ export async function updateEmpresa(id: UUID, patch: Partial<Empresa>) {
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const isRetryableMessage = (msg: string) => /\b429\b|too many requests|rate limit|timed out|timeout|fetch failed|network|connection|econnreset|service unavailable|\b503\b/i.test(msg);
     const isRetryableSupabaseError = (err: unknown) => {
-      const msg = (err as any)?.message ?? '';
-      const status = (err as any)?.status;
+      const msg = readErrorMessage(err);
+      const status = readErrorStatus(err);
       if (status === 429 || status === 503) return true;
       return isRetryableMessage(String(msg));
     };
@@ -990,10 +1102,13 @@ export async function deleteObservacao(obsId: UUID) {
 
 export async function fetchLogs(): Promise<LogEntry[]> {
   const hiddenUserIds = getHiddenUserIds();
-  const all = await fetchAllRows<Record<string, any>>('logs', { order: { column: 'em', ascending: false } });
+  const all = await fetchAllRows<LogRow>('logs', { order: { column: 'em', ascending: false } });
   return all
-    .filter((l) => !hiddenUserIds.has(l.user_id))
-    .filter((l) => !(l.entity === 'usuario' && l.entity_id && hiddenUserIds.has(l.entity_id)))
+    .filter((l) => (l.user_id ? !hiddenUserIds.has(l.user_id) : true))
+    .filter((l) => {
+      const entityId = l.entity_id;
+      return !(l.entity === 'usuario' && entityId && hiddenUserIds.has(entityId));
+    })
     .map(toLogEntry);
 }
 

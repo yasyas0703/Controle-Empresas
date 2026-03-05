@@ -6,6 +6,7 @@ import { useSistema } from '@/app/context/SistemaContext';
 import type { Empresa } from '@/app/types';
 import ModalBase from '@/app/components/ModalBase';
 import { api } from '@/app/utils/api';
+import { gerarSenhaSegura } from '@/app/utils/password';
 import * as db from '@/lib/db';
 
 /**
@@ -366,9 +367,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
         .replace(/^\.|\.$/g, '');
 
     const randomPassword = () => {
-      const a = Math.random().toString(36).slice(2, 10);
-      const b = Math.random().toString(36).slice(2, 10);
-      return `${a}${b}`;
+      return gerarSenhaSegura(16);
     };
 
     const onlyDigits = (s: string) => String(s || '').replace(/\D/g, '');
@@ -754,7 +753,9 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
           .select('departamento_id, usuario_id')
           .eq('empresa_id', empData.id);
 
-        const currentMap = new Map((currentResps || []).map((r: any) => [r.departamento_id, r.usuario_id]));
+        const currentMap = new Map(
+          (currentResps || []).map((r: { departamento_id: string; usuario_id: string | null }) => [r.departamento_id, r.usuario_id])
+        );
         let needsUpdate = false;
         for (const [depId, userId] of Object.entries(responsaveis)) {
           if (userId && currentMap.get(depId) !== userId) {
@@ -812,7 +813,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
       if (sampleErr) {
         console.error('[VERIFY] Erro ao buscar empresas amostra:', sampleErr);
       } else {
-        const sampleEmpresaIds = (sampleEmpresas || []).map((e: any) => e.id);
+        const sampleEmpresaIds = (sampleEmpresas || []).map((e: { id: string }) => e.id);
 
         // Buscar responsáveis dessas empresas
         if (sampleEmpresaIds.length > 0) {

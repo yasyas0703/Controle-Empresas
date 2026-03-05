@@ -2,6 +2,49 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
+type BrasilApiCnpj = {
+  razao_social?: string;
+  nome_fantasia?: string;
+  data_inicio_atividade?: string;
+  data_abertura?: string;
+  cep?: string;
+  bairro?: string;
+  descricao_tipo_de_logradouro?: string;
+  descricao_tipo_logradouro?: string;
+  logradouro?: string;
+  numero?: string;
+  municipio?: string;
+  cidade?: string;
+  uf?: string;
+  estado?: string;
+  ddd_telefone_1?: string;
+  telefone?: string;
+  email?: string;
+  descricao_situacao_cadastral?: string;
+  situacao_cadastral?: string;
+};
+
+type CnpjWsEstabelecimento = {
+  nome_fantasia?: string;
+  data_inicio_atividade?: string;
+  cep?: string;
+  bairro?: string;
+  tipo_logradouro?: string;
+  logradouro?: string;
+  numero?: string;
+  cidade?: { nome?: string };
+  estado?: { sigla?: string };
+  ddd1?: string;
+  telefone1?: string;
+  email?: string;
+  situacao_cadastral?: string;
+};
+
+type CnpjWsData = {
+  razao_social?: string;
+  estabelecimento?: CnpjWsEstabelecimento;
+};
+
 function onlyDigits(value: string) {
   return String(value || '').replace(/\D/g, '');
 }
@@ -30,7 +73,7 @@ async function fetchProvider(url: string) {
     return { ok: false as const, status: upstream.status, text };
   }
 
-  const data: any = await upstream.json();
+  const data: unknown = await upstream.json();
   return { ok: true as const, data };
 }
 
@@ -49,7 +92,7 @@ export async function GET(
     // 1) BrasilAPI
     const br = await fetchProvider(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`);
     if (br.ok) {
-      const data: any = br.data;
+      const data = br.data as BrasilApiCnpj;
       const response = {
         cnpj,
         razao_social: data?.razao_social ?? '',
@@ -81,7 +124,7 @@ export async function GET(
     // 2) Fallback: publica.cnpj.ws
     const ws = await fetchProvider(`https://publica.cnpj.ws/cnpj/${cnpj}`);
     if (ws.ok) {
-      const data: any = ws.data;
+      const data = ws.data as CnpjWsData;
       const est = data?.estabelecimento || {};
       const logradouro = [est?.tipo_logradouro, est?.logradouro].filter(Boolean).join(' ').trim() || est?.logradouro || '';
 

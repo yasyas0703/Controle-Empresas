@@ -5,6 +5,7 @@ import { AlertTriangle, Check, FileSpreadsheet, Loader2, Upload, Users, X, Squar
 import { useSistema } from '@/app/context/SistemaContext';
 import type { UUID } from '@/app/types';
 import ModalBase from '@/app/components/ModalBase';
+import { gerarSenhaSegura } from '@/app/utils/password';
 
 interface PersonBlock {
   nome: string;
@@ -243,7 +244,7 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
         const id = await criarUsuario({
           nome: nomeResp,
           email,
-          senha: Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10),
+          senha: gerarSenhaSegura(16),
           role: 'usuario',
           departamentoId: departamentoSelecionado.id,
           ativo: true,

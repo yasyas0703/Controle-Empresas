@@ -56,6 +56,39 @@ const FIELD_LABELS: Record<string, string> = {
 /** Campos que devem ser ignorados no diff (metadados internos) */
 const IGNORED_FIELDS = new Set(['id', 'atualizadoEm', 'criadoEm']);
 
+type RetDiffItem = {
+  id: string;
+  nome: string;
+  numeroPta: string;
+  vencimento?: string;
+  ultimaRenovacao?: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function toRetDiffItem(value: unknown): RetDiffItem | null {
+  if (!isRecord(value)) return null;
+  return {
+    id: asString(value.id),
+    nome: asString(value.nome),
+    numeroPta: asString(value.numeroPta),
+    vencimento: asString(value.vencimento) || undefined,
+    ultimaRenovacao: asString(value.ultimaRenovacao) || undefined,
+  };
+}
+
+function getErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (isRecord(err) && typeof err.message === 'string' && err.message) return err.message;
+  return fallback;
+}
+
 export default function HistoricoPage() {
   const { logs, usuarios, departamentos, canAdmin, isGhost, limparHistorico, removerLogsSelecionados, mostrarAlerta } = useSistema();
   const [search, setSearch] = useState('');
@@ -183,8 +216,8 @@ export default function HistoricoPage() {
         for (const id of selectedActiveIds) next.delete(id);
         return next;
       });
-    } catch (err: any) {
-      mostrarAlerta('Erro', err?.message || 'Não foi possível excluir os registros.', 'erro');
+    } catch (err: unknown) {
+      mostrarAlerta('Erro', getErrorMessage(err, 'Não foi possível excluir os registros.'), 'erro');
     } finally {
       setExcluindoSelecionados(false);
     }
@@ -256,11 +289,18 @@ export default function HistoricoPage() {
       if (typeof val[0] === 'string') return val.join(', ');
       // RETs: array de objetos com nome e numeroPta
       if (val[0] && typeof val[0] === 'object' && 'numeroPta' in val[0]) {
-        return val.map((r: any) => `${r.nome} (${formatRetNumber(r.numeroPta)})`).join(', ');
+        return val
+          .map(toRetDiffItem)
+          .filter((item): item is RetDiffItem => item !== null)
+          .map((item) => `${item.nome || '(sem nome)'} (${formatRetNumber(item.numeroPta)})`)
+          .join(', ');
       }
       // Documentos: array de objetos com nome
       if (val[0] && typeof val[0] === 'object' && 'nome' in val[0]) {
-        return val.map((r: any) => r.nome).join(', ');
+        return val
+          .map((item) => (isRecord(item) ? asString(item.nome) : ''))
+          .filter(Boolean)
+          .join(', ');
       }
       return `${val.length} item(ns)`;
     }
@@ -325,14 +365,18 @@ export default function HistoricoPage() {
 
           // RETs: mostrar detalhes de quais RETs mudaram
           if (key === 'rets' && Array.isArray(change.from) && Array.isArray(change.to)) {
-            const fromArr = change.from as any[];
-            const toArr = change.to as any[];
+            const fromArr = change.from
+              .map(toRetDiffItem)
+              .filter((item): item is RetDiffItem => item !== null);
+            const toArr = change.to
+              .map(toRetDiffItem)
+              .filter((item): item is RetDiffItem => item !== null);
 
             const changes: { type: 'added' | 'removed' | 'changed'; ret: string; detail?: string }[] = [];
 
             // RETs removidos
             for (const oldRet of fromArr) {
-              const match = toArr.find((r: any) => r.id === oldRet.id);
+              const match = toArr.find((r) => r.id === oldRet.id);
               if (!match) {
                 changes.push({ type: 'removed', ret: `${oldRet.nome} (${formatRetNumber(oldRet.numeroPta)})` });
               } else {
@@ -350,7 +394,7 @@ export default function HistoricoPage() {
 
             // RETs adicionados
             for (const newRet of toArr) {
-              const match = fromArr.find((r: any) => r.id === newRet.id);
+              const match = fromArr.find((r) => r.id === newRet.id);
               if (!match) {
                 changes.push({ type: 'added', ret: `${newRet.nome} (${formatRetNumber(newRet.numeroPta)})` });
               }
@@ -786,8 +830,8 @@ export default function HistoricoPage() {
                       setConfirmExcluir(false);
                       setTextoConfirm('');
                       mostrarAlerta('Histórico excluído', 'Os registros foram removidos da visão padrão do histórico.', 'sucesso');
-                    } catch (err: any) {
-                      mostrarAlerta('Erro', err?.message || 'Não foi possível excluir o histórico.', 'erro');
+                    } catch (err: unknown) {
+                      mostrarAlerta('Erro', getErrorMessage(err, 'Não foi possível excluir o histórico.'), 'erro');
                     } finally {
                       setExcluindo(false);
                     }

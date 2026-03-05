@@ -3,7 +3,7 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { Loader2, Search, X, Plus, Trash2 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
-import type { Empresa, RetItem, UUID } from '@/app/types';
+import type { Empresa, RetItem, TipoInscricao, UUID } from '@/app/types';
 import ModalBase from '@/app/components/ModalBase';
 import { cepSchema, cpfSchema, cnpjSchema, detectTipoInscricao, detectTipoEstabelecimento, formatarDocumento } from '@/app/utils/validation';
 import { api } from '@/app/utils/api';
@@ -25,6 +25,15 @@ function formatRetNumber(value: string): string {
   if (digits.length <= 2) return digits;
   if (digits.length <= 11) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
   return `${digits.slice(0, 2)}.${digits.slice(2, 11)}-${digits.slice(11)}`;
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message) return message;
+  }
+  return fallback;
 }
 
 export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastrarEmpresaProps) {
@@ -129,8 +138,8 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
       });
 
       setEmpresaCadastrada(true);
-    } catch (error: any) {
-      setCnpjLookupError(error?.message || 'Não foi possível consultar esse CNPJ agora.');
+    } catch (error: unknown) {
+      setCnpjLookupError(getErrorMessage(error, 'Nao foi possivel consultar esse CNPJ agora.'));
     } finally {
       setBuscandoCnpj(false);
     }
@@ -140,9 +149,6 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
   useEffect(() => {
     if (!cnpjTouched) return;
     if (!podeBuscarCnpj) return;
-    if (cnpjDigits !== 14 as any) {
-      // no-op; só por segurança, já garantido por podeBuscarCnpj
-    }
     if (lastAutoLookupDigitsRef.current === cnpjDigits) return;
 
     const parsed = cnpjSchema.safeParse(String(formData.cnpj || ''));
@@ -158,10 +164,10 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cnpjDigits, podeBuscarCnpj, cnpjTouched]);
 
-  const handleChange = (field: keyof Empresa, value: any) => {
+  const handleChange = (field: keyof Empresa, value: unknown) => {
     setFormData((prev) => ({
       ...prev,
-      [field]: value,
+      [field]: value as Empresa[keyof Empresa],
     }));
   };
 
@@ -189,7 +195,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
     } else {
       // ao criar, garante responsaveis com todos departamentos
       setFormData((prev) => {
-        const next = { ...(prev as any) } as Partial<Empresa>;
+        const next: Partial<Empresa> = { ...prev };
         const resp: Record<string, string | null> = { ...(next.responsaveis ?? {}) };
         for (const d of departamentos) if (!(d.id in resp)) resp[d.id] = null;
         next.responsaveis = resp;
@@ -201,7 +207,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
   }, [empresa, departamentos]);
 
   const formatarCPFCNPJ = (valor: string): string => {
-    return formatarDocumento(valor, formData.tipoInscricao as any);
+    return formatarDocumento(valor, formData.tipoInscricao as TipoInscricao | undefined);
   };
 
   const formatarCEP = (valor: string): string => {
@@ -453,7 +459,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                       const digits = valorFormatado.replace(/\D/g, '');
                       if (digits.length === 14) setEmpresaCadastrada(true);
                       // Auto-detectar tipo de inscrição e estabelecimento
-                      const autoTipo = detectTipoInscricao(digits, formData.tipoInscricao as any);
+                      const autoTipo = detectTipoInscricao(digits, formData.tipoInscricao as TipoInscricao | undefined);
                       if (autoTipo) handleChange('tipoInscricao', autoTipo);
                       const autoEstab = detectTipoEstabelecimento(digits);
                       handleChange('tipoEstabelecimento', autoEstab);
@@ -728,7 +734,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                 <div key={d.id}>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">{d.nome}</label>
                   <select
-                    value={(formData.responsaveis as any)?.[d.id] ?? ''}
+                    value={(formData.responsaveis as Record<string, string | null> | undefined)?.[d.id] ?? ''}
                     onChange={(e) => {
                       const userId = e.target.value || null;
                       setFormData((prev) => ({
@@ -940,3 +946,6 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
     </ModalBase>
   );
 }
+
+
+

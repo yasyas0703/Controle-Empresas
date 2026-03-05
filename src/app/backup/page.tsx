@@ -24,6 +24,24 @@ function saveHistorico(items: HistoricoItem[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(items.slice(0, 20)));
 }
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message) return message;
+  }
+  return fallback;
+}
+
+function getErrorName(error: unknown): string | null {
+  if (error instanceof Error && error.name) return error.name;
+  if (typeof error === 'object' && error !== null && 'name' in error) {
+    const name = (error as { name?: unknown }).name;
+    if (typeof name === 'string' && name) return name;
+  }
+  return null;
+}
+
 export default function BackupPage() {
   const { canAdmin, reloadData, mostrarAlerta } = useSistema();
   const [exportando, setExportando] = useState(false);
@@ -83,9 +101,10 @@ export default function BackupPage() {
         setProgresso('Backup exportado com sucesso!');
         mostrarAlerta('Backup exportado', 'Arquivo JSON baixado com sucesso.', 'sucesso');
       }
-    } catch (err: any) {
-      setProgresso(`Erro: ${err.message}`);
-      mostrarAlerta('Erro no backup', err.message, 'erro');
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, 'Falha ao exportar backup.');
+      setProgresso(`Erro: ${message}`);
+      mostrarAlerta('Erro no backup', message, 'erro');
     } finally {
       setExportando(false);
     }
@@ -141,9 +160,10 @@ export default function BackupPage() {
       setNomeArquivo('');
       if (fileRef.current) fileRef.current.value = '';
       mostrarAlerta('Backup restaurado', 'Todos os dados foram restaurados com sucesso.', 'sucesso');
-    } catch (err: any) {
-      setProgresso(`Erro na restauracao: ${err.message}`);
-      mostrarAlerta('Erro na restauracao', err.message, 'erro');
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, 'Falha ao restaurar backup.');
+      setProgresso(`Erro na restauracao: ${message}`);
+      mostrarAlerta('Erro na restauracao', message, 'erro');
     } finally {
       setRestaurando(false);
     }
@@ -172,7 +192,7 @@ export default function BackupPage() {
   };
 
   const handleEscolherPasta = async () => {
-    if (typeof (window as any).showDirectoryPicker !== 'function') {
+    if (typeof (window as Window & { showDirectoryPicker?: unknown }).showDirectoryPicker !== 'function') {
       mostrarAlerta(
         'Navegador nao suportado',
         'Seu navegador nao suporta escolher pasta. Use o Google Chrome ou Microsoft Edge na versao mais recente.',
@@ -184,12 +204,12 @@ export default function BackupPage() {
       const nome = await escolherPastaBackup();
       setPastaBackup(nome);
       mostrarAlerta('Pasta configurada', `Backups serao salvos na pasta "${nome}".`, 'sucesso');
-    } catch (err: any) {
-      if (err?.name === 'AbortError') return; // usuario cancelou
+    } catch (err: unknown) {
+      if (getErrorName(err) === 'AbortError') return; // usuario cancelou
       console.error('[Backup] Erro ao escolher pasta:', err);
       mostrarAlerta(
         'Erro ao escolher pasta',
-        `${err?.message || 'Erro desconhecido'}. Tente usar o Google Chrome ou Edge.`,
+        `${getErrorMessage(err, 'Erro desconhecido')}. Tente usar o Google Chrome ou Edge.`,
         'erro'
       );
     }

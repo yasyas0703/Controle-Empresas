@@ -10,7 +10,24 @@ import { daysUntil } from '@/app/utils/date';
 import { supabase } from '@/lib/supabase';
 import AutoBackup from '@/app/components/AutoBackup';
 
-const nav = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  badge?: boolean;
+  ghostOnly?: boolean;
+};
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message) return message;
+  }
+  return fallback;
+}
+
+const nav: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/vencimentos', label: 'Vencimentos', icon: AlertTriangle, badge: true },
   { href: '/calendario', label: 'Calendário', icon: CalendarDays },
@@ -107,8 +124,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       });
       if (error) throw error;
       setForgotSent(true);
-    } catch (err: any) {
-      mostrarAlerta('Erro', err?.message || 'Não foi possível enviar o email de recuperação.', 'erro');
+    } catch (err: unknown) {
+      mostrarAlerta('Erro', getErrorMessage(err, 'Nao foi possivel enviar o email de recuperacao.'), 'erro');
     } finally {
       setForgotLoading(false);
     }
@@ -158,7 +175,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const navItems = nav.filter((i: any) => {
+  const navItems = nav.filter((i) => {
     if (i.ghostOnly) return isGhost;
     if (i.href === '/usuarios' || i.href === '/backup' || i.href === '/historico') return canAdmin;
     if (['/departamentos', '/servicos', '/lixeira'].includes(i.href)) return canManage;
@@ -283,7 +300,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {navItems.map((i) => {
             const active = pathname === i.href;
             const Icon = i.icon;
-            const showBadge = (i as any).badge && vencidosCount > 0;
+            const showBadge = i.badge && vencidosCount > 0;
             const showLixeiraBadge = i.href === '/lixeira' && lixeiraCount > 0;
             const isVenc = i.href === '/vencimentos' && vencidosCount > 0;
             return (
@@ -376,7 +393,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {navItems.map((i) => {
             const active = pathname === i.href;
             const Icon = i.icon;
-            const showBadge = (i as any).badge && vencidosCount > 0;
+            const showBadge = i.badge && vencidosCount > 0;
             const showLixeiraBadge = i.href === '/lixeira' && lixeiraCount > 0;
             const isVenc = i.href === '/vencimentos' && vencidosCount > 0;
             return (
@@ -622,3 +639,5 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
+
