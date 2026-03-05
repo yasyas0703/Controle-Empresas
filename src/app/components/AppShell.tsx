@@ -7,7 +7,6 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil } from '@/app/utils/date';
-import { supabase } from '@/lib/supabase';
 import AutoBackup from '@/app/components/AutoBackup';
 
 type NavItem = {
@@ -56,6 +55,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
+  const [forgotCode, setForgotCode] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [forgotResetLoading, setForgotResetLoading] = useState(false);
+  const [forgotResetDone, setForgotResetDone] = useState(false);
+  const [forgotError, setForgotError] = useState('');
 
   // isGhost e isPrivileged vêm do contexto (validados no servidor)
 
@@ -118,17 +123,69 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       return;
     }
     setForgotLoading(true);
+    setForgotError('');
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
-        redirectTo: `${window.location.origin}/reset-password`,
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.trim() }),
       });
-      if (error) throw error;
+      if (!res.ok) throw new Error('Erro ao enviar código.');
       setForgotSent(true);
     } catch (err: unknown) {
-      mostrarAlerta('Erro', getErrorMessage(err, 'Nao foi possivel enviar o email de recuperacao.'), 'erro');
+      mostrarAlerta('Erro', getErrorMessage(err, 'Não foi possível enviar o código de recuperação.'), 'erro');
     } finally {
       setForgotLoading(false);
     }
+  };
+
+  const handleResetPassword = async () => {
+    setForgotError('');
+    if (!forgotCode.trim()) {
+      setForgotError('Digite o código recebido por email.');
+      return;
+    }
+    if (!forgotNewPassword.trim() || forgotNewPassword.length < 8) {
+      setForgotError('A senha deve ter no mínimo 8 caracteres.');
+      return;
+    }
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      setForgotError('As senhas não coincidem.');
+      return;
+    }
+    setForgotResetLoading(true);
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: forgotEmail.trim(),
+          code: forgotCode.trim(),
+          newPassword: forgotNewPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setForgotError(data.message || 'Código inválido ou expirado.');
+        return;
+      }
+      setForgotResetDone(true);
+    } catch {
+      setForgotError('Erro ao redefinir senha. Tente novamente.');
+    } finally {
+      setForgotResetLoading(false);
+    }
+  };
+
+  const resetForgotState = () => {
+    setShowForgot(false);
+    setForgotSent(false);
+    setForgotEmail('');
+    setForgotCode('');
+    setForgotNewPassword('');
+    setForgotConfirmPassword('');
+    setForgotResetDone(false);
+    setForgotError('');
   };
 
   const handleLogin = async () => {
@@ -541,28 +598,100 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
             {showForgot ? (
               <div className="p-6 space-y-4">
-                {forgotSent ? (
+                {forgotResetDone ? (
                   <>
                     <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4">
                       <div className="flex items-center gap-2 text-emerald-700 font-semibold text-sm mb-1">
                         <CheckCircle size={16} />
-                        Email enviado!
+                        Senha alterada!
                       </div>
                       <p className="text-xs text-emerald-600">
-                        Enviamos um link de recuperação para <strong>{forgotEmail}</strong>. Verifique sua caixa de entrada e spam.
+                        Sua senha foi redefinida com sucesso. Faça login com a nova senha.
                       </p>
                     </div>
                     <button
-                      onClick={() => { setShowForgot(false); setForgotSent(false); setForgotEmail(''); }}
-                      className="w-full rounded-xl bg-gray-100 text-gray-700 px-4 py-3 font-semibold hover:bg-gray-200 transition"
+                      onClick={resetForgotState}
+                      className="w-full rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 text-white px-4 py-3 font-bold hover:from-cyan-700 hover:to-teal-700 shadow-lg transition"
                     >
-                      Voltar ao Login
+                      Ir para o Login
+                    </button>
+                  </>
+                ) : forgotSent ? (
+                  <>
+                    <div className="rounded-xl bg-blue-50 border border-blue-200 p-4">
+                      <div className="flex items-center gap-2 text-blue-700 font-semibold text-sm mb-1">
+                        <CheckCircle size={16} />
+                        Código enviado!
+                      </div>
+                      <p className="text-xs text-blue-600">
+                        Enviamos um código de 6 dígitos para <strong>{forgotEmail}</strong>. Verifique sua caixa de entrada e spam.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Código de verificação</label>
+                      <input
+                        value={forgotCode}
+                        onChange={(e) => setForgotCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 text-center text-2xl font-mono tracking-[0.3em] focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                        placeholder="000000"
+                        maxLength={6}
+                        inputMode="numeric"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Nova senha</label>
+                      <input
+                        type="password"
+                        value={forgotNewPassword}
+                        onChange={(e) => setForgotNewPassword(e.target.value)}
+                        className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                        placeholder="Mínimo 8 caracteres"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Confirmar senha</label>
+                      <input
+                        type="password"
+                        value={forgotConfirmPassword}
+                        onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                        className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                        placeholder="Repita a nova senha"
+                        onKeyDown={(e) => e.key === 'Enter' && handleResetPassword()}
+                      />
+                    </div>
+                    {forgotError && (
+                      <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3">
+                        <div className="flex items-center gap-2 text-sm text-red-700 font-semibold">
+                          <XCircle size={16} className="shrink-0" />
+                          {forgotError}
+                        </div>
+                      </div>
+                    )}
+                    <button
+                      onClick={handleResetPassword}
+                      disabled={forgotResetLoading}
+                      className="w-full rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 text-white px-4 py-3 font-bold hover:from-cyan-700 hover:to-teal-700 shadow-lg transition disabled:opacity-50"
+                    >
+                      {forgotResetLoading ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 size={18} className="animate-spin" />
+                          Redefinindo...
+                        </span>
+                      ) : (
+                        'Redefinir Senha'
+                      )}
+                    </button>
+                    <button
+                      onClick={resetForgotState}
+                      className="w-full text-sm text-gray-500 hover:text-gray-700 font-semibold transition"
+                    >
+                      Cancelar
                     </button>
                   </>
                 ) : (
                   <>
                     <p className="text-sm text-gray-600">
-                      Digite o email da sua conta. Enviaremos um link para você criar uma nova senha.
+                      Digite o email da sua conta. Enviaremos um código de 6 dígitos para você redefinir sua senha.
                     </p>
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-2">Email</label>
@@ -585,11 +714,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                           Enviando...
                         </span>
                       ) : (
-                        'Enviar Link de Recuperação'
+                        'Enviar Código'
                       )}
                     </button>
                     <button
-                      onClick={() => { setShowForgot(false); setForgotEmail(''); }}
+                      onClick={resetForgotState}
                       className="w-full text-sm text-gray-500 hover:text-gray-700 font-semibold transition"
                     >
                       Voltar ao Login
@@ -626,7 +755,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   Entrar
                 </button>
                 <button
-                  onClick={() => { setShowForgot(true); setForgotEmail(email); }}
+                  onClick={() => { resetForgotState(); setShowForgot(true); setForgotEmail(email); }}
                   className="w-full text-sm text-cyan-600 hover:text-cyan-700 font-semibold transition"
                 >
                   Esqueci minha senha
