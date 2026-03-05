@@ -118,10 +118,6 @@ export default function ModalAdicionarDocumento({
               mostrarAlerta('Arquivo obrigatorio', 'Envie um arquivo antes de adicionar o documento.', 'aviso');
               return;
             }
-            if (visibilidade === 'departamento' && departamentosIds.length === 0) {
-              mostrarAlerta('Departamento obrigatorio', 'Selecione pelo menos um departamento.', 'aviso');
-              return;
-            }
             if (visibilidade === 'usuarios' && usuariosPermitidos.length === 0) {
               mostrarAlerta('Usuario obrigatorio', 'Selecione pelo menos um usuario.', 'aviso');
               return;
@@ -204,7 +200,7 @@ export default function ModalAdicionarDocumento({
               </label>
               <p className="text-xs text-gray-500 mb-2">
                 {visibilidade === 'departamento'
-                  ? 'Apenas usuários dos departamentos selecionados poderão ver este documento.'
+                  ? 'Se marcar departamentos, apenas eles veem. Se deixar vazio, todos os departamentos podem ver.'
                   : 'Selecione quais departamentos devem acompanhar este documento. Se nenhum for selecionado, todos verão o vencimento.'}
               </p>
               <div className="grid grid-cols-2 gap-2">
@@ -328,7 +324,7 @@ export default function ModalAdicionarDocumento({
             <button
               type="submit"
               className="flex-1 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white px-4 py-3 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={!nome.trim() || !file || (visibilidade === 'departamento' && selectedDepts.length === 0) || (visibilidade === 'usuarios' && selectedUsers.length === 0)}
+              disabled={!nome.trim() || !file || (visibilidade === 'usuarios' && selectedUsers.length === 0)}
             >
               Adicionar
             </button>

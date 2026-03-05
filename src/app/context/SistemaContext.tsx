@@ -153,14 +153,14 @@ function normalizarControleAcessoDocumento(
 function canUserViewDocumento(documento: DocumentoEmpresa, usuario: Usuario | null): boolean {
   if (!usuario || !usuario.ativo) return false;
 
+  if (usuario.role === 'admin') {
+    return true;
+  }
+
   const visibilidade = documento.visibilidade ?? 'publico';
 
   if (visibilidade === 'confidencial') {
     return !!documento.criadoPorId && documento.criadoPorId === usuario.id;
-  }
-
-  if (usuario.role === 'admin') {
-    return true;
   }
 
   if (visibilidade === 'publico') {
@@ -168,7 +168,9 @@ function canUserViewDocumento(documento: DocumentoEmpresa, usuario: Usuario | nu
   }
 
   if (visibilidade === 'departamento') {
-    return !!usuario.departamentoId && (documento.departamentosIds ?? []).includes(usuario.departamentoId);
+    const departamentosIds = documento.departamentosIds ?? [];
+    if (departamentosIds.length === 0) return true;
+    return !!usuario.departamentoId && departamentosIds.includes(usuario.departamentoId);
   }
 
   if (visibilidade === 'usuarios') {
@@ -179,6 +181,9 @@ function canUserViewDocumento(documento: DocumentoEmpresa, usuario: Usuario | nu
 }
 
 function filtrarEmpresasPorPermissaoDocumentos(empresas: Empresa[], usuario: Usuario | null): Empresa[] {
+  // Admin tem acesso a TODOS os documentos — pula filtro completamente
+  if (usuario?.role === 'admin') return empresas;
+
   return empresas.map((empresa) => ({
     ...empresa,
     documentos: empresa.documentos.filter((documento) => canUserViewDocumento(documento, usuario)),
@@ -499,7 +504,21 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   const canManage = currentUser?.role === 'gerente' || currentUser?.role === 'admin';
   const canAdmin = currentUser?.role === 'admin';
   const empresasVisiveis = useMemo(
-    () => filtrarEmpresasPorPermissaoDocumentos(state.empresas, currentUser),
+    () => {
+      // DEBUG: remover depois de testar
+      const totalDocsBefore = state.empresas.reduce((a, e) => a + e.documentos.length, 0);
+      console.log('[DEBUG] usuario:', currentUser?.nome, '| role:', currentUser?.role, '| totalEmpresas:', state.empresas.length, '| totalDocs ANTES do filtro:', totalDocsBefore);
+      if (state.empresas.length > 0) {
+        const primeiraEmpresa = state.empresas[0];
+        console.log('[DEBUG] primeira empresa:', primeiraEmpresa.razao_social, '| docs:', primeiraEmpresa.documentos.length, '| visibilidades:', primeiraEmpresa.documentos.map(d => d.visibilidade));
+      }
+
+      const result = filtrarEmpresasPorPermissaoDocumentos(state.empresas, currentUser);
+
+      const totalDocsAfter = result.reduce((a, e) => a + e.documentos.length, 0);
+      console.log('[DEBUG] totalDocs DEPOIS do filtro:', totalDocsAfter, '| diferença:', totalDocsBefore - totalDocsAfter);
+      return result;
+    },
     [currentUser, state.empresas]
   );
 
@@ -993,10 +1012,6 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       }
 
       const controleAcesso = normalizarControleAcessoDocumento(doc, state.currentUserId);
-      if (controleAcesso.visibilidade === 'departamento' && controleAcesso.departamentosIds.length === 0) {
-        mostrarAlerta('Departamento obrigatorio', 'Selecione pelo menos um departamento para essa visibilidade.', 'aviso');
-        return false;
-      }
       if (controleAcesso.visibilidade === 'usuarios' && controleAcesso.usuariosPermitidos.length === 0) {
         mostrarAlerta('Usuario obrigatorio', 'Selecione pelo menos um usuario para essa visibilidade.', 'aviso');
         return false;
@@ -1061,10 +1076,6 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         usuariosPermitidos: patch.usuariosPermitidos ?? doc.usuariosPermitidos,
         criadoPorId: patch.criadoPorId ?? doc.criadoPorId,
       }, state.currentUserId);
-      if (controleAcesso.visibilidade === 'departamento' && controleAcesso.departamentosIds.length === 0) {
-        mostrarAlerta('Departamento obrigatorio', 'Selecione pelo menos um departamento para essa visibilidade.', 'aviso');
-        return false;
-      }
       if (controleAcesso.visibilidade === 'usuarios' && controleAcesso.usuariosPermitidos.length === 0) {
         mostrarAlerta('Usuario obrigatorio', 'Selecione pelo menos um usuario para essa visibilidade.', 'aviso');
         return false;
