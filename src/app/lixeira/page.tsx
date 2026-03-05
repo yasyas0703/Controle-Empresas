@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Trash2, RotateCcw, AlertTriangle, Clock, Building2, Search, Eraser, FileText, MessageSquare, Filter } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { formatarDocumento, detectTipoInscricao } from '@/app/utils/validation';
@@ -27,6 +27,12 @@ export default function LixeiraPage() {
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
   const [confirmPermanent, setConfirmPermanent] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [agoraMs, setAgoraMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setAgoraMs(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   if (!canManage) {
     return (
@@ -64,7 +70,7 @@ export default function LixeiraPage() {
   };
 
   const timeAgo = (iso: string) => {
-    const diff = Date.now() - new Date(iso).getTime();
+    const diff = agoraMs - new Date(iso).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return 'agora mesmo';
     if (mins < 60) return `${mins}min atrás`;

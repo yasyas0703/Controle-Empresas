@@ -37,6 +37,15 @@ function diffObjects(before: Record<string, unknown>, after: Record<string, unkn
   return diff;
 }
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message) return message;
+  }
+  return fallback;
+}
+
 function hasOwnField<T extends object>(value: T, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
@@ -373,7 +382,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     let channel = supabase.channel(`app-realtime-${userId}`);
     for (const table of tables) {
       channel = channel.on(
-        'postgres_changes' as any,
+        'postgres_changes',
         { event: '*', schema: 'public', table },
         scheduleReload
       );
@@ -601,10 +610,10 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     try {
       me = await loadForUser(userId as UUID);
       nextPrivileges = await fetchPrivileges(data.session.access_token);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       return false;
-      mostrarAlerta('Erro ao carregar dados', err?.message || 'Falha ao carregar dados do sistema após login.', 'erro');
+      mostrarAlerta('Erro ao carregar dados', getErrorMessage(err, 'Falha ao carregar dados do sistema após login.'), 'erro');
     } finally {
       setLoading(false);
     }
@@ -709,7 +718,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     const before = state.usuarios.find((u) => u.id === id);
     if (!before) return;
     const after = { ...before, ...patch, atualizadoEm: isoNow() };
-    const diff = diffObjects(before as any, after as any);
+    const diff = diffObjects(before as unknown as Record<string, unknown>, after as unknown as Record<string, unknown>);
     try {
       await db.updateUsuario(id, patch);
       await pushLog({ action: 'update', entity: 'usuario', entityId: id, message: `Atualizou usuário: ${before.nome}`, diff });
@@ -841,7 +850,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       responsaveis: { ...before.responsaveis, ...(patch.responsaveis ?? {}) },
       atualizadoEm: isoNow(),
     };
-    const diff = diffObjects(before as any, after as any);
+    const diff = diffObjects(before as unknown as Record<string, unknown>, after as unknown as Record<string, unknown>);
     try {
       await db.updateEmpresa(id, patchPreparado);
       await pushLog({ action: 'update', entity: 'empresa', entityId: id, message: `Atualizou empresa: ${before.codigo}`, diff });
@@ -1000,9 +1009,9 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       if (file) {
         try {
           arquivoUrl = await db.uploadDocumentoArquivo(empresaId, file);
-        } catch (uploadErr: any) {
+        } catch (uploadErr: unknown) {
           console.error('Erro no upload:', uploadErr);
-          mostrarAlerta('Erro no upload', uploadErr?.message || 'Não foi possível enviar o arquivo. Verifique se o bucket "documentos" existe no Supabase Storage.', 'erro');
+          mostrarAlerta('Erro no upload', getErrorMessage(uploadErr, 'Não foi possível enviar o arquivo. Verifique se o bucket "documentos" existe no Supabase Storage.'), 'erro');
           return false;
         }
       }
@@ -1020,9 +1029,9 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         ),
       }));
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      mostrarAlerta('Erro ao adicionar documento', err?.message || 'Falha ao salvar documento.', 'erro');
+      mostrarAlerta('Erro ao adicionar documento', getErrorMessage(err, 'Falha ao salvar documento.'), 'erro');
       return false;
     }
   };
@@ -1039,9 +1048,9 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         try {
           const arquivoUrl = await db.uploadDocumentoArquivo(empresaId, file);
           finalPatch.arquivoUrl = arquivoUrl;
-        } catch (uploadErr: any) {
+        } catch (uploadErr: unknown) {
           console.error('Erro no upload:', uploadErr);
-          mostrarAlerta('Erro no upload', uploadErr?.message || 'Não foi possível enviar o arquivo.', 'erro');
+          mostrarAlerta('Erro no upload', getErrorMessage(uploadErr, 'Não foi possível enviar o arquivo.'), 'erro');
           return false;
         }
       }
@@ -1082,9 +1091,9 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         ),
       }));
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      mostrarAlerta('Erro ao atualizar documento', err?.message || 'Falha ao salvar alterações.', 'erro');
+      mostrarAlerta('Erro ao atualizar documento', getErrorMessage(err, 'Falha ao salvar alterações.'), 'erro');
       return false;
     }
   };
@@ -1342,3 +1351,5 @@ export function useSistema() {
   if (!ctx) throw new Error('useSistema deve ser usado dentro do SistemaProvider');
   return ctx;
 }
+
+

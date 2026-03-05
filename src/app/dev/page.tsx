@@ -20,14 +20,23 @@ async function getToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message) return message;
+  }
+  return fallback;
+}
+
 function tempoDecorrido(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const min = Math.floor(diff / 60000);
   if (min < 1) return 'agora mesmo';
-  if (min < 60) return `há ${min} min`;
+  if (min < 60) return `hÃ¡ ${min} min`;
   const h = Math.floor(min / 60);
-  if (h < 24) return `há ${h}h`;
-  return `há ${Math.floor(h / 24)}d`;
+  if (h < 24) return `hÃ¡ ${h}h`;
+  return `hÃ¡ ${Math.floor(h / 24)}d`;
 }
 
 function resumirUserAgent(ua: string): string {
@@ -90,14 +99,14 @@ export default function DevPage() {
       if (!res.ok) throw new Error(json.error);
       setManutencao(json.ativo);
       mostrarAlerta(
-        json.ativo ? 'Manutenção ativada' : 'Manutenção desativada',
+        json.ativo ? 'ManutenÃ§Ã£o ativada' : 'ManutenÃ§Ã£o desativada',
         json.ativo
-          ? 'Apenas você tem acesso ao sistema agora.'
-          : 'Sistema liberado para todos os usuários.',
+          ? 'Apenas vocÃª tem acesso ao sistema agora.'
+          : 'Sistema liberado para todos os usuÃ¡rios.',
         json.ativo ? 'aviso' : 'sucesso'
       );
-    } catch (err: any) {
-      mostrarAlerta('Erro', err?.message ?? 'Não foi possível alterar modo manutenção.', 'erro');
+    } catch (err: unknown) {
+      mostrarAlerta('Erro', getErrorMessage(err, 'Nao foi possivel alterar modo manutencao.'), 'erro');
     } finally {
       setLoadingManutencao(false);
     }
@@ -113,10 +122,10 @@ export default function DevPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
-      mostrarAlerta('Sessão resetada', `${nome} foi desconectado(a) de todos os dispositivos.`, 'sucesso');
+      mostrarAlerta('SessÃ£o resetada', `${nome} foi desconectado(a) de todos os dispositivos.`, 'sucesso');
       carregarSessoes();
-    } catch (err: any) {
-      mostrarAlerta('Erro', err?.message ?? 'Não foi possível resetar a sessão.', 'erro');
+    } catch (err: unknown) {
+      mostrarAlerta('Erro', getErrorMessage(err, 'Nao foi possivel alterar modo manutencao.'), 'erro');
     } finally {
       setResetandoId(null);
     }
@@ -126,7 +135,7 @@ export default function DevPage() {
     return (
       <div className="rounded-2xl bg-white p-6 shadow-sm">
         <div className="text-lg font-bold text-gray-900">Acesso negado</div>
-        <div className="mt-2 text-sm text-gray-600">Esta área é restrita.</div>
+        <div className="mt-2 text-sm text-gray-600">Esta Ã¡rea Ã© restrita.</div>
       </div>
     );
   }
@@ -145,23 +154,23 @@ export default function DevPage() {
         </div>
       </div>
 
-      {/* Modo Manutenção */}
+      {/* Modo ManutenÃ§Ã£o */}
       <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
         <div className="flex items-center gap-3 mb-4">
           <Power size={20} className={manutencao ? 'text-amber-500' : 'text-gray-400'} />
-          <div className="text-lg font-bold text-gray-900">Modo Manutenção</div>
+          <div className="text-lg font-bold text-gray-900">Modo ManutenÃ§Ã£o</div>
         </div>
 
         <div className={`rounded-xl p-4 mb-4 border ${manutencao ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
           <div className="flex items-center gap-2">
             <div className={`h-3 w-3 rounded-full ${manutencao ? 'bg-amber-500 animate-pulse' : 'bg-gray-300'}`} />
             <span className={`text-sm font-semibold ${manutencao ? 'text-amber-700' : 'text-gray-500'}`}>
-              {manutencao ? 'Sistema em manutenção — apenas você tem acesso' : 'Sistema funcionando normalmente'}
+              {manutencao ? 'Sistema em manutenÃ§Ã£o â€” apenas vocÃª tem acesso' : 'Sistema funcionando normalmente'}
             </span>
           </div>
           {manutencao && (
             <p className="text-xs text-amber-600 mt-2">
-              Outros usuários veem a tela "Sistema em manutenção" e não conseguem acessar.
+              Outros usuários veem a tela de manutenção e não conseguem acessar.
             </p>
           )}
         </div>
@@ -176,17 +185,17 @@ export default function DevPage() {
           }`}
         >
           {loadingManutencao ? <Loader2 size={16} className="animate-spin" /> : <Power size={16} />}
-          {manutencao ? 'Desativar Manutenção' : 'Ativar Manutenção'}
+          {manutencao ? 'Desativar ManutenÃ§Ã£o' : 'Ativar ManutenÃ§Ã£o'}
         </button>
       </div>
 
-      {/* Sessões Ativas */}
+      {/* SessÃµes Ativas */}
       <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <Monitor size={20} className="text-cyan-600" />
             <div className="text-lg font-bold text-gray-900">
-              Sessões Ativas
+              SessÃµes Ativas
               {sessoes.length > 0 && (
                 <span className="ml-2 text-sm font-normal text-gray-500">({sessoes.length})</span>
               )}
@@ -205,12 +214,12 @@ export default function DevPage() {
         {loadingSessoes ? (
           <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
             <Loader2 size={16} className="animate-spin" />
-            Carregando sessões...
+            Carregando sessÃµes...
           </div>
         ) : sessoes.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-gray-400 py-4">
             <WifiOff size={16} />
-            Nenhuma sessão ativa encontrada.
+            Nenhuma sessÃ£o ativa encontrada.
           </div>
         ) : (
           <div className="space-y-3">
@@ -226,14 +235,14 @@ export default function DevPage() {
                       <div className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
                       <span className="font-semibold text-gray-900 truncate">{s.nome}</span>
                       {isSelf && (
-                        <span className="text-[10px] bg-cyan-100 text-cyan-700 px-1.5 py-0.5 rounded font-bold">você</span>
+                        <span className="text-[10px] bg-cyan-100 text-cyan-700 px-1.5 py-0.5 rounded font-bold">vocÃª</span>
                       )}
                     </div>
                     <div className="text-xs text-gray-500 mt-0.5 ml-4">{s.email}</div>
                     <div className="flex flex-wrap gap-3 mt-1.5 ml-4 text-xs text-gray-400">
                       <span title="Navegador">{resumirUserAgent(s.userAgent)}</span>
                       {s.ip && <span title="IP">{s.ip}</span>}
-                      <span title="Última atividade">{tempoDecorrido(s.atualizadoEm)}</span>
+                      <span title="Ãšltima atividade">{tempoDecorrido(s.atualizadoEm)}</span>
                     </div>
                   </div>
 
@@ -242,7 +251,7 @@ export default function DevPage() {
                       onClick={() => resetarSessao(s.userId, s.nome)}
                       disabled={resetandoId === s.userId}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 font-semibold text-sm transition disabled:opacity-50 shrink-0"
-                      title="Forçar logout"
+                      title="ForÃ§ar logout"
                     >
                       {resetandoId === s.userId
                         ? <Loader2 size={14} className="animate-spin" />
@@ -260,3 +269,5 @@ export default function DevPage() {
     </div>
   );
 }
+
+

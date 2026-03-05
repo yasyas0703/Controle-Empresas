@@ -5,6 +5,7 @@ import { Upload, FileSpreadsheet, X, Check, AlertTriangle, Loader2, Users } from
 import { useSistema } from '@/app/context/SistemaContext';
 import type { UUID } from '@/app/types';
 import ModalBase from '@/app/components/ModalBase';
+import { gerarSenhaSegura } from '@/app/utils/password';
 
 /* ─── Tipos internos ─── */
 
@@ -293,7 +294,7 @@ export default function ModalImportarResponsabilidadesFiscal({ onClose }: ModalI
       const id = await criarUsuario({
         nome: nomeResp,
         email,
-        senha: Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10),
+        senha: gerarSenhaSegura(16),
         role: 'usuario',
         departamentoId: fiscalDept.id,
         ativo: true,

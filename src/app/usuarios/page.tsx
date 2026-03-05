@@ -6,6 +6,15 @@ import { useSistema } from '@/app/context/SistemaContext';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import type { Role, Usuario } from '@/app/types';
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message) return message;
+  }
+  return fallback;
+}
+
 export default function UsuariosPage() {
   const { canAdmin, currentUser, usuarios, departamentos, criarUsuario, atualizarUsuario, toggleUsuarioAtivo, removerUsuario, mostrarAlerta, isDeveloper, isGhost, protectedUserIds } = useSistema();
 
@@ -64,8 +73,8 @@ export default function UsuariosPage() {
       await atualizarUsuario(editUser.id, patch);
       setEditUser(null);
       mostrarAlerta('Usuário atualizado', `${editNome.trim()} foi atualizado com sucesso.`, 'sucesso');
-    } catch (err: any) {
-      mostrarAlerta('Erro ao atualizar', err?.message || 'Não foi possível atualizar o usuário.', 'erro');
+    } catch (err: unknown) {
+      mostrarAlerta('Erro ao atualizar', getErrorMessage(err, 'Nao foi possivel atualizar o usuario.'), 'erro');
     }
   };
 
@@ -138,8 +147,8 @@ export default function UsuariosPage() {
                 setRole('usuario');
                 setDepId('');
                 mostrarAlerta('Usuário criado', 'Usuário criado com sucesso.', 'sucesso');
-              } catch (err: any) {
-                mostrarAlerta('Erro ao criar usuário', err?.message || 'Não foi possível criar o usuário.', 'erro');
+              } catch (err: unknown) {
+                mostrarAlerta('Erro ao criar usuário', getErrorMessage(err, 'Nao foi possivel criar o usuario.'), 'erro');
               }
             }}
             className="mt-4 inline-flex items-center gap-2 w-full rounded-xl bg-gradient-to-r from-cyan-600 to-teal-500 text-white px-4 py-3 font-bold hover:from-cyan-700 hover:to-teal-600 shadow-md justify-center"
@@ -314,3 +323,4 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </div>
   );
 }
+

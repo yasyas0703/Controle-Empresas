@@ -51,11 +51,12 @@ export default function AutoBackup() {
             'sucesso'
           );
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('[AutoBackup] Erro no backup automatico:', err);
+        const message = err instanceof Error ? err.message : 'Erro desconhecido.';
         mostrarAlerta(
           'Erro no backup automatico',
-          `Nao foi possivel gerar o backup: ${err.message}`,
+          `Nao foi possivel gerar o backup: ${message}`,
           'erro'
         );
       }

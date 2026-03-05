@@ -62,6 +62,18 @@ const DB_NAME = 'triar-backup-db';
 const STORE_NAME = 'dir-handles';
 const DIR_KEY = 'backup-dir';
 
+type PickerWindow = Window & {
+  showDirectoryPicker?: (options?: { mode?: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle>;
+};
+
+type DirectoryHandleWithPermission = FileSystemDirectoryHandle & {
+  requestPermission?: (options?: { mode?: 'read' | 'readwrite' }) => Promise<PermissionState>;
+};
+
+type FileHandleWithWritable = FileSystemFileHandle & {
+  createWritable: () => Promise<FileSystemWritableFileStream>;
+};
+
 function openIDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
@@ -110,7 +122,7 @@ export async function limparDirHandle(): Promise<void> {
 }
 
 export async function escolherPastaBackup(): Promise<string> {
-  const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
+  const handle = await (window as PickerWindow).showDirectoryPicker!({ mode: 'readwrite' });
   await salvarDirHandle(handle);
   return handle.name;
 }
@@ -129,7 +141,7 @@ export async function prepararDirHandle(): Promise<FileSystemDirectoryHandle | n
   const handle = await obterDirHandle();
   if (!handle) return null;
   try {
-    const perm = await (handle as any).requestPermission({ mode: 'readwrite' });
+    const perm = await (handle as DirectoryHandleWithPermission).requestPermission?.({ mode: 'readwrite' });
     if (perm === 'granted') return handle;
   } catch (err) {
     console.warn('[Backup] Permissão negada para pasta:', err);
@@ -148,11 +160,11 @@ export async function salvarBackupArquivo(json: string, nomeArquivo: string, dir
     try {
       if (!dirHandle) {
         // Se não veio pré-autorizado, tenta pedir permissão (pode falhar fora de user gesture)
-        const perm = await (handle as any).requestPermission({ mode: 'readwrite' });
+        const perm = await (handle as DirectoryHandleWithPermission).requestPermission?.({ mode: 'readwrite' });
         if (perm !== 'granted') throw new Error('Permissão negada');
       }
       const fileHandle = await handle.getFileHandle(nomeArquivo, { create: true });
-      const writable = await (fileHandle as any).createWritable();
+      const writable = await (fileHandle as FileHandleWithWritable).createWritable();
       await writable.write(json);
       await writable.close();
       return true;
@@ -351,3 +363,4 @@ export async function restaurarBackup(
 
   onProgress?.('Backup restaurado com sucesso!');
 }
+

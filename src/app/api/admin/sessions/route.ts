@@ -4,6 +4,30 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
 
+type UsuarioResumo = {
+  id: string;
+  nome: string | null;
+  email: string | null;
+};
+
+type SessaoAtiva = {
+  user_id: string;
+  criado_em: string;
+  atualizado_em: string;
+  user_agent?: string | null;
+  ip?: string | null;
+};
+
+type SessaoAtivaResponse = {
+  userId: string;
+  nome: string;
+  email: string;
+  criadoEm: string;
+  atualizadoEm: string;
+  userAgent: string;
+  ip: string;
+};
+
 function getBearerToken(req: Request): string | null {
   const header = req.headers.get('authorization') || req.headers.get('Authorization');
   if (!header) return null;
@@ -44,18 +68,18 @@ export async function GET(req: Request) {
 
   // Buscar nomes dos usuários
   const { data: usuarios } = await admin.from('usuarios').select('id, nome, email');
-  const userMap = new Map((usuarios ?? []).map((u: any) => [u.id, u]));
+  const userMap = new Map((usuarios ?? []).map((u) => [u.id, u as UsuarioResumo]));
 
   const hiddenUserIds = new Set([process.env.GHOST_USER_ID, process.env.DEVELOPER_USER_ID].filter(Boolean) as string[]);
 
   // Deduplicar por userId — manter apenas a sessão mais recente por usuário
   const seenUsers = new Set<string>();
-  const resultado: any[] = [];
-  for (const s of sessoes ?? []) {
+  const resultado: SessaoAtivaResponse[] = [];
+  for (const s of (sessoes ?? []) as SessaoAtiva[]) {
     if (hiddenUserIds.has(s.user_id)) continue;
     if (seenUsers.has(s.user_id)) continue;
     seenUsers.add(s.user_id);
-    const u = userMap.get(s.user_id) as any;
+    const u = userMap.get(s.user_id);
     resultado.push({
       userId: s.user_id,
       nome: u?.nome ?? 'Desconhecido',
