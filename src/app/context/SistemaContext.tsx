@@ -2,15 +2,11 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type {
-  Departamento,
   DocumentoEmpresa,
   Empresa,
-  LixeiraItem,
   LogEntry,
   Notificacao,
-  Observacao,
   RetItem,
-  Servico,
   SistemaState,
   Usuario,
   UUID,
@@ -334,7 +330,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
           ? [me, ...usuarios]
           : usuarios;
 
-      setState((prev) => ({
+      setState({
         empresas,
         usuarios: usuariosComMe,
         departamentos,
@@ -343,7 +339,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         lixeira,
         notificacoes: notifsFiltradas,
         currentUserId: userId,
-      }));
+      });
       return me;
     },
     []
@@ -689,7 +685,8 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         departamentos: prev.departamentos.filter((d) => d.id !== id),
         usuarios: prev.usuarios.map((u) => (u.departamentoId === id ? { ...u, departamentoId: null } : u)),
         empresas: prev.empresas.map((e) => {
-          const { [id]: _, ...rest } = e.responsaveis;
+          const rest = { ...e.responsaveis };
+          delete rest[id];
           return { ...e, responsaveis: rest };
         }),
       }));

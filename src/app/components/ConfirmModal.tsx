@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Trash2, RotateCcw, Info, HelpCircle, X } from 'lucide-react';
+import { AlertTriangle, Trash2, RotateCcw, HelpCircle, X } from 'lucide-react';
 
 export type ConfirmVariant = 'danger' | 'warning' | 'info' | 'restore';
 

@@ -159,7 +159,6 @@ export default function ModalImportarResponsabilidadesFiscal({ onClose }: ModalI
     criarUsuario,
     atualizarEmpresa,
     mostrarAlerta,
-    canManage,
   } = useSistema();
 
   const [blocks, setBlocks] = useState<PersonBlock[]>([]);

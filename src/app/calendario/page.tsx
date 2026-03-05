@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, CalendarDays, FileText, CalendarClock, Clock, AlertTriangle, CheckCircle2, XCircle, Eye } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarDays, Clock, AlertTriangle, CheckCircle2, XCircle, Eye } from 'lucide-react';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import type { Empresa } from '@/app/types';
 import { useSistema } from '@/app/context/SistemaContext';
-import { formatBR, parseISODate, daysUntil } from '@/app/utils/date';
+import { formatBR, daysUntil } from '@/app/utils/date';
 
 type EventItem = {
   date: string;
@@ -18,10 +18,6 @@ type EventItem = {
 
 function startOfMonth(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), 1);
-}
-
-function endOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0);
 }
 
 function toISODate(d: Date): string {
@@ -41,7 +37,6 @@ export default function CalendarioPage() {
   const { monthLabel, gridDays, byDate, monthEventCount } = useMemo(() => {
     const base = new Date(cursor);
     const first = startOfMonth(base);
-    const last = endOfMonth(base);
 
     const events: EventItem[] = [];
     for (const e of empresas) {

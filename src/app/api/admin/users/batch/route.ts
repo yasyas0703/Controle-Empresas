@@ -145,7 +145,7 @@ export async function POST(req: Request) {
 
     // Se conseguiu um userId (criado ou existente), garantir perfil na tabela usuarios
     if (userId) {
-      const { data: profile, error: profileError } = await admin
+      const { error: profileError } = await admin
         .from('usuarios')
         .upsert(
           {

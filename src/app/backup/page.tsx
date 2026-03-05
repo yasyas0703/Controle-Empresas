@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Download, Upload, Loader2, CheckCircle, AlertTriangle, Clock, Timer, Info, FolderOpen, X } from 'lucide-react';
+import { Download, Upload, Loader2, CheckCircle, AlertTriangle, Clock, Timer, FolderOpen, X } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { exportarBackup, restaurarBackup, validarBackup, type BackupData, getAutoBackupSettings, setAutoBackupSettings, calcProximoBackup, getUltimoBackupDate, type AutoBackupSettings, salvarBackupArquivo, escolherPastaBackup, getNomePastaSalva, limparDirHandle, prepararDirHandle } from '@/lib/backup';
 
