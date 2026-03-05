@@ -193,6 +193,17 @@ alter table if exists documentos
 alter table if exists documentos
   add column if not exists historico_vencimento jsonb not null default '[]'::jsonb;
 
+-- Colunas de controle de visibilidade dos documentos
+alter table if exists documentos
+  add column if not exists visibilidade text not null default 'publico'
+    check (visibilidade in ('publico', 'departamento', 'confidencial', 'usuarios'));
+
+alter table if exists documentos
+  add column if not exists criado_por_id uuid references usuarios(id) on delete set null;
+
+alter table if exists documentos
+  add column if not exists usuarios_permitidos uuid[] not null default '{}';
+
 alter table if exists logs
   add column if not exists deleted_em timestamptz;
 

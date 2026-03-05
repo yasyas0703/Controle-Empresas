@@ -447,7 +447,7 @@ export default function ModalDetalhesEmpresa({
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <FileText size={16} className="text-orange-500 shrink-0" />
-                            <div className="font-bold text-gray-900 truncate">{d.nome}</div>
+                            <div className="font-bold text-gray-900">{d.nome}</div>
                             <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${visBadge.cls}`}>
                               {visBadge.icon} {visBadge.label}
                             </span>
@@ -754,7 +754,7 @@ export default function ModalDetalhesEmpresa({
                                   setEditingDocId(null);
                                   setEditDocFile(null);
                                 }}
-                                disabled={!editDocNome.trim() || (editDocVis === 'departamento' && editDocDepts.length === 0) || (editDocVis === 'usuarios' && editDocUsers.length === 0)}
+                                disabled={!editDocNome.trim() || (editDocVis === 'usuarios' && editDocUsers.length === 0)}
                                 className="rounded-lg bg-blue-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 Salvar
