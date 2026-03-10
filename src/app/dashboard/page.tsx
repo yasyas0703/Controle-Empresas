@@ -517,7 +517,6 @@ export default function DashboardPage() {
             <div className="text-lg font-bold text-gray-800">Filtros de Empresas</div>
             <select value={sortBy} onChange={(e) => setSortBy(e.target.value as 'alpha' | 'vencidos' | 'proximo' | 'recente')} className="rounded-lg bg-teal-50 px-3 py-1.5 text-sm text-gray-900 font-medium focus:ring-2 focus:ring-cyan-400 border border-teal-200">
               <option value="alpha">Ordenar por</option>
-              <option value="vencidos">Mais vencidos</option>
               <option value="proximo">Mais próximo</option>
               <option value="recente">Mais recente</option>
             </select>
