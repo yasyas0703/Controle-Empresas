@@ -10,6 +10,8 @@ import type {
   Observacao,
   RetItem,
   Servico,
+  Tag,
+  TagCor,
   Usuario,
   UUID,
 } from '@/app/types';
@@ -58,6 +60,7 @@ type EmpresaRow = {
   tipo_estabelecimento: Empresa['tipoEstabelecimento'] | null;
   tipo_inscricao: Empresa['tipoInscricao'] | null;
   servicos: string[] | null;
+  tags: string[] | null;
   possui_ret: boolean;
   inscricao_estadual: string | null;
   inscricao_municipal: string | null;
@@ -83,6 +86,8 @@ type RetRow = {
   nome: string;
   vencimento: string;
   ultima_renovacao: string;
+  ativo: boolean;
+  portaria: string | null;
   tag_vencimento: string | null;
   historico_vencimento: HistoricoVencimentoItem[] | null;
 };
@@ -192,6 +197,8 @@ function buildRetRow(empresaId: UUID, ret: RetItem, includeTracking = true): Rec
     nome: ret.nome,
     vencimento: ret.vencimento,
     ultima_renovacao: ret.ultimaRenovacao || null,
+    ativo: ret.ativo !== false,
+    portaria: ret.portaria || null,
   };
 
   if (includeTracking) {
@@ -497,6 +504,51 @@ export async function deleteServico(id: UUID, servicoNome: string) {
   if (error) throw error;
 }
 
+// ─── Tags ────────────────────────────────────────────────────
+
+export async function fetchTags(): Promise<Tag[]> {
+  const { data, error } = await supabase.from('tags').select('*').order('criado_em', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((t) => ({
+    id: t.id,
+    nome: t.nome,
+    cor: (t.cor ?? 'slate') as TagCor,
+    criadoEm: toIso(t.criado_em),
+  }));
+}
+
+export async function insertTag(nome: string, cor: TagCor): Promise<Tag> {
+  const { data, error } = await supabase.from('tags').insert({ nome, cor }).select().single();
+  if (error) throw error;
+  return { id: data.id, nome: data.nome, cor: (data.cor ?? 'slate') as TagCor, criadoEm: toIso(data.criado_em) };
+}
+
+export async function updateTag(id: UUID, patch: { nome?: string; cor?: TagCor }) {
+  const row: Record<string, unknown> = {};
+  if (patch.nome !== undefined) row.nome = patch.nome;
+  if (patch.cor !== undefined) row.cor = patch.cor;
+  const { error } = await supabase.from('tags').update(row).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteTag(id: UUID, tagNome: string) {
+  // Remove from empresas that have this tag
+  const { data: empresasComTag } = await supabase
+    .from('empresas')
+    .select('id, tags')
+    .contains('tags', [tagNome]);
+
+  if (empresasComTag) {
+    for (const e of empresasComTag) {
+      const updated = (e.tags as string[]).filter((t: string) => t !== tagNome);
+      await supabase.from('empresas').update({ tags: updated }).eq('id', e.id);
+    }
+  }
+
+  const { error } = await supabase.from('tags').delete().eq('id', id);
+  if (error) throw error;
+}
+
 // ─── Empresas ───────────────────────────────────────────────
 
 /**
@@ -544,6 +596,8 @@ export async function fetchEmpresas(): Promise<Empresa[]> {
       nome: r.nome,
       vencimento: r.vencimento,
       ultimaRenovacao: r.ultima_renovacao,
+      ativo: r.ativo !== false,
+      portaria: r.portaria ?? '',
       tagVencimento: limparTagVencimento(r.tag_vencimento),
       historicoVencimento: normalizarHistoricoVencimento(r.historico_vencimento),
     });
@@ -595,6 +649,7 @@ export async function fetchEmpresas(): Promise<Empresa[]> {
     tipoEstabelecimento: e.tipo_estabelecimento ?? '',
     tipoInscricao: e.tipo_inscricao ?? '',
     servicos: e.servicos ?? [],
+    tags: e.tags ?? [],
     possuiRet: e.possui_ret,
     rets: retsMap.get(e.id) ?? [],
     inscricao_estadual: e.inscricao_estadual ?? undefined,
@@ -657,6 +712,7 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
         tipo_estabelecimento: payload.tipoEstabelecimento ?? '',
         tipo_inscricao: payload.tipoInscricao ?? '',
         servicos: payload.servicos ?? [],
+        tags: payload.tags ?? [],
         possui_ret: payload.possuiRet ?? false,
         inscricao_estadual: payload.inscricao_estadual || null,
         inscricao_municipal: payload.inscricao_municipal || null,
@@ -815,6 +871,7 @@ export async function updateEmpresa(id: UUID, patch: Partial<Empresa>) {
   if (patch.tipoEstabelecimento !== undefined) row.tipo_estabelecimento = patch.tipoEstabelecimento;
   if (patch.tipoInscricao !== undefined) row.tipo_inscricao = patch.tipoInscricao;
   if (patch.servicos !== undefined) row.servicos = patch.servicos;
+  if (patch.tags !== undefined) row.tags = patch.tags;
   if (patch.possuiRet !== undefined) row.possui_ret = patch.possuiRet;
   if (patch.inscricao_estadual !== undefined) row.inscricao_estadual = patch.inscricao_estadual || null;
   if (patch.inscricao_municipal !== undefined) row.inscricao_municipal = patch.inscricao_municipal || null;
@@ -1118,6 +1175,7 @@ export async function fetchLixeira(): Promise<LixeiraItem[]> {
     empresa: l.empresa_data as Empresa,
     documento: l.documento_data as DocumentoEmpresa | undefined,
     observacao: l.observacao_data as Observacao | undefined,
+    ret: l.ret_data as RetItem | undefined,
     empresaId: l.empresa_id ?? undefined,
     excluidoPorId: l.excluido_por_id,
     excluidoPorNome: l.excluido_por_nome,
@@ -1207,6 +1265,66 @@ export async function insertLixeiraObservacao(
     excluidoPorNome: data.excluido_por_nome,
     excluidoEm: toIso(data.excluido_em),
   };
+}
+
+export async function deleteRet(retId: UUID) {
+  const { error } = await supabase.from('rets').delete().eq('id', retId);
+  if (error) throw error;
+}
+
+export async function insertLixeiraRet(
+  ret: RetItem,
+  empresa: Empresa,
+  userId: UUID | null,
+  userName: string
+): Promise<LixeiraItem> {
+  const { data, error } = await supabase
+    .from('lixeira')
+    .insert({
+      tipo: 'ret',
+      empresa_data: empresa as unknown as Record<string, unknown>,
+      ret_data: ret as unknown as Record<string, unknown>,
+      empresa_id: empresa.id,
+      excluido_por_id: userId,
+      excluido_por_nome: userName,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return {
+    id: data.id,
+    tipo: 'ret',
+    empresa: data.empresa_data as Empresa,
+    ret: data.ret_data as RetItem,
+    empresaId: data.empresa_id,
+    excluidoPorId: data.excluido_por_id,
+    excluidoPorNome: data.excluido_por_nome,
+    excluidoEm: toIso(data.excluido_em),
+  };
+}
+
+export async function restoreRet(ret: RetItem, empresaId: UUID) {
+  // Verificar se o RET já existe
+  const { data: existing } = await supabase
+    .from('rets')
+    .select('id')
+    .eq('empresa_id', empresaId)
+    .eq('id', ret.id)
+    .limit(1);
+  if (existing && existing.length > 0) {
+    return;
+  }
+  let row = buildRetRow(empresaId, ret);
+  // Forçar o id original do RET
+  row.id = ret.id;
+  let { error } = await supabase.from('rets').insert(row);
+  if (error && hasMissingColumn(error, ['tag_vencimento', 'historico_vencimento'])) {
+    row = buildRetRow(empresaId, ret, false);
+    row.id = ret.id;
+    const retry = await supabase.from('rets').insert(row);
+    error = retry.error;
+  }
+  if (error) throw error;
 }
 
 export async function restoreDocumento(doc: DocumentoEmpresa, empresaId: UUID) {

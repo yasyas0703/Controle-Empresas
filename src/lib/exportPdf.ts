@@ -103,8 +103,6 @@ export function exportEmpresasPdf(
       ['Cidade', empresa.cidade || '—'],
       ['Endereço', [empresa.logradouro, empresa.numero, empresa.bairro].filter(Boolean).join(', ') || '—'],
       ['CEP', empresa.cep || '—'],
-      ['Telefone', empresa.telefone || '—'],
-      ['Email', empresa.email || '—'],
     ];
 
     doc.setFontSize(8);

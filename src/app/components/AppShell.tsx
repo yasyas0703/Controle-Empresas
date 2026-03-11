@@ -4,9 +4,9 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import React, { useMemo, useState, useEffect } from 'react';
-import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2 } from 'lucide-react';
+import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
-import { daysUntil } from '@/app/utils/date';
+import { daysUntil, isRetRenovado } from '@/app/utils/date';
 import AutoBackup from '@/app/components/AutoBackup';
 
 type NavItem = {
@@ -33,6 +33,7 @@ const nav: NavItem[] = [
   { href: '/dev', label: 'Controle', icon: Terminal, ghostOnly: true },
   { href: '/empresas', label: 'Empresas', icon: Building2 },
   { href: '/servicos', label: 'Serviços', icon: Briefcase },
+  { href: '/tags', label: 'Tags', icon: Tag },
   { href: '/usuarios', label: 'Usuários', icon: Users },
   { href: '/departamentos', label: 'Departamentos', icon: Layers },
   { href: '/analises', label: 'Análises', icon: BarChart3 },
@@ -69,7 +70,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       fetch('/api/admin/manutencao')
         .then((r) => r.json())
         .then((d) => setManutencao(!!d.ativo))
-        .catch(() => {});
+        .catch(() => { });
     };
     check();
     const interval = setInterval(check, 5000);
@@ -107,6 +108,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         if (dias !== null && dias < 0) count++;
       }
       for (const r of e.rets) {
+        if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) continue;
         const dias = daysUntil(r.vencimento);
         if (dias !== null && dias < 0) count++;
       }
@@ -235,7 +237,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const navItems = nav.filter((i) => {
     if (i.ghostOnly) return isGhost;
     if (i.href === '/usuarios' || i.href === '/backup' || i.href === '/historico') return canAdmin;
-    if (['/departamentos', '/servicos', '/lixeira'].includes(i.href)) return canManage;
+    if (['/departamentos', '/servicos', '/tags', '/lixeira'].includes(i.href)) return canManage;
     return true;
   });
 
@@ -334,9 +336,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
       <aside
-        className={`fixed top-0 left-0 h-full z-[70] bg-white border-r border-gray-200 shadow-lg flex flex-col transition-transform duration-300 ease-in-out w-72 md:hidden ${
-          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed top-0 left-0 h-full z-[70] bg-white border-r border-gray-200 shadow-lg flex flex-col transition-transform duration-300 ease-in-out w-72 md:hidden ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
         <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100">
           <Link href="/dashboard" className="flex items-center gap-3" onClick={() => setMobileMenuOpen(false)}>
@@ -397,9 +398,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   ? <Shield size={13} className="text-amber-500 shrink-0" />
                   : <User size={13} className="text-gray-400 shrink-0" />}
               <span className="text-xs font-semibold text-gray-700 truncate flex-1">{currentUser.nome}</span>
-              <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase leading-none shrink-0 ${
-                canAdmin ? 'bg-red-100 text-red-700' : canManage ? 'bg-amber-100 text-amber-700' : 'bg-cyan-100 text-cyan-700'
-              }`}>
+              <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase leading-none shrink-0 ${canAdmin ? 'bg-red-100 text-red-700' : canManage ? 'bg-amber-100 text-amber-700' : 'bg-cyan-100 text-cyan-700'
+                }`}>
                 {currentUser.role === 'admin' ? 'Admin' : currentUser.role === 'gerente' ? 'Gerente' : 'User'}
               </span>
             </div>
@@ -426,9 +426,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* ── Desktop Sidebar ── */}
       <aside
-        className={`fixed top-0 left-0 h-full z-40 bg-white border-r border-gray-200 shadow-lg flex-col transition-all duration-200 ease-in-out hidden md:flex ${
-          sidebarOpen ? 'w-64' : 'w-[72px]'
-        }`}
+        className={`fixed top-0 left-0 h-full z-40 bg-white border-r border-gray-200 shadow-lg flex-col transition-all duration-200 ease-in-out hidden md:flex ${sidebarOpen ? 'w-64' : 'w-[72px]'
+          }`}
       >
         {/* Logo + Nome */}
         <div className={`flex items-center border-b border-gray-100 py-5 ${sidebarOpen ? 'px-4 gap-4' : 'justify-center px-0'}`}>
@@ -492,9 +491,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   ? <Shield size={13} className="text-amber-500 shrink-0" />
                   : <User size={13} className="text-gray-400 shrink-0" />}
               <span className="text-xs font-semibold text-gray-700 truncate flex-1">{currentUser.nome}</span>
-              <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase leading-none shrink-0 ${
-                canAdmin ? 'bg-red-100 text-red-700' : canManage ? 'bg-amber-100 text-amber-700' : 'bg-cyan-100 text-cyan-700'
-              }`}>
+              <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase leading-none shrink-0 ${canAdmin ? 'bg-red-100 text-red-700' : canManage ? 'bg-amber-100 text-amber-700' : 'bg-cyan-100 text-cyan-700'
+                }`}>
                 {currentUser.role === 'admin' ? 'Admin' : currentUser.role === 'gerente' ? 'Gerente' : 'User'}
               </span>
             </div>

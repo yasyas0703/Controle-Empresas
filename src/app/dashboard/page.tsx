@@ -3,7 +3,7 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { AlertTriangle, CalendarClock, FileText, Building2, Clock, Search, MapPin, Briefcase, Eye, Pencil, Trash2, CheckSquare, Square, FileDown, X, Tag, History } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
-import { daysUntil, formatBR } from '@/app/utils/date';
+import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
 import { detectTipoEstabelecimento, detectTipoInscricao, formatarDocumento, getTipoInscricaoDisplay } from '@/app/utils/validation';
 import type { Empresa, UUID, Limiares, HistoricoVencimentoItem } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
@@ -65,7 +65,7 @@ const DASHBOARD_TAG_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full b
 const DASHBOARD_HISTORY_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-500 px-2.5 py-1 text-[10px] font-black text-white shadow-sm';
 
 export default function DashboardPage() {
-  const { empresas, usuarios, departamentos, currentUserId, canManage, removerEmpresa, atualizarEmpresa, atualizarDocumento, mostrarAlerta } = useSistema();
+  const { empresas, usuarios, departamentos, tags: tagsCadastradas, currentUserId, canManage, removerEmpresa, atualizarEmpresa, atualizarDocumento, mostrarAlerta } = useSistema();
 
   const [limiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
 
@@ -76,6 +76,7 @@ export default function DashboardPage() {
   const [tipoDocumento, setTipoDocumento] = useState('');
   const [regimeFederal, setRegimeFederal] = useState('');
   const [servico, setServico] = useState('');
+  const [tagFiltro, setTagFiltro] = useState('');
   const [estado, setEstado] = useState('');
   const [statusVenc, setStatusVenc] = useState('');
   const [sortBy, setSortBy] = useState<'alpha' | 'vencidos' | 'proximo' | 'recente'>('alpha');
@@ -178,6 +179,12 @@ export default function DashboardPage() {
     return sortStringsPtBr(Array.from(set));
   }, [empresas]);
 
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of empresas) for (const t of e.tags || []) set.add(t);
+    return sortStringsPtBr(Array.from(set));
+  }, [empresas]);
+
   const allEstados = useMemo(() => {
     const set = new Set<string>();
     for (const e of empresas) if (e.estado) set.add(e.estado);
@@ -206,6 +213,7 @@ export default function DashboardPage() {
         if (regimeFederal && (e.regime_federal || '') !== regimeFederal) return false;
         if (estado && (e.estado || '') !== estado) return false;
         if (servico && !(e.servicos || []).includes(servico)) return false;
+        if (tagFiltro && !(e.tags || []).includes(tagFiltro)) return false;
         if (depId) {
           const resp = (e.responsaveis || {})[depId];
           if (!resp) return false;
@@ -215,28 +223,29 @@ export default function DashboardPage() {
           if (!anyResp) return false;
         }
         if (statusVenc) {
-          const allItems = [
-            ...e.documentos.map((d) => d.validade),
-            ...e.rets.map((r) => r.vencimento),
-          ];
+          const docItems = e.documentos.map((d) => d.validade);
+          const retItems = e.rets.filter((r) => !isRetRenovado(r.vencimento, r.ultimaRenovacao)).map((r) => r.vencimento);
+          const allItems = [...docItems, ...retItems];
           const temVencido = allItems.some((v) => { const d = daysUntil(v); return d !== null && d < 0; });
           const temRisco = allItems.some((v) => { const d = daysUntil(v); return d !== null && d >= 0 && d <= limiares.atencao; });
+          const temRenovado = e.rets.some((r) => isRetRenovado(r.vencimento, r.ultimaRenovacao));
           if (statusVenc === 'vencidos' && !temVencido) return false;
           if (statusVenc === 'risco' && !temRisco) return false;
           if (statusVenc === 'emdia' && (temVencido || temRisco)) return false;
+          if (statusVenc === 'renovados' && !temRenovado) return false;
         }
         return true;
       })
       .sort((a, b) => {
         if (sortBy === 'vencidos') {
-          const countV = (e: Empresa) => [...e.documentos.map((d) => d.validade), ...e.rets.map((r) => r.vencimento)]
+          const countV = (e: Empresa) => [...e.documentos.map((d) => d.validade), ...e.rets.filter((r) => !isRetRenovado(r.vencimento, r.ultimaRenovacao)).map((r) => r.vencimento)]
             .filter((v) => { const d = daysUntil(v); return d !== null && d < 0; }).length;
           return countV(b) - countV(a);
         }
         if (sortBy === 'proximo') {
           const nearest = (e: Empresa) => {
             let min: number | null = null;
-            for (const v of [...e.documentos.map((d) => d.validade), ...e.rets.map((r) => r.vencimento)]) {
+            for (const v of [...e.documentos.map((d) => d.validade), ...e.rets.filter((r) => !isRetRenovado(r.vencimento, r.ultimaRenovacao)).map((r) => r.vencimento)]) {
               const d = daysUntil(v);
               if (d !== null && (min === null || d < min)) min = d;
             }
@@ -249,7 +258,7 @@ export default function DashboardPage() {
         }
         return comparePtBr(a.razao_social || a.apelido || '', b.razao_social || b.apelido || '');
       });
-  }, [empresas, search, depId, responsavelId, tipoEstabelecimento, tipoDocumento, regimeFederal, servico, estado, statusVenc, sortBy, limiares]);
+  }, [empresas, search, depId, responsavelId, tipoEstabelecimento, tipoDocumento, regimeFederal, servico, tagFiltro, estado, statusVenc, sortBy, limiares]);
 
   const riskItems = useMemo(() => {
     const risk: DashboardRiskItem[] = [];
@@ -273,7 +282,8 @@ export default function DashboardPage() {
       }
       for (const r of e.rets) {
         const dias = daysUntil(r.vencimento);
-        if (dias !== null && dias <= limiares.proximo) {
+        const renovado = isRetRenovado(r.vencimento, r.ultimaRenovacao);
+        if (dias !== null && dias <= limiares.proximo && !renovado) {
           risk.push({
             empresaId: e.id,
             itemId: r.id,
@@ -318,7 +328,7 @@ export default function DashboardPage() {
     emRisco: criticos.length + atencao.length + proximo.length,
   }), [filteredEmpresas, vencidos, criticos, atencao, proximo]);
 
-  const hasFilters = search || depId || responsavelId || tipoEstabelecimento || tipoDocumento || regimeFederal || servico || estado || statusVenc;
+  const hasFilters = search || depId || responsavelId || tipoEstabelecimento || tipoDocumento || regimeFederal || servico || tagFiltro || estado || statusVenc;
 
   const getDepName = (dId: string) => departamentos.find(d => d.id === dId)?.nome ?? '';
   const getDepIndex = (dId: string) => departamentos.findIndex(d => d.id === dId);
@@ -524,7 +534,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             {hasFilters && (
               <button
-                onClick={() => { setSearch(''); setDepId(''); setResponsavelId(''); setTipoEstabelecimento(''); setTipoDocumento(''); setRegimeFederal(''); setServico(''); setEstado(''); setStatusVenc(''); setSortBy('alpha'); }}
+                onClick={() => { setSearch(''); setDepId(''); setResponsavelId(''); setTipoEstabelecimento(''); setTipoDocumento(''); setRegimeFederal(''); setServico(''); setTagFiltro(''); setEstado(''); setStatusVenc(''); setSortBy('alpha'); }}
                 className="text-xs text-teal-600 hover:text-teal-700 font-bold"
               >
                 Limpar filtros
@@ -581,6 +591,12 @@ export default function DashboardPage() {
             <option value="">Serviço</option>
             {allServicos.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
+          {allTags.length > 0 && (
+            <select value={tagFiltro} onChange={(e) => setTagFiltro(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-violet-400">
+              <option value="">Tag</option>
+              {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
           <select value={estado} onChange={(e) => setEstado(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
             <option value="">Estado</option>
             {allEstados.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
@@ -590,6 +606,7 @@ export default function DashboardPage() {
             <option value="emdia">Em dia</option>
             <option value="risco">Em risco</option>
             <option value="vencidos">Tem vencidos</option>
+            <option value="renovados">Renovados</option>
           </select>
         </div>
       </div>
@@ -601,10 +618,11 @@ export default function DashboardPage() {
           const itensDashboard = riskItemsByEmpresa.get(e.id) ?? [];
           const docsRisco = e.documentos.filter((d) => { const dias = daysUntil(d.validade); return dias !== null && dias >= 0 && dias <= limiares.atencao; }).length;
           const docsVencidos = e.documentos.filter((d) => { const dias = daysUntil(d.validade); return dias !== null && dias < 0; }).length;
-          const retsRisco = e.rets.filter((r) => { const dias = daysUntil(r.vencimento); return dias !== null && dias >= 0 && dias <= limiares.atencao; }).length;
-          const retsVencidos = e.rets.filter((r) => { const dias = daysUntil(r.vencimento); return dias !== null && dias < 0; }).length;
+          const retsRisco = e.rets.filter((r) => { if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) return false; const dias = daysUntil(r.vencimento); return dias !== null && dias >= 0 && dias <= limiares.atencao; }).length;
+          const retsVencidos = e.rets.filter((r) => { if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) return false; const dias = daysUntil(r.vencimento); return dias !== null && dias < 0; }).length;
           const totalRisco = docsRisco + retsRisco;
           const totalVencidos = docsVencidos + retsVencidos;
+          const totalRenovados = e.rets.filter((r) => isRetRenovado(r.vencimento, r.ultimaRenovacao)).length;
           const proximoVencDias = (() => {
             let min: number | null = null;
             for (const d of e.documentos) {
@@ -673,6 +691,26 @@ export default function DashboardPage() {
                         <AlertTriangle size={10} /> {totalVencidos} VENCIDO(S)
                       </span>
                     )}
+                    {totalRenovados > 0 && (
+                      <span className="rounded-md bg-blue-600 text-white px-2 py-0.5 text-[10px] font-black flex items-center gap-1">
+                        {totalRenovados} RENOVADO(S)
+                      </span>
+                    )}
+                    {(e.tags || []).map((tagNome) => {
+                      const tagObj = tagsCadastradas.find((t) => t.nome === tagNome);
+                      const cor = tagObj?.cor ?? 'slate';
+                      const colorMap: Record<string, string> = {
+                        red: 'bg-red-100 text-red-700', orange: 'bg-orange-100 text-orange-700', amber: 'bg-amber-100 text-amber-700',
+                        green: 'bg-green-100 text-green-700', emerald: 'bg-emerald-100 text-emerald-700', cyan: 'bg-cyan-100 text-cyan-700',
+                        blue: 'bg-blue-100 text-blue-700', violet: 'bg-violet-100 text-violet-700', purple: 'bg-purple-100 text-purple-700',
+                        pink: 'bg-pink-100 text-pink-700', rose: 'bg-rose-100 text-rose-700', slate: 'bg-slate-100 text-slate-700',
+                      };
+                      return (
+                        <span key={tagNome} className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${colorMap[cor] ?? colorMap.slate}`}>
+                          {tagNome}
+                        </span>
+                      );
+                    })}
                     {totalRisco > 0 && (
                       <span className="rounded-md bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px] font-bold flex items-center gap-1">
                         <Clock size={10} /> {totalRisco} em risco

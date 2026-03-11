@@ -124,6 +124,7 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
     naoEncontradas: number;
     usuariosCriados: string[];
     departamentoNome: string;
+    limpeza?: number;
   } | null>(null);
 
   const departamentoSelecionado = useMemo(
@@ -290,17 +291,46 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
         });
       }
 
+      // ── LIMPEZA: remover responsável do departamento de empresas que NÃO estão na planilha ──
+      const codigosNaPlanilha = new Set(matches.map((m) => m.codigo.trim()));
+      let limpezaCount = 0;
+
+      for (const empresa of empresas) {
+        if (abortRef.current) break;
+        if (codigosNaPlanilha.has(empresa.codigo)) continue;
+
+        const responsavelAtual = (empresa.responsaveis || {})[departamentoSelecionado.id];
+        if (!responsavelAtual) continue; // já sem responsável nesse dept
+
+        try {
+          await atualizarEmpresa(empresa.id, {
+            responsaveis: { [departamentoSelecionado.id]: null },
+          });
+          limpezaCount++;
+        } catch (err) {
+          console.error(`[IMPORT-DEP] Erro ao limpar responsável de ${empresa.codigo}:`, err);
+        }
+      }
+
+      if (limpezaCount > 0) {
+        console.log(`[IMPORT-DEP] Limpeza: ${limpezaCount} empresa(s) tiveram responsável de ${departamentoSelecionado.nome} removido.`);
+      }
+
       setResult({
         atualizadas,
         naoEncontradas: naoEncontradasCount,
         usuariosCriados,
         departamentoNome: departamentoSelecionado.nome,
+        limpeza: limpezaCount,
       });
 
-      if (atualizadas > 0) {
+      if (atualizadas > 0 || limpezaCount > 0) {
+        const parts: string[] = [];
+        if (atualizadas > 0) parts.push(`${atualizadas} empresa(s) tiveram o responsável de ${departamentoSelecionado.nome} atualizado`);
+        if (limpezaCount > 0) parts.push(`${limpezaCount} empresa(s) tiveram o responsável de ${departamentoSelecionado.nome} removido (não estavam na planilha)`);
         mostrarAlerta(
           'Responsabilidades atualizadas',
-          `${atualizadas} empresa(s) tiveram o responsavel de ${departamentoSelecionado.nome} atualizado.${abortRef.current ? ' (interrompido)' : ''}`,
+          `${parts.join('. ')}.${abortRef.current ? ' (interrompido)' : ''}`,
           'sucesso'
         );
       }
@@ -546,6 +576,7 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
             <div className="text-sm text-green-700 mt-2">
               {result.atualizadas} empresa(s) com responsavel atualizado em <strong>{result.departamentoNome}</strong>
               {result.naoEncontradas > 0 && ` | ${result.naoEncontradas} ignorada(s)`}
+              {(result.limpeza ?? 0) > 0 && ` | ${result.limpeza} empresa(s) com responsável removido (saíram da planilha)`}
             </div>
             {result.usuariosCriados.length > 0 && (
               <div className="text-sm text-green-700 mt-1">

@@ -274,7 +274,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
   const [fileName, setFileName] = useState('');
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState({ done: 0, total: 0, phase: '' });
-  const [result, setResult] = useState<{ created: number; updated: number; skipped: number; errors: number; deptCreated: string[] } | null>(null);
+  const [result, setResult] = useState<{ created: number; updated: number; skipped: number; errors: number; deptCreated: string[]; limpeza?: number } | null>(null);
 
   const existingCodigos = new Set(empresas.map((e) => e.codigo));
   const empresaByCodigo = new Map(empresas.map((e) => [e.codigo, e]));
@@ -693,6 +693,61 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
       if (i < existingRows.length - 1) await new Promise((r) => setTimeout(r, 200));
     }
 
+    // ── LIMPEZA: remover responsáveis de empresas que NÃO estão mais na planilha ──
+    // Para cada departamento presente na planilha, verificar quais empresas do sistema
+    // possuem responsável nesse departamento mas não aparecem na planilha importada.
+    // Essas empresas não solicitam mais o serviço, então o responsável deve ser removido.
+    setImportProgress((prev) => ({ ...prev, phase: 'Verificando empresas removidas da planilha...' }));
+
+    const codigosNaPlanilha = new Set(parsed.map((r) => r.codigo));
+    const deptNamesNaPlanilha = new Set(
+      Array.from(allDeptNames).map((n) => norm(n))
+    );
+    let limpezaCount = 0;
+
+    for (const empresa of empresas) {
+      // Se a empresa está na planilha, ela já foi atualizada acima
+      if (codigosNaPlanilha.has(empresa.codigo)) continue;
+
+      // Verificar se a empresa tem algum responsável nos departamentos da planilha
+      const responsaveisParaLimpar: Record<string, null> = {};
+      let precisaLimpar = false;
+
+      for (const [deptId, userId] of Object.entries(empresa.responsaveis || {})) {
+        if (!userId) continue; // já está sem responsável
+
+        // Encontrar o nome do departamento pelo ID
+        const dept = departamentos.find((d) => d.id === deptId);
+        if (!dept) continue;
+
+        const deptKey = norm(dept.nome);
+        // Se esse departamento está na planilha e a empresa NÃO está, limpar
+        if (deptNamesNaPlanilha.has(deptKey)) {
+          responsaveisParaLimpar[deptId] = null;
+          precisaLimpar = true;
+        }
+      }
+
+      if (precisaLimpar) {
+        try {
+          await withRetry(
+            () => db.updateEmpresa(empresa.id, { responsaveis: responsaveisParaLimpar }),
+            `Limpar responsáveis de ${empresa.codigo}`
+          );
+          limpezaCount++;
+        } catch (err) {
+          console.error(`[IMPORT] Erro ao limpar responsáveis de ${empresa.codigo}:`, err);
+        }
+
+        // Delay entre operações
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+
+    if (limpezaCount > 0) {
+      console.log(`[IMPORT] Limpeza: ${limpezaCount} empresa(s) tiveram responsáveis removidos (não estavam mais na planilha).`);
+    }
+
     // ── RE-LINK PASS: re-vincular responsáveis que falharam na primeira passada ──
     // Após criar TODAS as empresas e usuários, faz uma segunda passada para garantir
     // que nenhuma empresa ficou sem responsáveis por timing/rate-limit.
@@ -797,7 +852,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
       console.error('[VERIFY] Erro na verificação pós-import:', verifyErr);
     }
 
-    setResult({ created, updated, skipped: parsed.length - created - updated, errors, deptCreated });
+    setResult({ created, updated, skipped: parsed.length - created - updated, errors, deptCreated, limpeza: limpezaCount });
     setImporting(false);
 
     const parts: string[] = [];
@@ -961,6 +1016,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
               {result.created > 0 && `${result.created} empresa(s) criada(s)`}
               {result.updated > 0 && `${result.created > 0 ? ' • ' : ''}${result.updated} empresa(s) atualizada(s)`}
               {result.skipped > 0 && ` • ${result.skipped} sem alterações`}
+              {(result.limpeza ?? 0) > 0 && ` • ${result.limpeza} empresa(s) com responsáveis removidos (saíram da planilha)`}
               {result.errors > 0 && <span className="text-red-600"> • {result.errors} erro(s)</span>}
             </div>
             {result.deptCreated.length > 0 && (

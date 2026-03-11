@@ -46,3 +46,16 @@ export function formatBR(dateStr?: string): string {
   if (!d) return '-';
   return d.toLocaleDateString('pt-BR');
 }
+
+/**
+ * Verifica se um RET foi renovado: a data de renovação é >= a data de vencimento.
+ * Quando renovado, o RET não deve ser considerado "vencido".
+ */
+export function isRetRenovado(vencimento?: string, ultimaRenovacao?: string): boolean {
+  const venc = parseISODate(vencimento);
+  const renov = parseISODate(ultimaRenovacao);
+  if (!venc || !renov) return false;
+  venc.setHours(0, 0, 0, 0);
+  renov.setHours(0, 0, 0, 0);
+  return renov.getTime() >= venc.getTime();
+}

@@ -77,10 +77,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   const admin = getSupabaseAdmin();
 
-  // Buscar role do alvo para checagens de permissão
+  // Buscar dados do alvo para checagens de permissão
   const { data: targetProfile } = await admin
     .from('usuarios')
-    .select('role')
+    .select('role, email')
     .eq('id', id)
     .maybeSingle();
 
@@ -116,12 +116,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     }
   }
 
-  // Update Auth email (if provided)
+  // Update Auth email apenas quando houver mudança real de email
   if (body.email !== undefined) {
     const nextEmail = String(body.email).trim();
     if (!nextEmail) return NextResponse.json({ error: 'email inválido' }, { status: 400 });
-    const { error } = await admin.auth.admin.updateUserById(id, { email: nextEmail, email_confirm: true });
-    if (error) return NextResponse.json({ error: 'Não foi possível alterar o email.' }, { status: 400 });
+    const currentEmail = String(targetProfile?.email ?? '').trim();
+    if (nextEmail.toLowerCase() !== currentEmail.toLowerCase()) {
+      const { error } = await admin.auth.admin.updateUserById(id, { email: nextEmail, email_confirm: true });
+      if (error) return NextResponse.json({ error: error.message || 'Não foi possível alterar o email.' }, { status: 400 });
+    }
   }
 
   const row: Record<string, unknown> = { atualizado_em: new Date().toISOString() };
