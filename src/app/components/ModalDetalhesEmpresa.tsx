@@ -6,7 +6,7 @@ import type { Empresa, DocumentoEmpresa, HistoricoVencimentoItem, UUID } from '@
 import ModalBase from '@/app/components/ModalBase';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { useSistema } from '@/app/context/SistemaContext';
-import { daysUntil, formatBR } from '@/app/utils/date';
+import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
 import ModalAdicionarDocumento from '@/app/components/ModalAdicionarDocumento';
 import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
@@ -77,7 +77,7 @@ export default function ModalDetalhesEmpresa({
   empresa: Empresa;
   onClose: () => void;
 }) {
-  const { adicionarDocumento, removerDocumento, atualizarDocumento, atualizarEmpresa, adicionarObservacao, removerObservacao, departamentos, usuarios, currentUser, canManage, empresas, currentUserId, mostrarAlerta } = useSistema();
+  const { adicionarDocumento, removerDocumento, atualizarDocumento, atualizarEmpresa, adicionarObservacao, removerObservacao, removerRet, departamentos, usuarios, tags: tagsCadastradas, currentUser, canManage, empresas, currentUserId, mostrarAlerta } = useSistema();
   // Sempre buscar a versão mais atualizada da empresa no contexto
   const empresa = empresas.find((e) => e.id === empresaProp.id) ?? empresaProp;
   const canEdit = canManage || (!!currentUserId && Object.values(empresa.responsaveis || {}).some((uid) => uid === currentUserId));
@@ -86,6 +86,7 @@ export default function ModalDetalhesEmpresa({
   const [obsTexto, setObsTexto] = useState('');
   const [confirmDeleteDocId, setConfirmDeleteDocId] = useState<string | null>(null);
   const [confirmDeleteObsId, setConfirmDeleteObsId] = useState<string | null>(null);
+  const [confirmDeleteRetId, setConfirmDeleteRetId] = useState<string | null>(null);
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
   const [editDocNome, setEditDocNome] = useState('');
@@ -289,6 +290,30 @@ export default function ModalDetalhesEmpresa({
                 <Info label="Tipo" value={empresa.tipoInscricao || '-'} />
                 <Info label="Serviços" value={empresa.servicos.length ? empresa.servicos.join(', ') : '-'} />
               </div>
+              {(empresa.tags || []).length > 0 && (
+                <div className="mt-4">
+                  <div className="text-xs font-semibold text-gray-500 mb-2">Tags</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {empresa.tags.map((tagNome) => {
+                      const tagObj = (tagsCadastradas || []).find((t) => t.nome === tagNome);
+                      const cor = tagObj?.cor ?? 'slate';
+                      const colorMap: Record<string, string> = {
+                        red: 'bg-red-100 text-red-700 border-red-300', orange: 'bg-orange-100 text-orange-700 border-orange-300',
+                        amber: 'bg-amber-100 text-amber-700 border-amber-300', green: 'bg-green-100 text-green-700 border-green-300',
+                        emerald: 'bg-emerald-100 text-emerald-700 border-emerald-300', cyan: 'bg-cyan-100 text-cyan-700 border-cyan-300',
+                        blue: 'bg-blue-100 text-blue-700 border-blue-300', violet: 'bg-violet-100 text-violet-700 border-violet-300',
+                        purple: 'bg-purple-100 text-purple-700 border-purple-300', pink: 'bg-pink-100 text-pink-700 border-pink-300',
+                        rose: 'bg-rose-100 text-rose-700 border-rose-300', slate: 'bg-slate-100 text-slate-700 border-slate-300',
+                      };
+                      return (
+                        <span key={tagNome} className={`rounded-full border px-3 py-1 text-xs font-bold ${colorMap[cor] ?? colorMap.slate}`}>
+                          {tagNome}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </Section>
 
             <Section title="Inscrições e Regimes" tone="blue">
@@ -362,15 +387,25 @@ export default function ModalDetalhesEmpresa({
                 <div className="space-y-3">
                   {empresa.rets.map((r) => {
                     const dias = daysUntil(r.vencimento);
-                    const vencido = dias !== null && dias < 0;
-                    const critico = dias !== null && !vencido && dias <= 60;
-                    const proximo = dias !== null && !vencido && !critico && dias <= 90;
+                    const renovado = isRetRenovado(r.vencimento, r.ultimaRenovacao);
+                    const vencido = dias !== null && dias < 0 && !renovado;
+                    const critico = dias !== null && !vencido && !renovado && dias <= 60;
+                    const proximo = dias !== null && !vencido && !critico && !renovado && dias <= 90;
+                    const retInativo = r.ativo === false;
                     return (
                       <div key={r.id} className={`rounded-xl border p-4 flex items-center justify-between gap-4 ${
+                        retInativo ? 'bg-red-50 border-red-300' :
                         vencido ? 'bg-red-50 border-red-200' : critico ? 'bg-amber-50 border-amber-200' : proximo ? 'bg-green-50 border-green-200' : 'bg-white'
                       }`}>
                         <div className="min-w-0">
-                          <div className="font-bold text-gray-900 break-words">{r.nome}</div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-gray-900 break-words">{r.nome}</span>
+                            <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                              retInativo ? 'bg-red-600 text-white' : 'bg-emerald-100 text-emerald-700'
+                            }`}>
+                              {retInativo ? 'Inativo' : 'Ativo'}
+                            </span>
+                          </div>
                           {(r.tagVencimento || (r.historicoVencimento?.length ?? 0) > 0) && (
                             <div className="mt-2 flex flex-wrap gap-1.5">
                               {r.tagVencimento && (
@@ -386,25 +421,36 @@ export default function ModalDetalhesEmpresa({
                             </div>
                           )}
                           <div className="text-sm text-gray-600">PTA: {r.numeroPta ? formatRetNumber(r.numeroPta) : '-'}</div>
+                          {r.portaria && <div className="text-sm text-gray-600">Portaria: {r.portaria}</div>}
                           <div className="text-sm text-gray-600">
                             Vencimento: <span className={
+                              renovado ? 'font-bold text-blue-600' :
                               vencido ? 'font-bold text-red-600' :
                               critico ? 'font-bold text-amber-600' :
                               proximo ? 'font-semibold text-green-600' :
                               'text-gray-900'
                             }>{formatBR(r.vencimento)}</span>
-                            {dias !== null ? ` • ${dias < 0 ? `${Math.abs(dias)}d atrás` : `${dias}d`}` : ''}
+                            {renovado ? ' • Renovado' : dias !== null ? ` • ${dias < 0 ? `${Math.abs(dias)}d atrás` : `${dias}d`}` : ''}
                           </div>
                           <div className="text-sm text-gray-600">Última renovação: {formatBR(r.ultimaRenovacao)}</div>
                         </div>
-                        <div className="shrink-0">
+                        <div className="shrink-0 flex flex-col gap-2">
                           <button
                             onClick={() => abrirHistorico('RET', r.id)}
                             className="rounded-xl border p-2 hover:bg-slate-50 transition"
-                            title="Historico do vencimento"
+                            title="Histórico do vencimento"
                           >
                             <History className="text-slate-600" size={18} />
                           </button>
+                          {canEdit && (
+                            <button
+                              onClick={() => setConfirmDeleteRetId(r.id)}
+                              className="rounded-xl border border-red-200 p-2 hover:bg-red-50 transition"
+                              title="Excluir RET"
+                            >
+                              <Trash2 className="text-red-500" size={18} />
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -921,6 +967,16 @@ export default function ModalDetalhesEmpresa({
         variant="danger"
         onConfirm={() => { if (confirmDeleteObsId) removerObservacao(empresa.id, confirmDeleteObsId); setConfirmDeleteObsId(null); }}
         onCancel={() => setConfirmDeleteObsId(null)}
+      />
+
+      <ConfirmModal
+        open={!!confirmDeleteRetId}
+        title="Excluir RET"
+        message="Tem certeza que deseja excluir este RET? Ele será movido para a lixeira e poderá ser restaurado depois."
+        confirmText="Excluir"
+        variant="danger"
+        onConfirm={() => { if (confirmDeleteRetId) removerRet(empresa.id, confirmDeleteRetId); setConfirmDeleteRetId(null); }}
+        onCancel={() => setConfirmDeleteRetId(null)}
       />
     </>
   );

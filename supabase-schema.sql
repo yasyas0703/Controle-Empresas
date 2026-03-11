@@ -30,6 +30,14 @@ create table servicos (
   criado_em timestamptz not null default now()
 );
 
+-- 3b. Tags
+create table tags (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null unique,
+  cor text not null default 'slate',
+  criado_em timestamptz not null default now()
+);
+
 -- 4. Empresas
 create table empresas (
   id uuid primary key default gen_random_uuid(),
@@ -42,6 +50,7 @@ create table empresas (
   tipo_estabelecimento text not null default '' check (tipo_estabelecimento in ('', 'matriz', 'filial')),
   tipo_inscricao text not null default '' check (tipo_inscricao in ('', 'CNPJ', 'CPF', 'MEI', 'CEI', 'CAEPF', 'CNO')),
   servicos text[] not null default '{}',
+  tags text[] not null default '{}',
   possui_ret boolean not null default false,
   inscricao_estadual text,
   inscricao_municipal text,
@@ -68,6 +77,8 @@ create table rets (
   nome text not null,
   vencimento date not null,
   ultima_renovacao date,
+  ativo boolean not null default true,
+  portaria varchar(20),
   tag_vencimento text,
   historico_vencimento jsonb not null default '[]'::jsonb
 );
@@ -121,13 +132,14 @@ create table logs (
   deleted_by_nome text
 );
 
--- 10. Lixeira (itens excluídos: empresas, documentos, observações)
+-- 10. Lixeira (itens excluídos: empresas, documentos, observações, rets)
 create table lixeira (
   id uuid primary key default gen_random_uuid(),
-  tipo text not null default 'empresa' check (tipo in ('empresa', 'documento', 'observacao')),
+  tipo text not null default 'empresa' check (tipo in ('empresa', 'documento', 'observacao', 'ret')),
   empresa_data jsonb not null,
   documento_data jsonb,
   observacao_data jsonb,
+  ret_data jsonb,
   empresa_id uuid,
   excluido_por_id uuid references usuarios(id) on delete set null,
   excluido_por_nome text not null,

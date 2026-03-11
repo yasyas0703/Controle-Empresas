@@ -6,15 +6,15 @@ import {
   FileText, CalendarClock, Filter, XCircle, Eye, User, Settings
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
-import { daysUntil, formatBR } from '@/app/utils/date';
+import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
 import type { HistoricoVencimentoItem, UUID, Limiares } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import ModalLimiares from '@/app/components/ModalLimiares';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
-import { sortByPtBr, sortResponsaveisByNome } from '@/lib/sort';
+import { sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
 
-type StatusVenc = 'vencido' | 'critico' | 'atencao' | 'proximo' | 'ok';
+type StatusVenc = 'vencido' | 'critico' | 'atencao' | 'proximo' | 'ok' | 'renovado';
 
 interface VencimentoItem {
   empresaId: UUID;
@@ -46,6 +46,7 @@ const statusConfig: Record<StatusVenc, { label: string; bg: string; text: string
   atencao: { label: 'ATENÇÃO', bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-400', border: 'border-amber-200' },
   proximo: { label: 'PRÓXIMO', bg: 'bg-green-50', text: 'text-green-700', dot: 'bg-green-500', border: 'border-green-200' },
   ok: { label: 'EM DIA', bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500', border: 'border-emerald-200' },
+  renovado: { label: 'RENOVADO', bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-500', border: 'border-blue-200' },
 };
 
 const DEPT_COLORS: Record<number, { bg: string; text: string; border: string }> = {
@@ -60,7 +61,7 @@ const DEPT_COLORS: Record<number, { bg: string; text: string; border: string }> 
 };
 
 export default function VencimentosPage() {
-  const { empresas, departamentos, usuarios, currentUserId, canManage, atualizarEmpresa, atualizarDocumento, mostrarAlerta } = useSistema();
+  const { empresas, departamentos, usuarios, currentUserId, canManage, atualizarEmpresa, atualizarDocumento, mostrarAlerta, tags: tagsCadastradas } = useSistema();
 
   const [limiares, setLimiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
   const [showLimiares, setShowLimiares] = useState(false);
@@ -70,6 +71,7 @@ export default function VencimentosPage() {
   const [filtroDep, setFiltroDep] = useState('');
   const [filtroResp, setFiltroResp] = useState('');
   const [filtroTipo, setFiltroTipo] = useState('');
+  const [filtroTag, setFiltroTag] = useState('');
   const [meusVencimentos, setMeusVencimentos] = useState(false);
   const [orderBy, setOrderBy] = useState<'dias' | 'empresa' | 'tipo'>('dias');
   const [orderDir, setOrderDir] = useState<'asc' | 'desc'>('asc');
@@ -111,6 +113,7 @@ export default function VencimentosPage() {
       for (const r of e.rets) {
         const dias = daysUntil(r.vencimento);
         if (dias === null) continue;
+        const renovado = isRetRenovado(r.vencimento, r.ultimaRenovacao);
         items.push({
           empresaId: e.id,
           itemId: r.id,
@@ -120,7 +123,7 @@ export default function VencimentosPage() {
           nome: r.nome,
           vencimento: r.vencimento,
           dias,
-          status: getStatus(dias, limiares),
+          status: renovado ? 'renovado' : getStatus(dias, limiares),
           tagVencimento: r.tagVencimento,
           historicoVencimento: r.historicoVencimento,
           responsaveis: e.responsaveis,
@@ -130,6 +133,12 @@ export default function VencimentosPage() {
     }
     return items;
   }, [empresas, limiares]);
+
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of empresas) for (const t of e.tags || []) set.add(t);
+    return sortStringsPtBr(Array.from(set));
+  }, [empresas]);
 
   // Filtered
   const filtered = useMemo(() => {
@@ -147,6 +156,8 @@ export default function VencimentosPage() {
           if (item.status !== 'atencao') return false;
         } else if (filtroStatus === 'proximo') {
           if (item.status !== 'proximo') return false;
+        } else if (filtroStatus === 'renovado') {
+          if (item.status !== 'renovado') return false;
         }
         // filtroStatus === 'todos' → show all
 
@@ -158,6 +169,12 @@ export default function VencimentosPage() {
 
         // Tipo
         if (filtroTipo && item.tipo !== filtroTipo) return false;
+
+        // Tag
+        if (filtroTag) {
+          const empresa = empresas.find((emp) => emp.id === item.empresaId);
+          if (!empresa || !(empresa.tags || []).includes(filtroTag)) return false;
+        }
 
         // Departamento & Responsável
         if (filtroDep) {
@@ -192,11 +209,11 @@ export default function VencimentosPage() {
         else if (orderBy === 'tipo') cmp = a.tipo.localeCompare(b.tipo);
         return orderDir === 'desc' ? -cmp : cmp;
       });
-  }, [allItems, search, filtroStatus, filtroDep, filtroResp, filtroTipo, meusVencimentos, currentUserId, orderBy, orderDir]);
+  }, [allItems, search, filtroStatus, filtroDep, filtroResp, filtroTipo, filtroTag, empresas, meusVencimentos, currentUserId, orderBy, orderDir]);
 
   // Counts
   const counts = useMemo(() => {
-    const c = { vencido: 0, critico: 0, atencao: 0, proximo: 0, ok: 0, total: allItems.length };
+    const c = { vencido: 0, critico: 0, atencao: 0, proximo: 0, ok: 0, renovado: 0, total: allItems.length };
     for (const item of allItems) c[item.status]++;
     return c;
   }, [allItems]);
@@ -227,7 +244,7 @@ export default function VencimentosPage() {
     return orderDir === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
   };
 
-  const hasFilters = search || filtroStatus !== 'todos-risco' || filtroDep || filtroResp || filtroTipo || meusVencimentos;
+  const hasFilters = search || filtroStatus !== 'todos-risco' || filtroDep || filtroResp || filtroTipo || filtroTag || meusVencimentos;
 
   const canEditHistoricoItem = (item: VencimentoItem | null) => {
     if (!item) return false;
@@ -418,12 +435,13 @@ export default function VencimentosPage() {
       </div>
 
       {/* Status Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-3 sm:gap-4">
         {[
           { key: 'vencido' as const, label: 'Vencidos', count: counts.vencido, dotColor: 'bg-red-500', textColor: 'text-red-700', ring: 'ring-red-400', activeBg: 'bg-red-50' },
           { key: 'critico' as const, label: `Críticos (≤${limiares.critico}d)`, count: counts.critico, dotColor: 'bg-orange-500', textColor: 'text-orange-700', ring: 'ring-orange-400', activeBg: 'bg-orange-50' },
           { key: 'atencao' as const, label: `Atenção (≤${limiares.atencao}d)`, count: counts.atencao, dotColor: 'bg-amber-400', textColor: 'text-amber-700', ring: 'ring-amber-400', activeBg: 'bg-amber-50' },
           { key: 'proximo' as const, label: `Próximo (≤${limiares.proximo}d)`, count: counts.proximo, dotColor: 'bg-green-500', textColor: 'text-green-700', ring: 'ring-green-400', activeBg: 'bg-green-50' },
+          { key: 'renovado' as const, label: 'Renovados', count: counts.renovado, dotColor: 'bg-blue-500', textColor: 'text-blue-700', ring: 'ring-blue-400', activeBg: 'bg-blue-50' },
           { key: 'todos' as const, label: 'Em Dia', count: counts.ok, dotColor: 'bg-emerald-500', textColor: 'text-emerald-700', ring: 'ring-emerald-400', activeBg: 'bg-emerald-50' },
           { key: 'todos-risco' as const, label: 'Total Geral', count: counts.total, dotColor: 'bg-gray-400', textColor: 'text-gray-700', ring: 'ring-gray-400', activeBg: 'bg-gray-50' },
         ].map((c) => (
@@ -452,7 +470,7 @@ export default function VencimentosPage() {
           </div>
           {hasFilters && (
             <button
-              onClick={() => { setSearch(''); setFiltroStatus('todos-risco'); setFiltroDep(''); setFiltroResp(''); setFiltroTipo(''); setMeusVencimentos(false); }}
+              onClick={() => { setSearch(''); setFiltroStatus('todos-risco'); setFiltroDep(''); setFiltroResp(''); setFiltroTipo(''); setFiltroTag(''); setMeusVencimentos(false); }}
               className="inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-bold"
             >
               <XCircle size={14} />
@@ -483,6 +501,12 @@ export default function VencimentosPage() {
             <option value="Documento">Documentos</option>
             <option value="RET">RETs</option>
           </select>
+          {allTags.length > 0 && (
+            <select value={filtroTag} onChange={(e) => setFiltroTag(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-violet-400">
+              <option value="">Tag</option>
+              {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
           <button
             onClick={() => setMeusVencimentos((v) => !v)}
             className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold border-2 transition ${
@@ -542,6 +566,7 @@ export default function VencimentosPage() {
                       item.status === 'critico' ? 'bg-orange-50/50 hover:bg-orange-100/40' :
                       item.status === 'atencao' ? 'bg-amber-50/40 hover:bg-amber-100/30' :
                       item.status === 'proximo' ? 'bg-green-50/40 hover:bg-green-100/30' :
+                      item.status === 'renovado' ? 'bg-blue-50/40 hover:bg-blue-100/30' :
                       'hover:bg-gray-50'
                     }`}
                   >
@@ -671,7 +696,7 @@ export default function VencimentosPage() {
                 .filter((r) => r.dep && r.user)
             );
             return (
-              <div key={`mobile-${item.empresaId}-${item.nome}-${idx}`} className={`p-4 ${item.status === 'vencido' ? 'bg-red-50/70' : item.status === 'critico' ? 'bg-orange-50/50' : item.status === 'atencao' ? 'bg-amber-50/40' : item.status === 'proximo' ? 'bg-green-50/40' : ''}`}>
+              <div key={`mobile-${item.empresaId}-${item.nome}-${idx}`} className={`p-4 ${item.status === 'vencido' ? 'bg-red-50/70' : item.status === 'critico' ? 'bg-orange-50/50' : item.status === 'atencao' ? 'bg-amber-50/40' : item.status === 'proximo' ? 'bg-green-50/40' : item.status === 'renovado' ? 'bg-blue-50/40' : ''}`}>
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold border ${sc.bg} ${sc.text} ${sc.border}`}>
                     <span className={`h-2 w-2 rounded-full ${sc.dot} ${item.status === 'vencido' ? 'animate-pulse' : ''}`} />

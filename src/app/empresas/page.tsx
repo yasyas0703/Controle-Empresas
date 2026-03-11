@@ -6,14 +6,14 @@ import { useSistema } from '@/app/context/SistemaContext';
 import type { Empresa, UUID, Limiares } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
 import { detectTipoEstabelecimento, formatarDocumento, getTipoInscricaoDisplay } from '@/app/utils/validation';
-import { daysUntil } from '@/app/utils/date';
+import { daysUntil, isRetRenovado } from '@/app/utils/date';
 import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import ModalImportarPlanilha from '@/app/components/ModalImportarPlanilha';
 import ModalImportarResponsabilidadesPorDep from '@/app/components/ModalImportarResponsabilidadesPorDep';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
-import { sortResponsaveisByNome } from '@/lib/sort';
+import { sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
 
 function canEditEmpresa(currentUserId: UUID | null, canManage: boolean, empresa: Empresa): boolean {
   if (canManage) return true;
@@ -33,7 +33,7 @@ const DEPT_COLORS: Record<number, { bg: string; text: string; border: string }> 
 };
 
 export default function EmpresasPage() {
-  const { empresas, currentUserId, canManage, removerEmpresa, departamentos, usuarios } = useSistema();
+  const { empresas, currentUserId, canManage, removerEmpresa, departamentos, usuarios, tags: tagsCadastradas } = useSistema();
 
   const [limiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
 
@@ -46,6 +46,13 @@ export default function EmpresasPage() {
 
   const [search, setSearch] = useState('');
   const [searchCodigo, setSearchCodigo] = useState('');
+  const [tagFiltro, setTagFiltro] = useState('');
+
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of empresas) for (const t of e.tags || []) set.add(t);
+    return sortStringsPtBr(Array.from(set));
+  }, [empresas]);
   const [modalCreate, setModalCreate] = useState(false);
   const [modalImport, setModalImport] = useState(false);
   const [empresaEdit, setEmpresaEdit] = useState<Empresa | null>(null);
@@ -67,10 +74,11 @@ export default function EmpresasPage() {
           const hay = [e.codigo, e.cnpj, e.razao_social, e.apelido].filter(Boolean).join(' ').toLowerCase();
           if (!hay.includes(q)) return false;
         }
+        if (tagFiltro && !(e.tags || []).includes(tagFiltro)) return false;
         return true;
       })
       .sort((a, b) => (a.razao_social || a.apelido || '').localeCompare(b.razao_social || b.apelido || ''));
-  }, [empresas, search, searchCodigo]);
+  }, [empresas, search, searchCodigo, tagFiltro]);
 
   const selectableIds = useMemo(() => {
     return filtered.filter((e) => canEditEmpresa(currentUserId, canManage, e)).map((e) => e.id);
@@ -187,6 +195,18 @@ export default function EmpresasPage() {
               inputMode="numeric"
             />
           </div>
+          {allTags.length > 0 && (
+            <select
+              value={tagFiltro}
+              onChange={(e) => setTagFiltro(e.target.value)}
+              className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-violet-400"
+            >
+              <option value="">Todas as tags</option>
+              {allTags.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {canManage && (filtered.length > 0 || selectedVisibleIds.length > 0) && (
@@ -229,7 +249,8 @@ export default function EmpresasPage() {
           const canEdit = canEditEmpresa(currentUserId, canManage, e);
           const checked = selectedVisibleIds.includes(e.id);
           const totalVencidos = e.documentos.filter((d) => { const dias = daysUntil(d.validade); return dias !== null && dias < 0; }).length
-            + e.rets.filter((r) => { const dias = daysUntil(r.vencimento); return dias !== null && dias < 0; }).length;
+            + e.rets.filter((r) => { if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) return false; const dias = daysUntil(r.vencimento); return dias !== null && dias < 0; }).length;
+          const totalRenovados = e.rets.filter((r) => isRetRenovado(r.vencimento, r.ultimaRenovacao)).length;
           const proximoVencDias = (() => {
             let min: number | null = null;
             for (const d of e.documentos) {
@@ -237,6 +258,7 @@ export default function EmpresasPage() {
               if (dias !== null && dias >= 0 && (min === null || dias < min)) min = dias;
             }
             for (const r of e.rets) {
+              if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) continue;
               const dias = daysUntil(r.vencimento);
               if (dias !== null && dias >= 0 && (min === null || dias < min)) min = dias;
             }
@@ -285,6 +307,11 @@ export default function EmpresasPage() {
                         <AlertTriangle size={10} /> {totalVencidos} VENCIDO(S)
                       </span>
                     )}
+                    {totalRenovados > 0 && (
+                      <span className="rounded-md bg-blue-600 text-white px-2 py-0.5 text-[10px] font-black flex items-center gap-1">
+                        {totalRenovados} RENOVADO(S)
+                      </span>
+                    )}
                     {proximoVencDias !== null && totalVencidos === 0 && (
                       <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold flex items-center gap-1 ${
                         proximoVencDias <= limiares.critico
@@ -296,6 +323,21 @@ export default function EmpresasPage() {
                         <Clock size={10} /> Vence em {proximoVencDias}d
                       </span>
                     )}
+                    {(e.tags || []).map((tagNome) => {
+                      const tagObj = tagsCadastradas.find((t) => t.nome === tagNome);
+                      const cor = tagObj?.cor ?? 'slate';
+                      const colorMap: Record<string, string> = {
+                        red: 'bg-red-100 text-red-700', orange: 'bg-orange-100 text-orange-700', amber: 'bg-amber-100 text-amber-700',
+                        green: 'bg-green-100 text-green-700', emerald: 'bg-emerald-100 text-emerald-700', cyan: 'bg-cyan-100 text-cyan-700',
+                        blue: 'bg-blue-100 text-blue-700', violet: 'bg-violet-100 text-violet-700', purple: 'bg-purple-100 text-purple-700',
+                        pink: 'bg-pink-100 text-pink-700', rose: 'bg-rose-100 text-rose-700', slate: 'bg-slate-100 text-slate-700',
+                      };
+                      return (
+                        <span key={tagNome} className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${colorMap[cor] ?? colorMap.slate}`}>
+                          {tagNome}
+                        </span>
+                      );
+                    })}
                   </div>
                   <div className="font-bold text-gray-900 mt-2 truncate">{nome}</div>
                   {e.apelido && e.razao_social && <div className="text-sm text-gray-500 truncate">({e.apelido})</div>}

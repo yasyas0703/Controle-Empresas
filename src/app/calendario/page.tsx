@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, CalendarDays, Clock, AlertTriangle, CheckCir
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import type { Empresa } from '@/app/types';
 import { useSistema } from '@/app/context/SistemaContext';
-import { formatBR, daysUntil } from '@/app/utils/date';
+import { formatBR, daysUntil, isRetRenovado } from '@/app/utils/date';
 
 type EventItem = {
   date: string;
@@ -14,6 +14,7 @@ type EventItem = {
   companyId: string;
   kind: 'documento' | 'ret';
   dias: number | null;
+  renovado?: boolean;
 };
 
 function startOfMonth(d: Date) {
@@ -48,7 +49,8 @@ export default function CalendarioPage() {
       }
       for (const r of e.rets) {
         if (r.vencimento) {
-          events.push({ date: r.vencimento, label: `RET: ${r.nome}`, company: nome, companyId: e.id, kind: 'ret', dias: daysUntil(r.vencimento) });
+          const renovado = isRetRenovado(r.vencimento, r.ultimaRenovacao);
+          events.push({ date: r.vencimento, label: `RET: ${r.nome}${renovado ? ' (Renovado)' : ''}`, company: nome, companyId: e.id, kind: 'ret', dias: renovado ? null : daysUntil(r.vencimento), renovado });
         }
       }
     }

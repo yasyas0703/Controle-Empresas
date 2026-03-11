@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { BarChart3, PieChart, TrendingUp, Building2, MapPin, Briefcase, FileCheck, Users, Eye, List } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
-import { daysUntil } from '@/app/utils/date';
+import { daysUntil, isRetRenovado } from '@/app/utils/date';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import { formatarDocumento, detectTipoEstabelecimento, detectTipoInscricao } from '@/app/utils/validation';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
@@ -66,7 +66,7 @@ const donutColors = [
 ];
 
 export default function AnalisesPage() {
-  const { empresas, departamentos, usuarios } = useSistema();
+  const { empresas, departamentos, usuarios, tags: tagsCadastradas } = useSistema();
 
   const [limiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
 
@@ -77,6 +77,7 @@ export default function AnalisesPage() {
   const [filtroResponsavel, setFiltroResponsavel] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
   const [statusVenc, setStatusVenc] = useState('');
+  const [filtroTag, setFiltroTag] = useState('');
   const [empresaView, setEmpresaView] = useState<Empresa | null>(null);
 
   const sortedDepartamentos = useMemo(() => sortByPtBr(departamentos, (d) => d.nome), [departamentos]);
@@ -84,6 +85,12 @@ export default function AnalisesPage() {
   const allEstados = useMemo(() => {
     const set = new Set<string>();
     for (const e of empresas) if (e.estado) set.add(e.estado);
+    return sortStringsPtBr(Array.from(set));
+  }, [empresas]);
+
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of empresas) for (const t of e.tags || []) set.add(t);
     return sortStringsPtBr(Array.from(set));
   }, [empresas]);
 
@@ -132,20 +139,22 @@ export default function AnalisesPage() {
         if (!anyResp) return false;
       }
       if (filtroEstado && (e.estado || '') !== filtroEstado) return false;
+      if (filtroTag && !(e.tags || []).includes(filtroTag)) return false;
       if (statusVenc) {
-        const allItems = [
-          ...e.documentos.map((d) => d.validade),
-          ...e.rets.map((r) => r.vencimento),
-        ];
+        const docItems = e.documentos.map((d) => d.validade);
+        const retItemsNaoRenovados = e.rets.filter((r) => !isRetRenovado(r.vencimento, r.ultimaRenovacao));
+        const allItems = [...docItems, ...retItemsNaoRenovados.map((r) => r.vencimento)];
         const temVencido = allItems.some((v) => { const d = daysUntil(v); return d !== null && d < 0; });
         const temRisco = allItems.some((v) => { const d = daysUntil(v); return d !== null && d >= 0 && d <= limiares.atencao; });
+        const temRenovado = e.rets.some((r) => isRetRenovado(r.vencimento, r.ultimaRenovacao));
         if (statusVenc === 'vencidos' && !temVencido) return false;
         if (statusVenc === 'risco' && !temRisco) return false;
         if (statusVenc === 'emdia' && (temVencido || temRisco)) return false;
+        if (statusVenc === 'renovados' && !temRenovado) return false;
       }
       return true;
     }).sort((a, b) => comparePtBr(a.razao_social || a.apelido || '', b.razao_social || b.apelido || ''));
-  }, [empresas, filtroRegime, filtroTipo, filtroTipoInscricao, filtroDep, filtroResponsavel, filtroEstado, statusVenc, limiares]);
+  }, [empresas, filtroRegime, filtroTipo, filtroTipoInscricao, filtroDep, filtroResponsavel, filtroEstado, filtroTag, statusVenc, limiares]);
 
   const stats = useMemo(() => {
     const servicos = filteredEmpresas.flatMap((e) => e.servicos || []);
@@ -231,7 +240,7 @@ export default function AnalisesPage() {
     return { byServico, byRegime, byEstado, byTipo, byInscricao, byDepartamento, byResponsavel, docStatus, byDepUsuario };
   }, [filteredEmpresas, departamentos, usuarios, filtroDep]);
 
-  const hasFilters = filtroRegime || filtroTipo || filtroTipoInscricao || filtroDep || filtroResponsavel || filtroEstado || statusVenc;
+  const hasFilters = filtroRegime || filtroTipo || filtroTipoInscricao || filtroDep || filtroResponsavel || filtroEstado || filtroTag || statusVenc;
 
   return (
     <div className="space-y-6">
@@ -249,7 +258,7 @@ export default function AnalisesPage() {
           </div>
           {hasFilters && (
             <button
-              onClick={() => { setFiltroRegime(''); setFiltroTipo(''); setFiltroTipoInscricao(''); setFiltroDep(''); setFiltroResponsavel(''); setFiltroEstado(''); setStatusVenc(''); }}
+              onClick={() => { setFiltroRegime(''); setFiltroTipo(''); setFiltroTipoInscricao(''); setFiltroDep(''); setFiltroResponsavel(''); setFiltroEstado(''); setFiltroTag(''); setStatusVenc(''); }}
               className="text-sm text-teal-600 hover:text-teal-700 font-bold"
             >
               Limpar filtros
@@ -295,7 +304,14 @@ export default function AnalisesPage() {
             <option value="emdia">Em dia</option>
             <option value="risco">Em risco</option>
             <option value="vencidos">Tem vencidos</option>
+            <option value="renovados">Renovados</option>
           </select>
+          {allTags.length > 0 && (
+            <select value={filtroTag} onChange={(e) => setFiltroTag(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-violet-400">
+              <option value="">Tag</option>
+              {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
         </div>
       </div>
 

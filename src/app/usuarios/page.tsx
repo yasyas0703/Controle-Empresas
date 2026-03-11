@@ -61,21 +61,28 @@ export default function UsuariosPage() {
       mostrarAlerta('Campos obrigatórios', 'Nome e email são obrigatórios.', 'aviso');
       return;
     }
-    const patch: Partial<Usuario> = {
-      nome: editNome.trim(),
-      email: editEmail.trim(),
-      role: editRole,
-      departamentoId: editDepId || null,
-    };
+    const nome = editNome.trim();
+    const email = editEmail.trim();
+    const currentEmail = editUser.email.trim();
+    const patch: Partial<Usuario> = {};
+    if (nome !== editUser.nome) patch.nome = nome;
+    if (email.toLowerCase() !== currentEmail.toLowerCase()) patch.email = email;
+    if (editRole !== editUser.role) patch.role = editRole;
+    const nextDepId = editDepId || null;
+    if ((editUser.departamentoId ?? null) !== nextDepId) patch.departamentoId = nextDepId;
     if (editSenha.trim()) {
       patch.senha = editSenha.trim();
+    }
+    if (Object.keys(patch).length === 0) {
+      mostrarAlerta('Sem alterações', 'Nenhum dado foi alterado.', 'aviso');
+      return;
     }
     try {
       await atualizarUsuario(editUser.id, patch);
       setEditUser(null);
-      mostrarAlerta('Usuário atualizado', `${editNome.trim()} foi atualizado com sucesso.`, 'sucesso');
+      mostrarAlerta('Usuário atualizado', `${nome} foi atualizado com sucesso.`, 'sucesso');
     } catch (err: unknown) {
-      mostrarAlerta('Erro ao atualizar', getErrorMessage(err, 'Nao foi possivel atualizar o usuario.'), 'erro');
+      mostrarAlerta('Erro ao atualizar', getErrorMessage(err, 'Não foi possível atualizar o usuário.'), 'erro');
     }
   };
 
@@ -324,4 +331,3 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </div>
   );
 }
-

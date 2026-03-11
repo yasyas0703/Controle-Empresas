@@ -51,10 +51,11 @@ const FIELD_LABELS: Record<string, string> = {
   role: 'Perfil',
   departamentoId: 'Departamento',
   ativo: 'Ativo',
+  portaria: 'Portaria',
 };
 
 /** Campos que devem ser ignorados no diff (metadados internos) */
-const IGNORED_FIELDS = new Set(['id', 'atualizadoEm', 'criadoEm']);
+const IGNORED_FIELDS = new Set(['id', 'atualizadoEm', 'criadoEm', 'observacoes']);
 
 type RetDiffItem = {
   id: string;
@@ -62,6 +63,8 @@ type RetDiffItem = {
   numeroPta: string;
   vencimento?: string;
   ultimaRenovacao?: string;
+  ativo?: boolean;
+  portaria?: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -80,6 +83,8 @@ function toRetDiffItem(value: unknown): RetDiffItem | null {
     numeroPta: asString(value.numeroPta),
     vencimento: asString(value.vencimento) || undefined,
     ultimaRenovacao: asString(value.ultimaRenovacao) || undefined,
+    ativo: typeof value.ativo === 'boolean' ? value.ativo : undefined,
+    portaria: asString(value.portaria) || undefined,
   };
 }
 
@@ -228,7 +233,21 @@ export default function HistoricoPage() {
   const ateMs = dataAte ? new Date(dataAte + 'T23:59:59').getTime() : Infinity;
   const filtered = visibleLogs.filter((l) => {
     if (filtroAction && l.action !== filtroAction) return false;
-    if (filtroEntity && l.entity !== filtroEntity) return false;
+    if (filtroEntity) {
+      if (filtroEntity === 'ret') {
+        // RET: incluir logs com entity='ret' OU logs de empresa que envolvam RETs
+        const isRetEntity = l.entity === 'ret';
+        const msgLower = (l.message || '').toLowerCase();
+        const mentionsRet = msgLower.includes('ret') || msgLower.includes('pta') || msgLower.includes('portaria') || msgLower.includes('renovação') || msgLower.includes('renovacao');
+        const diffHasRet = l.diff && ('rets' in l.diff || 'possuiRet' in l.diff);
+        if (!isRetEntity && !mentionsRet && !diffHasRet) return false;
+      } else if (filtroEntity === 'empresa') {
+        // Empresa: incluir entity='empresa' mas NÃO os que são puramente sobre RET
+        if (l.entity !== 'empresa') return false;
+      } else {
+        if (l.entity !== filtroEntity) return false;
+      }
+    }
     if (filtroUser && l.userId !== filtroUser) return false;
     if (deMs || ateMs < Infinity) {
       const logMs = new Date(l.em).getTime();
@@ -386,6 +405,8 @@ export default function HistoricoPage() {
                 if (oldRet.nome !== match.nome) diffs.push(`Nome: ${oldRet.nome} → ${match.nome}`);
                 if (oldRet.vencimento !== match.vencimento) diffs.push(`Vencimento: ${oldRet.vencimento ? formatBR(oldRet.vencimento) : '(vazio)'} → ${match.vencimento ? formatBR(match.vencimento) : '(vazio)'}`);
                 if (oldRet.ultimaRenovacao !== match.ultimaRenovacao) diffs.push(`Última Renovação: ${oldRet.ultimaRenovacao ? formatBR(oldRet.ultimaRenovacao) : '(vazio)'} → ${match.ultimaRenovacao ? formatBR(match.ultimaRenovacao) : '(vazio)'}`);
+                if (oldRet.ativo !== match.ativo) diffs.push(`Status: ${oldRet.ativo !== false ? 'Ativo' : 'Inativo'} → ${match.ativo !== false ? 'Ativo' : 'Inativo'}`);
+                if ((oldRet.portaria || '') !== (match.portaria || '')) diffs.push(`Portaria: ${oldRet.portaria || '(vazio)'} → ${match.portaria || '(vazio)'}`);
                 if (diffs.length > 0) {
                   changes.push({ type: 'changed', ret: `${match.nome} (${formatRetNumber(match.numeroPta)})`, detail: diffs.join(' | ') });
                 }
@@ -567,6 +588,7 @@ export default function HistoricoPage() {
             <option value="empresa">Empresa</option>
             <option value="ret">RET</option>
             <option value="servico">Serviço</option>
+            <option value="tag">Tag</option>
             <option value="usuario">Usuário</option>
           </select>
         </div>

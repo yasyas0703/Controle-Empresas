@@ -3,8 +3,9 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { Loader2, Search, X, Plus, Trash2 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
-import type { Empresa, RetItem, TipoInscricao, UUID } from '@/app/types';
+import type { Empresa, RetItem, TagCor, TipoInscricao, UUID } from '@/app/types';
 import ModalBase from '@/app/components/ModalBase';
+import ConfirmModal from '@/app/components/ConfirmModal';
 import { cepSchema, cpfSchema, cnpjSchema, detectTipoInscricao, detectTipoEstabelecimento, formatarDocumento } from '@/app/utils/validation';
 import { api } from '@/app/utils/api';
 import { sortByPtBr, sortStringsPtBr } from '@/lib/sort';
@@ -27,6 +28,21 @@ function formatRetNumber(value: string): string {
   return `${digits.slice(0, 2)}.${digits.slice(2, 11)}-${digits.slice(11)}`;
 }
 
+const TAG_COLORS: Record<TagCor, { bg: string; text: string; border: string }> = {
+  red: { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-300' },
+  orange: { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-300' },
+  amber: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-300' },
+  green: { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-300' },
+  emerald: { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-300' },
+  cyan: { bg: 'bg-cyan-100', text: 'text-cyan-700', border: 'border-cyan-300' },
+  blue: { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-300' },
+  violet: { bg: 'bg-violet-100', text: 'text-violet-700', border: 'border-violet-300' },
+  purple: { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-300' },
+  pink: { bg: 'bg-pink-100', text: 'text-pink-700', border: 'border-pink-300' },
+  rose: { bg: 'bg-rose-100', text: 'text-rose-700', border: 'border-rose-300' },
+  slate: { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300' },
+};
+
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === 'object' && error !== null && 'message' in error) {
@@ -37,7 +53,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastrarEmpresaProps) {
-  const { empresas, criarEmpresa, atualizarEmpresa, mostrarAlerta, departamentos, usuarios, servicos: servicosCadastrados, criarServico, canManage } = useSistema();
+  const { empresas, criarEmpresa, atualizarEmpresa, mostrarAlerta, departamentos, usuarios, servicos: servicosCadastrados, tags: tagsCadastradas, criarServico, canManage, removerRet: removerRetContext } = useSistema();
 
   const [empresaCadastrada, setEmpresaCadastrada] = useState(empresa ? empresa.cadastrada !== false : false);
 
@@ -51,6 +67,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
     tipoInscricao: '',
 
     servicos: [],
+    tags: [],
 
     possuiRet: false,
     rets: [],
@@ -80,6 +97,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
   const [buscandoCnpj, setBuscandoCnpj] = useState(false);
   const [cnpjLookupError, setCnpjLookupError] = useState<string>('');
   const [cnpjTouched, setCnpjTouched] = useState(false);
+  const [confirmDeleteRetId, setConfirmDeleteRetId] = useState<string | null>(null);
   const lastAutoLookupDigitsRef = useRef<string>('');
 
   const allServicos = useMemo(() => {
@@ -254,11 +272,19 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
     setFormData((prev) => ({ ...prev, servicos: Array.from(new Set([...(prev.servicos ?? []), s])) }));
   };
 
+  const toggleTag = (tagNome: string) => {
+    setFormData((prev) => {
+      const current = prev.tags ?? [];
+      const exists = current.includes(tagNome);
+      return { ...prev, tags: exists ? current.filter((t) => t !== tagNome) : [...current, tagNome] };
+    });
+  };
+
   const setPossuiRet = (value: boolean) => {
     setFormData((prev) => ({
       ...prev,
       possuiRet: value,
-      rets: value ? (prev.rets ?? []).length ? prev.rets : [{ id: newId(), numeroPta: '', nome: '', vencimento: '', ultimaRenovacao: '' }] : [],
+      rets: value ? (prev.rets ?? []).length ? prev.rets : [{ id: newId(), numeroPta: '', nome: '', vencimento: '', ultimaRenovacao: '', ativo: true, portaria: '' }] : [],
     }));
   };
 
@@ -266,7 +292,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
     setFormData((prev) => ({
       ...prev,
       possuiRet: true,
-      rets: [...(prev.rets ?? []), { id: newId(), numeroPta: '', nome: '', vencimento: '', ultimaRenovacao: '' }],
+      rets: [...(prev.rets ?? []), { id: newId(), numeroPta: '', nome: '', vencimento: '', ultimaRenovacao: '', ativo: true, portaria: '' }],
     }));
   };
 
@@ -277,7 +303,15 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
     }));
   };
 
-  const removeRet = (id: UUID) => {
+  const removeRet = async (id: UUID) => {
+    // Se a empresa já existe no banco, mover o RET para lixeira
+    if (empresa?.id) {
+      const retExisteNoBanco = empresa.rets.some((r) => r.id === id);
+      if (retExisteNoBanco) {
+        await removerRetContext(empresa.id, id);
+      }
+    }
+    // Sempre remover do form local
     setFormData((prev) => {
       const next = (prev.rets ?? []).filter((r) => r.id !== id);
       return { ...prev, rets: next, possuiRet: next.length > 0 };
@@ -350,6 +384,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
       cnpj: formData.cnpj ? String(formData.cnpj) : undefined,
       cadastrada,
       servicos: (formData.servicos ?? []).filter(Boolean),
+      tags: (formData.tags ?? []).filter(Boolean),
       possuiRet: Boolean(formData.possuiRet) && (formData.rets ?? []).length > 0,
       rets: Boolean(formData.possuiRet) ? (formData.rets ?? []) : [],
       ...(canManage ? { responsaveis: responsaveis ?? {} } : {}),
@@ -367,6 +402,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
   };
 
   return (
+    <>
     <ModalBase
       isOpen
       onClose={onClose}
@@ -639,6 +675,34 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
             <div className="mt-2 text-xs text-gray-600">Você pode selecionar mais de um serviço.</div>
           </div>
 
+          {/* Tags */}
+          {tagsCadastradas.length > 0 && (
+            <div className="bg-violet-50 rounded-xl p-4 border border-violet-200">
+              <h4 className="font-semibold text-violet-800 mb-4">Tags</h4>
+              <div className="flex flex-wrap gap-2">
+                {tagsCadastradas.map((tag) => {
+                  const selected = (formData.tags ?? []).includes(tag.nome);
+                  const colors = TAG_COLORS[tag.cor] ?? TAG_COLORS.slate;
+                  return (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      onClick={() => toggleTag(tag.nome)}
+                      className={`rounded-full px-3.5 py-1.5 text-xs font-bold border transition ${
+                        selected
+                          ? `${colors.bg} ${colors.text} ${colors.border} ring-2 ring-offset-1 ring-violet-400`
+                          : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      {tag.nome}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-2 text-xs text-gray-600">Clique para selecionar ou desmarcar tags.</div>
+            </div>
+          )}
+
           {/* RET */}
           <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
             <h4 className="font-semibold text-blue-800 mb-4">Possui RET?</h4>
@@ -659,7 +723,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                   <div key={r.id} className="rounded-2xl border bg-white p-4">
                     <div className="flex items-center justify-between">
                       <div className="font-bold text-gray-900">RET {idx + 1}</div>
-                      <button type="button" onClick={() => removeRet(r.id)} className="rounded-xl border p-2 hover:bg-gray-50" title="Remover RET">
+                      <button type="button" onClick={() => setConfirmDeleteRetId(r.id)} className="rounded-xl border p-2 hover:bg-gray-50" title="Remover RET">
                         <Trash2 className="text-red-600" size={18} />
                       </button>
                     </div>
@@ -708,6 +772,45 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                           className={`w-full rounded-xl border px-4 py-3 ${erros[`ret_${idx}_ultimaRenovacao`] ? 'border-red-500' : 'border-gray-300'}`}
                         />
                         {erros[`ret_${idx}_ultimaRenovacao`] && <div className="text-sm text-red-500 mt-1">{erros[`ret_${idx}_ultimaRenovacao`]}</div>}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Portaria</label>
+                        <input
+                          value={r.portaria ?? ''}
+                          onChange={(e) => updateRet(r.id, { portaria: e.target.value.slice(0, 20) })}
+                          maxLength={20}
+                          className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                          placeholder="Ex.: 123/2025"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Status do RET</label>
+                        <div className="flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => updateRet(r.id, { ativo: true })}
+                            className={`flex-1 rounded-xl border-2 px-4 py-3 font-bold text-center transition-all ${
+                              r.ativo !== false
+                                ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                                : 'border-gray-200 bg-white text-gray-400 hover:bg-gray-50'
+                            }`}
+                          >
+                            Ativo
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateRet(r.id, { ativo: false })}
+                            className={`flex-1 rounded-xl border-2 px-4 py-3 font-bold text-center transition-all ${
+                              r.ativo === false
+                                ? 'border-red-500 bg-red-50 text-red-700'
+                                : 'border-gray-200 bg-white text-gray-400 hover:bg-gray-50'
+                            }`}
+                          >
+                            Inativo
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -944,6 +1047,17 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
         </form>
       </div>
     </ModalBase>
+
+    <ConfirmModal
+      open={!!confirmDeleteRetId}
+      title="Remover RET?"
+      message="Tem certeza que deseja remover este RET? Esta ação não poderá ser desfeita."
+      confirmText="Remover"
+      variant="danger"
+      onConfirm={() => { if (confirmDeleteRetId) removeRet(confirmDeleteRetId); setConfirmDeleteRetId(null); }}
+      onCancel={() => setConfirmDeleteRetId(null)}
+    />
+    </>
   );
 }
 

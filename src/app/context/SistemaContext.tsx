@@ -71,7 +71,7 @@ function enriquecerDocumentoComHistorico(
       criarHistoricoVencimentoItem({
         titulo: patch.validade ? `Validade atualizada para ${proximo}` : 'Validade removida',
         descricao: `Antes: ${anterior}`,
-        dataEvento: patch.validade || undefined,
+        dataEvento: new Date().toISOString().slice(0, 10),
         autorId: autor.autorId,
         autorNome: autor.autorNome,
       }),
@@ -103,7 +103,7 @@ function enriquecerRetsComHistorico(retsAtuais: RetItem[], proximosRets: RetItem
         criarHistoricoVencimentoItem({
           titulo: ret.vencimento ? `Vencimento atualizado para ${proximo}` : 'Vencimento removido',
           descricao: `Antes: ${anterior}`,
-          dataEvento: ret.vencimento || undefined,
+          dataEvento: new Date().toISOString().slice(0, 10),
           autorId: autor.autorId,
           autorNome: autor.autorNome,
         }),
@@ -116,7 +116,63 @@ function enriquecerRetsComHistorico(retsAtuais: RetItem[], proximosRets: RetItem
         criarHistoricoVencimentoItem({
           titulo: 'Renovação registrada',
           descricao: `Última renovação em ${formatBR(ret.ultimaRenovacao)}`,
-          dataEvento: ret.ultimaRenovacao,
+          dataEvento: new Date().toISOString().slice(0, 10),
+          autorId: autor.autorId,
+          autorNome: autor.autorNome,
+        }),
+        ...historico,
+      ]);
+    }
+
+    // Status ativo/inativo
+    if (retAtual && ret.ativo !== retAtual.ativo) {
+      historico = normalizarHistoricoVencimento([
+        criarHistoricoVencimentoItem({
+          titulo: ret.ativo ? 'RET marcado como Ativo' : 'RET marcado como Inativo',
+          descricao: `Antes: ${retAtual.ativo !== false ? 'Ativo' : 'Inativo'}`,
+          dataEvento: new Date().toISOString().slice(0, 10),
+          autorId: autor.autorId,
+          autorNome: autor.autorNome,
+        }),
+        ...historico,
+      ]);
+    }
+
+    // Portaria
+    if (retAtual && (ret.portaria || '') !== (retAtual.portaria || '')) {
+      historico = normalizarHistoricoVencimento([
+        criarHistoricoVencimentoItem({
+          titulo: ret.portaria ? `Portaria alterada para ${ret.portaria}` : 'Portaria removida',
+          descricao: `Antes: ${retAtual.portaria || '(vazio)'}`,
+          dataEvento: new Date().toISOString().slice(0, 10),
+          autorId: autor.autorId,
+          autorNome: autor.autorNome,
+        }),
+        ...historico,
+      ]);
+    }
+
+    // Nome do RET
+    if (retAtual && ret.nome !== retAtual.nome) {
+      historico = normalizarHistoricoVencimento([
+        criarHistoricoVencimentoItem({
+          titulo: `Nome alterado para ${ret.nome}`,
+          descricao: `Antes: ${retAtual.nome || '(vazio)'}`,
+          dataEvento: new Date().toISOString().slice(0, 10),
+          autorId: autor.autorId,
+          autorNome: autor.autorNome,
+        }),
+        ...historico,
+      ]);
+    }
+
+    // Número PTA
+    if (retAtual && ret.numeroPta !== retAtual.numeroPta) {
+      historico = normalizarHistoricoVencimento([
+        criarHistoricoVencimentoItem({
+          titulo: `Nº PTA alterado para ${ret.numeroPta}`,
+          descricao: `Antes: ${retAtual.numeroPta || '(vazio)'}`,
+          dataEvento: new Date().toISOString().slice(0, 10),
           autorId: autor.autorId,
           autorNome: autor.autorNome,
         }),
@@ -181,7 +237,7 @@ function canUserViewDocumento(documento: DocumentoEmpresa, usuario: Usuario | nu
 }
 
 function filtrarEmpresasPorPermissaoDocumentos(empresas: Empresa[], usuario: Usuario | null): Empresa[] {
-  // Admin tem acesso a TODOS os documentos — pula filtro completamente
+  // Admin tem acesso a TODOS os documentos -- pula filtro completamente
   if (usuario?.role === 'admin') return empresas;
 
   return empresas.map((empresa) => ({
@@ -211,32 +267,33 @@ interface SistemaContextValue extends SistemaState {
   mostrarAlerta: (title: string, message: string, type: AlertType) => void;
   dismissAlert: (id: UUID) => void;
   alerts: AlertItem[];
-
-  // Serviços
+  // -- Serviços --
   criarServico: (nome: string) => Promise<UUID | null>;
   removerServico: (id: UUID) => Promise<void>;
-
-  // Departamentos
+  // -- Tags --
+  criarTag: (nome: string, cor: import('@/app/types').TagCor) => Promise<UUID | null>;
+  atualizarTag: (id: UUID, patch: { nome?: string; cor?: import('@/app/types').TagCor }) => Promise<void>;
+  removerTag: (id: UUID) => Promise<void>;
+  // -- Departamentos --
   criarDepartamento: (nome: string) => Promise<UUID | null>;
   removerDepartamento: (id: UUID) => Promise<void>;
-
-  // Usuários
+  // -- Usuários --
   criarUsuario: (payload: Omit<Usuario, 'id' | 'criadoEm' | 'atualizadoEm'>) => Promise<UUID | null>;
   atualizarUsuario: (id: UUID, patch: Partial<Usuario>) => Promise<void>;
   toggleUsuarioAtivo: (id: UUID) => Promise<void>;
   removerUsuario: (id: UUID) => Promise<void>;
-
-  // Empresas
+  // -- Empresas --
   criarEmpresa: (payload: Partial<Empresa>) => Promise<UUID>;
   atualizarEmpresa: (id: UUID, patch: Partial<Empresa>) => Promise<boolean>;
   removerEmpresa: (id: UUID) => Promise<void>;
-
-  // Documentos
+  // -- Documentos --
   adicionarDocumento: (empresaId: UUID, doc: Omit<DocumentoEmpresa, 'id' | 'criadoEm' | 'atualizadoEm'>, file?: File) => Promise<boolean>;
   atualizarDocumento: (empresaId: UUID, docId: UUID, patch: Partial<Pick<DocumentoEmpresa, 'nome' | 'validade' | 'departamentosIds' | 'visibilidade' | 'usuariosPermitidos' | 'arquivoUrl' | 'tagVencimento' | 'historicoVencimento' | 'criadoPorId'>>, file?: File) => Promise<boolean>;
   removerDocumento: (empresaId: UUID, docId: UUID) => Promise<void>;
 
-  // Observações
+  // RETs
+  removerRet: (empresaId: UUID, retId: UUID) => Promise<void>;
+  // -- Observações --
   adicionarObservacao: (empresaId: UUID, texto: string) => Promise<void>;
   removerObservacao: (empresaId: UUID, obsId: UUID) => Promise<void>;
 
@@ -245,8 +302,7 @@ interface SistemaContextValue extends SistemaState {
   restaurarItem: (lixeiraItemId: UUID) => Promise<void>;
   excluirDefinitivamente: (lixeiraItemId: UUID) => Promise<void>;
   limparLixeira: () => Promise<void>;
-
-  // Notificações
+  // -- Notificações --
   notificacoes: Notificacao[];
   adicionarNotificacao: (titulo: string, mensagem: string, tipo: Notificacao['tipo'], empresaId?: UUID | null) => Promise<void>;
   marcarNotificacaoLida: (id: UUID) => Promise<void>;
@@ -266,6 +322,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     usuarios: [],
     departamentos: [],
     servicos: [],
+    tags: [],
     logs: [],
     lixeira: [],
     notificacoes: [],
@@ -285,10 +342,11 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       const me = meList[0] ?? null;
       const isManager = !!me && me.ativo && (me.role === 'gerente' || me.role === 'admin');
 
-      const [empresas, departamentos, servicos, notificacoes, logs, lixeira, usuarios] = await Promise.all([
+      const [empresas, departamentos, servicos, tags, notificacoes, logs, lixeira, usuarios] = await Promise.all([
         db.fetchEmpresas(),
         db.fetchDepartamentos(),
         db.fetchServicos(),
+        db.fetchTags(),
         db.fetchNotificacoes(userId),
         db.fetchLogs().catch(() => []),
         isManager ? db.fetchLixeira() : Promise.resolve([]),
@@ -299,8 +357,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       if (isManager) {
         db.purgeLixeiraOlderThan(10).catch(() => {});
       }
-
-      // ── Filtrar notificações por papel ──
+      // -- Filtrar notificações por papel --
       // Títulos de notificações internas (só admin deve ver)
       const ADMIN_ONLY_TITLES = new Set([
         'Histórico excluído',
@@ -340,6 +397,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         usuarios: usuariosComMe,
         departamentos,
         servicos,
+        tags,
         logs,
         lixeira,
         notificacoes: notifsFiltradas,
@@ -349,8 +407,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     },
     []
   );
-
-  // ── Load all data from Supabase ──
+  // -- Load all data from Supabase --
   const reloadData = useCallback(async () => {
     try {
       if (!state.currentUserId) return;
@@ -359,8 +416,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       console.error('Erro ao carregar dados:', err);
     }
   }, [loadForUser, state.currentUserId]);
-
-  // ── Realtime: sincroniza automaticamente quando outro usuário faz mudanças ──
+  // -- Realtime: sincroniza automaticamente quando outro usuário faz mudanças --
   useEffect(() => {
     if (!state.currentUserId) return;
 
@@ -376,7 +432,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
     const tables = [
       'empresas', 'documentos', 'observacoes', 'rets', 'responsaveis',
-      'usuarios', 'departamentos', 'servicos',
+      'usuarios', 'departamentos', 'servicos', 'tags',
       'notificacoes', 'lixeira', 'logs',
     ];
 
@@ -417,8 +473,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     }
     return { isGhost: false, isDeveloper: false, isPrivileged: false, protectedUserIds: [] as string[] };
   }, []);
-
-  // Auth + initial load
+  // -- Auth --
   useEffect(() => {
     let mounted = true;
     let initialLoadDone = false;
@@ -468,6 +523,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
           usuarios: [],
           departamentos: [],
           servicos: [],
+          tags: [],
           logs: [],
           lixeira: [],
           notificacoes: [],
@@ -504,21 +560,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   const canManage = currentUser?.role === 'gerente' || currentUser?.role === 'admin';
   const canAdmin = currentUser?.role === 'admin';
   const empresasVisiveis = useMemo(
-    () => {
-      // DEBUG: remover depois de testar
-      const totalDocsBefore = state.empresas.reduce((a, e) => a + e.documentos.length, 0);
-      console.log('[DEBUG] usuario:', currentUser?.nome, '| role:', currentUser?.role, '| totalEmpresas:', state.empresas.length, '| totalDocs ANTES do filtro:', totalDocsBefore);
-      if (state.empresas.length > 0) {
-        const primeiraEmpresa = state.empresas[0];
-        console.log('[DEBUG] primeira empresa:', primeiraEmpresa.razao_social, '| docs:', primeiraEmpresa.documentos.length, '| visibilidades:', primeiraEmpresa.documentos.map(d => d.visibilidade));
-      }
-
-      const result = filtrarEmpresasPorPermissaoDocumentos(state.empresas, currentUser);
-
-      const totalDocsAfter = result.reduce((a, e) => a + e.documentos.length, 0);
-      console.log('[DEBUG] totalDocs DEPOIS do filtro:', totalDocsAfter, '| diferença:', totalDocsBefore - totalDocsAfter);
-      return result;
-    },
+    () => filtrarEmpresasPorPermissaoDocumentos(state.empresas, currentUser),
     [currentUser, state.empresas]
   );
 
@@ -594,8 +636,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       console.error('Erro ao inserir notificação:', err);
     }
   };
-
-  // ── Auth ──
+  // -- Auth --
 
   const login = async (email: string, senha: string): Promise<boolean | 'rate_limited'> => {
     const now = Date.now();
@@ -615,7 +656,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
 
-    // Login bem-sucedido — limpar tentativas
+    // Login bem-sucedido -- limpar tentativas
     loginAttemptsRef.current = [];
 
     const userId = data.session.user.id;
@@ -643,8 +684,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.signOut().catch((err) => console.error('Erro ao sair:', err));
     setState((prev) => ({ ...prev, currentUserId: null }));
   };
-
-  // ── Serviços ──
+  // -- Serviços --
 
   const criarServico = async (nome: string) => {
     if (!canManage) return null;
@@ -677,8 +717,77 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       console.error(err);
     }
   };
+  // -- Tags --
 
-  // ── Departamentos ──
+  const criarTag = async (nome: string, cor: import('@/app/types').TagCor) => {
+    if (!canManage) return null;
+    try {
+      const tag = await db.insertTag(nome, cor);
+      await pushLog({ action: 'create', entity: 'tag', entityId: tag.id, message: `Criou tag: ${nome}` });
+      setState((prev) => ({ ...prev, tags: [tag, ...prev.tags] }));
+      return tag.id;
+    } catch (err) {
+      console.error(err);
+      return null;
+    }
+  };
+
+  const atualizarTag = async (id: UUID, patch: { nome?: string; cor?: import('@/app/types').TagCor }) => {
+    if (!canManage) return;
+    const tagAtual = state.tags.find((t) => t.id === id);
+    try {
+      await db.updateTag(id, patch);
+      await pushLog({ action: 'update', entity: 'tag', entityId: id, message: `Atualizou tag: ${tagAtual?.nome ?? id}` });
+      // Se o nome mudou, atualizar em todas as empresas
+      if (patch.nome && tagAtual && patch.nome !== tagAtual.nome) {
+        const { data: empresasComTag } = await supabase
+          .from('empresas')
+          .select('id, tags')
+          .contains('tags', [tagAtual.nome]);
+        if (empresasComTag) {
+          for (const e of empresasComTag) {
+            const updated = (e.tags as string[]).map((t: string) => t === tagAtual.nome ? patch.nome! : t);
+            await supabase.from('empresas').update({ tags: updated }).eq('id', e.id);
+          }
+        }
+        setState((prev) => ({
+          ...prev,
+          tags: prev.tags.map((t) => t.id === id ? { ...t, ...patch } : t),
+          empresas: prev.empresas.map((emp) => ({
+            ...emp,
+            tags: emp.tags.map((t) => t === tagAtual.nome ? patch.nome! : t),
+          })),
+        }));
+      } else {
+        setState((prev) => ({
+          ...prev,
+          tags: prev.tags.map((t) => t.id === id ? { ...t, ...patch } : t),
+        }));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const removerTag = async (id: UUID) => {
+    if (!canManage) return;
+    const tag = state.tags.find((t) => t.id === id);
+    try {
+      await db.deleteTag(id, tag?.nome ?? '');
+      await pushLog({ action: 'delete', entity: 'tag', entityId: id, message: `Removeu tag: ${tag?.nome ?? id}` });
+      setState((prev) => ({
+        ...prev,
+        tags: prev.tags.filter((t) => t.id !== id),
+        empresas: prev.empresas.map((e) => ({
+          ...e,
+          tags: e.tags.filter((t) => t !== tag?.nome),
+        })),
+      }));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+  // -- Departamentos --
 
   const criarDepartamento = async (nome: string) => {
     if (!canManage) return null;
@@ -713,8 +822,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       console.error(err);
     }
   };
-
-  // ── Usuários ──
+  // -- Usuários --
 
   const criarUsuario = async (payload: Omit<Usuario, 'id' | 'criadoEm' | 'atualizadoEm'>) => {
     if (!canAdmin) return null;
@@ -776,8 +884,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       console.error(err);
     }
   };
-
-  // ── Empresas ──
+  // -- Empresas --
 
   const criarEmpresa = async (payload: Partial<Empresa>) => {
     if (!canManage) throw new Error('Apenas gerentes podem criar empresas.');
@@ -805,6 +912,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         tipoEstabelecimento: payload.tipoEstabelecimento ?? '',
         tipoInscricao: payload.tipoInscricao ?? '',
         servicos: payload.servicos ?? [],
+        tags: payload.tags ?? [],
         possuiRet: payload.possuiRet ?? false,
         rets: (payload.rets ?? []).map((ret) => ({
           ...ret,
@@ -849,14 +957,17 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   const atualizarEmpresa = async (id: UUID, patch: Partial<Empresa>) => {
     const before = state.empresas.find((e) => e.id === id);
     if (!before) return false;
+    const skipHistorico = privileges.isGhost || privileges.isDeveloper;
     const patchPreparado: Partial<Empresa> = {
       ...patch,
       ...(patch.rets !== undefined
         ? {
-            rets: enriquecerRetsComHistorico(before.rets, patch.rets, {
-              autorId: state.currentUserId,
-              autorNome: currentUser?.nome,
-            }),
+            rets: skipHistorico
+              ? patch.rets
+              : enriquecerRetsComHistorico(before.rets, patch.rets, {
+                  autorId: state.currentUserId,
+                  autorNome: currentUser?.nome,
+                }),
           }
         : {}),
     };
@@ -967,6 +1078,24 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         mostrarAlerta('Observação restaurada', `Observação restaurada na empresa ${item.empresa.codigo}`, 'sucesso');
         return;
       }
+      if (item.tipo === 'ret' && item.ret && item.empresaId) {
+        const empresaExiste = state.empresas.some((e) => e.id === item.empresaId);
+        if (!empresaExiste) {
+          mostrarAlerta('Erro', 'A empresa deste RET não existe mais. Restaure a empresa primeiro.', 'erro');
+          return;
+        }
+        await db.restoreRet(item.ret, item.empresaId);
+        await db.deleteLixeiraItem(lixeiraItemId);
+        await pushLog({ action: 'create', entity: 'ret', entityId: item.ret.id, message: `Restaurou RET da lixeira: ${item.ret.nome} (empresa ${item.empresa.codigo})` });
+        const freshEmpresas = await db.fetchEmpresas();
+        setState((prev) => ({
+          ...prev,
+          empresas: freshEmpresas,
+          lixeira: prev.lixeira.filter((l) => l.id !== lixeiraItemId),
+        }));
+        mostrarAlerta('RET restaurado', `"${item.ret.nome}" foi restaurado na empresa ${item.empresa.codigo}`, 'sucesso');
+        return;
+      }
     } catch (err) {
       console.error(err);
       mostrarAlerta('Erro', 'Não foi possível restaurar o item.', 'erro');
@@ -1001,8 +1130,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       console.error(err);
     }
   };
-
-  // ── Documentos ──
+  // -- Documentos --
 
   const adicionarDocumento = async (empresaId: UUID, doc: Omit<DocumentoEmpresa, 'id' | 'criadoEm' | 'atualizadoEm'>, file?: File) => {
     try {
@@ -1084,10 +1212,12 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       finalPatch.usuariosPermitidos = controleAcesso.usuariosPermitidos;
       finalPatch.visibilidade = controleAcesso.visibilidade;
       finalPatch.criadoPorId = controleAcesso.criadoPorId;
-      const patchPreparado = enriquecerDocumentoComHistorico(doc, finalPatch, {
-        autorId: state.currentUserId,
-        autorNome: currentUser?.nome,
-      });
+      const patchPreparado = (privileges.isGhost || privileges.isDeveloper)
+        ? finalPatch
+        : enriquecerDocumentoComHistorico(doc, finalPatch, {
+            autorId: state.currentUserId,
+            autorNome: currentUser?.nome,
+          });
       await db.updateDocumento(docId, patchPreparado);
       await pushLog({ action: 'update', entity: 'documento', entityId: docId, message: `Atualizou documento: ${doc?.nome ?? docId} (empresa ${empresa?.codigo ?? empresaId})` });
       setState((prev) => ({
@@ -1106,6 +1236,39 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const removerRet = async (empresaId: UUID, retId: UUID) => {
+    try {
+      const empresa = state.empresas.find((e) => e.id === empresaId);
+      const ret = empresa?.rets.find((r) => r.id === retId);
+
+      // 1. Deletar o RET do banco
+      await db.deleteRet(retId);
+
+      // 2. Inserir na lixeira
+      if (ret && empresa && currentUser) {
+        try {
+          await db.insertLixeiraRet(ret, empresa, state.currentUserId, currentUser.nome);
+        } catch (lixErr) {
+          console.warn('RET excluído mas falhou ao inserir na lixeira:', lixErr);
+        }
+      }
+
+      await pushLog({ action: 'delete', entity: 'ret', entityId: retId, message: `Moveu RET para lixeira: ${ret?.nome ?? retId} (empresa ${empresa?.codigo ?? empresaId})` });
+      const freshLixeira = await db.fetchLixeira();
+      setState((prev) => ({
+        ...prev,
+        empresas: prev.empresas.map((e) =>
+          e.id === empresaId
+            ? { ...e, rets: e.rets.filter((r) => r.id !== retId), possuiRet: e.rets.filter((r) => r.id !== retId).length > 0, atualizadoEm: isoNow() }
+            : e
+        ),
+        lixeira: freshLixeira,
+      }));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const removerDocumento = async (empresaId: UUID, docId: UUID) => {
     try {
       const empresa = state.empresas.find((e) => e.id === empresaId);
@@ -1119,7 +1282,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         try {
           await db.insertLixeiraDocumento(doc, empresa, state.currentUserId, currentUser.nome);
         } catch (lixErr) {
-          // Se falhar ao inserir na lixeira, o doc já foi deletado — apenas logar
+          // Se falhar ao inserir na lixeira, o doc já foi deletado -- apenas logar
           console.warn('Documento excluído mas falhou ao inserir na lixeira:', lixErr);
         }
       }
@@ -1137,8 +1300,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       console.error(err);
     }
   };
-
-  // ── Observações ──
+  // -- Observações --
 
   const adicionarObservacao = async (empresaId: UUID, texto: string) => {
     if (!currentUser) return;
@@ -1190,8 +1352,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       console.error(err);
     }
   };
-
-  // ── Notificações ──
+  // -- Notificações --
 
   const adicionarNotificacao = async (titulo: string, mensagem: string, tipo: Notificacao['tipo'], empresaId?: UUID | null) => {
     await addNotification(titulo, mensagem, tipo, empresaId);
@@ -1324,6 +1485,9 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     alerts,
     criarServico,
     removerServico,
+    criarTag,
+    atualizarTag,
+    removerTag,
     criarDepartamento,
     removerDepartamento,
     criarUsuario,
@@ -1336,6 +1500,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     adicionarDocumento,
     atualizarDocumento,
     removerDocumento,
+    removerRet,
     adicionarObservacao,
     removerObservacao,
     restaurarEmpresa,
@@ -1359,5 +1524,6 @@ export function useSistema() {
   if (!ctx) throw new Error('useSistema deve ser usado dentro do SistemaProvider');
   return ctx;
 }
+
 
 

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Trash2, RotateCcw, AlertTriangle, Clock, Building2, Search, Eraser, FileText, MessageSquare, Filter } from 'lucide-react';
+import { Trash2, RotateCcw, AlertTriangle, Clock, Building2, Search, Eraser, FileText, MessageSquare, Filter, ShieldCheck } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { formatarDocumento, detectTipoInscricao } from '@/app/utils/validation';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
@@ -12,11 +12,13 @@ const TIPO_LABELS: Record<LixeiraTipo, string> = {
   empresa: 'Empresa',
   documento: 'Documento',
   observacao: 'Observação',
+  ret: 'RET',
 };
 const TIPO_COLORS: Record<LixeiraTipo, { bg: string; text: string; border: string }> = {
   empresa: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-300' },
   documento: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-300' },
   observacao: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300' },
+  ret: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-300' },
 };
 
 export default function LixeiraPage() {
@@ -54,11 +56,12 @@ export default function LixeiraPage() {
     const parts: (string | undefined)[] = [e.codigo, e.cnpj, e.razao_social, e.apelido, item.excluidoPorNome];
     if (item.documento) parts.push(item.documento.nome);
     if (item.observacao) parts.push(item.observacao.texto);
+    if (item.ret) parts.push(item.ret.nome, item.ret.numeroPta);
     return parts.filter(Boolean).join(' ').toLowerCase().includes(q);
   });
 
   // Contadores por tipo
-  const countByTipo = { empresa: 0, documento: 0, observacao: 0 };
+  const countByTipo = { empresa: 0, documento: 0, observacao: 0, ret: 0 };
   for (const item of allItems) {
     const t = (item.tipo ?? 'empresa') as LixeiraTipo;
     if (t in countByTipo) countByTipo[t]++;
@@ -83,6 +86,7 @@ export default function LixeiraPage() {
   const tipoIcon = (tipo: LixeiraTipo) => {
     if (tipo === 'documento') return <FileText size={14} />;
     if (tipo === 'observacao') return <MessageSquare size={14} />;
+    if (tipo === 'ret') return <ShieldCheck size={14} />;
     return <Building2 size={14} />;
   };
 
@@ -158,6 +162,14 @@ export default function LixeiraPage() {
                   className={`rounded-lg px-3 py-1.5 text-xs font-bold transition flex items-center gap-1 ${filtroTipo === 'observacao' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
                 >
                   <MessageSquare size={12} /> Observações ({countByTipo.observacao})
+                </button>
+              )}
+              {countByTipo.ret > 0 && (
+                <button
+                  onClick={() => setFiltroTipo('ret')}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition flex items-center gap-1 ${filtroTipo === 'ret' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+                >
+                  <ShieldCheck size={12} /> RETs ({countByTipo.ret})
                 </button>
               )}
             </div>
@@ -271,6 +283,24 @@ export default function LixeiraPage() {
                         </div>
                         <div className="text-sm text-gray-600 mt-0.5 line-clamp-2 italic">
                           &ldquo;{item.observacao.texto}&rdquo;
+                        </div>
+                      </div>
+                    )}
+
+                    {/* RET details */}
+                    {tipo === 'ret' && item.ret && (
+                      <div className="mt-1">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck size={16} className="text-emerald-500" />
+                          <span className="text-base font-bold text-gray-900">{item.ret.nome}</span>
+                          <span className={`rounded-md px-2 py-0.5 text-xs font-bold ${item.ret.ativo !== false ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                            {item.ret.ativo !== false ? 'Ativo' : 'Inativo'}
+                          </span>
+                        </div>
+                        <div className="text-sm text-gray-500 mt-0.5 flex flex-wrap gap-3">
+                          <span>PTA: <span className="font-semibold text-gray-700">{item.ret.numeroPta}</span></span>
+                          <span>Vencimento: <span className="font-semibold text-gray-700">{new Date(item.ret.vencimento).toLocaleDateString('pt-BR')}</span></span>
+                          {item.ret.portaria && <span>Portaria: <span className="font-semibold text-gray-700">{item.ret.portaria}</span></span>}
                         </div>
                       </div>
                     )}

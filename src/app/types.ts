@@ -45,6 +45,8 @@ export interface RetItem {
   nome: string;
   vencimento: string; // ISO date
   ultimaRenovacao: string; // ISO date
+  ativo: boolean; // RET ativo ou inativo
+  portaria: string; // Número da portaria vinculada (max 20 chars)
   tagVencimento?: string;
   historicoVencimento?: HistoricoVencimentoItem[];
 }
@@ -78,6 +80,9 @@ export interface Empresa {
 
   // Serviços
   servicos: string[];
+
+  // Tags
+  tags: string[];
 
   // RET
   possuiRet: boolean;
@@ -131,7 +136,7 @@ export type LogAction =
   | 'delete'
   | 'alert';
 
-export type LogEntity = 'empresa' | 'usuario' | 'departamento' | 'documento' | 'ret' | 'notificacao' | 'servico';
+export type LogEntity = 'empresa' | 'usuario' | 'departamento' | 'documento' | 'ret' | 'notificacao' | 'servico' | 'tag';
 
 export interface LogEntry {
   id: UUID;
@@ -154,26 +159,37 @@ export interface Servico {
   criadoEm: string; // ISO
 }
 
+export type TagCor = 'red' | 'orange' | 'amber' | 'green' | 'emerald' | 'cyan' | 'blue' | 'violet' | 'purple' | 'pink' | 'rose' | 'slate';
+
+export interface Tag {
+  id: UUID;
+  nome: string;
+  cor: TagCor;
+  criadoEm: string; // ISO
+}
+
 export interface SistemaState {
   empresas: Empresa[];
   usuarios: Usuario[];
   departamentos: Departamento[];
   servicos: Servico[];
+  tags: Tag[];
   logs: LogEntry[];
   lixeira: LixeiraItem[];
   notificacoes: Notificacao[];
   currentUserId: UUID | null;
 }
 
-export type LixeiraTipo = 'empresa' | 'documento' | 'observacao';
+export type LixeiraTipo = 'empresa' | 'documento' | 'observacao' | 'ret';
 
 export interface LixeiraItem {
   id: UUID;
   tipo: LixeiraTipo;
-  empresa: Empresa;              // dados da empresa (quando tipo=empresa) ou empresa-pai (quando tipo=documento/observacao)
+  empresa: Empresa;              // dados da empresa (quando tipo=empresa) ou empresa-pai (quando tipo=documento/observacao/ret)
   documento?: DocumentoEmpresa;  // dados do documento (quando tipo=documento)
   observacao?: Observacao;       // dados da observação (quando tipo=observacao)
-  empresaId?: UUID;              // id da empresa-pai (para restaurar doc/obs)
+  ret?: RetItem;                 // dados do RET (quando tipo=ret)
+  empresaId?: UUID;              // id da empresa-pai (para restaurar doc/obs/ret)
   excluidoPorId: UUID | null;
   excluidoPorNome: string;
   excluidoEm: string; // ISO

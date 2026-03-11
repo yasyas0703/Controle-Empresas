@@ -4,7 +4,9 @@ import React, { useState } from 'react';
 import { CalendarClock, History, Plus, Tag, Trash2, X } from 'lucide-react';
 import type { HistoricoVencimentoItem } from '@/app/types';
 import ModalBase from '@/app/components/ModalBase';
+import ConfirmModal from '@/app/components/ConfirmModal';
 import { useSistema } from '@/app/context/SistemaContext';
+import type { TagCor } from '@/app/types';
 import { formatBR } from '@/app/utils/date';
 import { criarHistoricoVencimentoItem, limparTagVencimento, normalizarHistoricoVencimento } from '@/app/utils/vencimentos';
 
@@ -30,12 +32,27 @@ interface ModalHistoricoVencimentoProps {
   onSave: (payload: { tagVencimento?: string; historicoVencimento: HistoricoVencimentoItem[] }) => Promise<void> | void;
 }
 
-const TAGS_RAPIDAS = [
+const TAGS_RAPIDAS_PADRAO = [
   'Renovação solicitada',
   'Aguardando retorno',
   'Em análise',
   'Regularizado',
 ];
+
+const TAG_COLOR_MAP: Record<TagCor, { bg: string; text: string; border: string }> = {
+  red: { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-300' },
+  orange: { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-300' },
+  amber: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-300' },
+  green: { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-300' },
+  emerald: { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-300' },
+  cyan: { bg: 'bg-cyan-100', text: 'text-cyan-700', border: 'border-cyan-300' },
+  blue: { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-300' },
+  violet: { bg: 'bg-violet-100', text: 'text-violet-700', border: 'border-violet-300' },
+  purple: { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-300' },
+  pink: { bg: 'bg-pink-100', text: 'text-pink-700', border: 'border-pink-300' },
+  rose: { bg: 'bg-rose-100', text: 'text-rose-700', border: 'border-rose-300' },
+  slate: { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300' },
+};
 
 export default function ModalHistoricoVencimento({
   open,
@@ -45,9 +62,10 @@ export default function ModalHistoricoVencimento({
   onClose,
   onSave,
 }: ModalHistoricoVencimentoProps) {
-  const { currentUser } = useSistema();
+  const { currentUser, tags: tagsCadastradas } = useSistema();
   const [tagVencimento, setTagVencimento] = useState(() => item?.tagVencimento || '');
   const [historico, setHistorico] = useState<HistoricoVencimentoItem[]>(() => normalizarHistoricoVencimento(item?.historicoVencimento));
+  const [confirmDeleteHistoricoId, setConfirmDeleteHistoricoId] = useState<string | null>(null);
   const [titulo, setTitulo] = useState('');
   const [descricao, setDescricao] = useState('');
   const [dataEvento, setDataEvento] = useState('');
@@ -84,6 +102,7 @@ export default function ModalHistoricoVencimento({
   if (!open || !item) return null;
 
   return (
+    <>
     <ModalBase
       isOpen={open}
       onClose={onClose}
@@ -152,13 +171,34 @@ export default function ModalHistoricoVencimento({
               </div>
             )}
             <div className="flex flex-wrap gap-2 mt-3">
-              {TAGS_RAPIDAS.map((tag) => (
+              {tagsCadastradas.map((tag) => {
+                const colors = TAG_COLOR_MAP[tag.cor] ?? TAG_COLOR_MAP.slate;
+                const isSelected = tagVencimento === tag.nome;
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    disabled={!canEdit || saving}
+                    onClick={() => setTagVencimento(tag.nome)}
+                    className={`rounded-full border px-3 py-1 text-xs font-bold transition disabled:opacity-50 ${
+                      isSelected
+                        ? `${colors.bg} ${colors.text} ${colors.border} ring-2 ring-offset-1 ring-violet-400`
+                        : `${colors.bg} ${colors.text} ${colors.border} hover:opacity-80`
+                    }`}
+                  >
+                    {tag.nome}
+                  </button>
+                );
+              })}
+              {TAGS_RAPIDAS_PADRAO.filter((t) => !tagsCadastradas.some((tc) => tc.nome === t)).map((tag) => (
                 <button
                   key={tag}
                   type="button"
                   disabled={!canEdit || saving}
                   onClick={() => setTagVencimento(tag)}
-                  className="rounded-full border border-violet-200 bg-white px-3 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-100 disabled:opacity-50"
+                  className={`rounded-full border border-violet-200 bg-white px-3 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-100 disabled:opacity-50 ${
+                    tagVencimento === tag ? 'ring-2 ring-offset-1 ring-violet-400 bg-violet-100' : ''
+                  }`}
                 >
                   {tag}
                 </button>
@@ -233,7 +273,7 @@ export default function ModalHistoricoVencimento({
                         <button
                           type="button"
                           disabled={saving}
-                          onClick={() => removerHistorico(itemHistorico.id)}
+                          onClick={() => setConfirmDeleteHistoricoId(itemHistorico.id)}
                           className="rounded-lg p-2 text-red-500 hover:bg-red-50 disabled:opacity-50"
                           title="Remover registro"
                         >
@@ -270,5 +310,16 @@ export default function ModalHistoricoVencimento({
         </div>
       </div>
     </ModalBase>
+
+    <ConfirmModal
+      open={!!confirmDeleteHistoricoId}
+      title="Remover registro?"
+      message="Tem certeza que deseja remover este registro do histórico?"
+      confirmText="Remover"
+      variant="danger"
+      onConfirm={() => { if (confirmDeleteHistoricoId) removerHistorico(confirmDeleteHistoricoId); setConfirmDeleteHistoricoId(null); }}
+      onCancel={() => setConfirmDeleteHistoricoId(null)}
+    />
+    </>
   );
 }
