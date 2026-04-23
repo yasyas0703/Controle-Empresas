@@ -210,6 +210,17 @@ alter table if exists documentos
   add column if not exists visibilidade text not null default 'publico'
     check (visibilidade in ('publico', 'departamento', 'confidencial', 'usuarios'));
 
+-- ============================================================
+-- Vencimentos Fiscais + Forma de Envio (Empresas)
+-- Rode também em bases já existentes.
+-- ============================================================
+alter table if exists empresas
+  add column if not exists forma_envio text not null default ''
+    check (forma_envio in ('', 'whatsapp', 'email', 'onvio', 'protocolo'));
+
+alter table if exists empresas
+  add column if not exists vencimentos_fiscais jsonb not null default '[]'::jsonb;
+
 alter table if exists documentos
   add column if not exists criado_por_id uuid references usuarios(id) on delete set null;
 
@@ -224,6 +235,40 @@ alter table if exists logs
 
 alter table if exists logs
   add column if not exists deleted_by_nome text;
+
+-- ============================================================
+-- Checklist Fiscal Mensal
+-- Uma linha por (empresa, mes, obrigacao). mes no formato 'YYYY-MM'.
+-- ============================================================
+create table if not exists checklist_fiscal (
+  id uuid primary key default gen_random_uuid(),
+  empresa_id uuid not null references empresas(id) on delete cascade,
+  mes text not null,
+  obrigacao text not null,
+  concluido boolean not null default false,
+  concluido_por_id uuid references usuarios(id) on delete set null,
+  concluido_por_nome text,
+  concluido_em timestamptz,
+  observacao text,
+  criado_em timestamptz not null default now(),
+  atualizado_em timestamptz not null default now(),
+  unique (empresa_id, mes, obrigacao)
+);
+
+create index if not exists idx_checklist_fiscal_mes on checklist_fiscal(mes);
+create index if not exists idx_checklist_fiscal_empresa on checklist_fiscal(empresa_id);
+create index if not exists idx_checklist_fiscal_mes_empresa on checklist_fiscal(mes, empresa_id);
+
+alter table checklist_fiscal enable row level security;
+
+drop policy if exists checklist_fiscal_select on checklist_fiscal;
+drop policy if exists checklist_fiscal_write on checklist_fiscal;
+drop policy if exists checklist_fiscal_all on checklist_fiscal;
+create policy checklist_fiscal_select on checklist_fiscal
+  for select using (public.is_active_user());
+create policy checklist_fiscal_write on checklist_fiscal
+  for all using (public.can_access_empresa(empresa_id))
+  with check (public.can_access_empresa(empresa_id));
 
 -- ============================================================
 -- Storage: Bucket para documentos

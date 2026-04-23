@@ -13,7 +13,7 @@ import { criarHistoricoVencimentoItem, limparTagVencimento, normalizarHistoricoV
 type ItemModalHistorico = {
   empresaCodigo: string;
   empresaNome: string;
-  tipo: 'Documento' | 'RET';
+  tipo: 'Documento' | 'RET' | 'Fiscal';
   nome: string;
   vencimento: string;
   dias: number;

@@ -1,4 +1,5 @@
-import type { HistoricoVencimentoItem, UUID } from '@/app/types';
+import type { HistoricoVencimentoItem, UUID, VencimentoFiscal } from '@/app/types';
+import { VENCIMENTOS_FISCAIS_NOMES } from '@/app/types';
 import { isoNow } from '@/app/utils/date';
 
 function newId(): UUID {
@@ -36,6 +37,27 @@ export function normalizarHistoricoVencimento(historico?: HistoricoVencimentoIte
       const bTime = getEventTime(b.dataEvento || b.criadoEm);
       return bTime - aTime;
     });
+}
+
+/**
+ * Garante que a empresa tenha um item para cada nome fixo de vencimento fiscal.
+ * Mantém os já existentes (casando por `nome`) e anexa os que faltam com vencimento vazio.
+ */
+export function garantirVencimentosFiscais(existentes?: VencimentoFiscal[] | null): VencimentoFiscal[] {
+  const atuais = Array.isArray(existentes) ? existentes : [];
+  const porNome = new Map(atuais.map((v) => [v.nome, v]));
+  return VENCIMENTOS_FISCAIS_NOMES.map((nome) => {
+    const atual = porNome.get(nome);
+    if (atual) {
+      return {
+        ...atual,
+        nome,
+        tagVencimento: limparTagVencimento(atual.tagVencimento),
+        historicoVencimento: normalizarHistoricoVencimento(atual.historicoVencimento),
+      };
+    }
+    return { id: newId(), nome, vencimento: '', historicoVencimento: [] };
+  });
 }
 
 export function criarHistoricoVencimentoItem({

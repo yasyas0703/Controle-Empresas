@@ -4,17 +4,26 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import type {
   DocumentoEmpresa,
   Empresa,
+  Limiares,
   LogEntry,
   Notificacao,
   RetItem,
   SistemaState,
   Usuario,
   UUID,
+  VencimentoFiscal,
 } from '@/app/types';
-import { formatBR, isoNow } from '@/app/utils/date';
-import { criarHistoricoVencimentoItem, limparTagVencimento, normalizarHistoricoVencimento } from '@/app/utils/vencimentos';
+import { LIMIARES_DEFAULTS } from '@/app/types';
+import { daysUntil, formatBR, isoNow } from '@/app/utils/date';
+import { criarHistoricoVencimentoItem, garantirVencimentosFiscais, limparTagVencimento, normalizarHistoricoVencimento } from '@/app/utils/vencimentos';
 import * as db from '@/lib/db';
 import { supabase } from '@/lib/supabase';
+
+const FISCAL_ALERT_LIMIARES: Limiares = LIMIARES_DEFAULTS;
+const FISCAL_ALERT_TITLES = {
+  vencido: 'Vencimento fiscal vencido',
+  critico: 'Vencimento fiscal critico',
+} as const;
 
 function newId(): UUID {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
@@ -188,6 +197,82 @@ function enriquecerRetsComHistorico(retsAtuais: RetItem[], proximosRets: RetItem
   });
 }
 
+function enriquecerVencimentosFiscaisComHistorico(
+  fiscaisAtuais: VencimentoFiscal[],
+  proximosFiscais: VencimentoFiscal[],
+  autor: AutorHistorico
+): VencimentoFiscal[] {
+  return proximosFiscais.map((fiscal) => {
+    const atual = fiscaisAtuais.find((f) => f.id === fiscal.id || f.nome === fiscal.nome);
+    let historico = hasOwnField(fiscal, 'historicoVencimento')
+      ? normalizarHistoricoVencimento(fiscal.historicoVencimento)
+      : normalizarHistoricoVencimento(atual?.historicoVencimento);
+    const tagVencimento = hasOwnField(fiscal, 'tagVencimento')
+      ? limparTagVencimento(fiscal.tagVencimento)
+      : limparTagVencimento(atual?.tagVencimento);
+
+    if (atual && fiscal.vencimento !== atual.vencimento) {
+      const anterior = atual.vencimento ? formatBR(atual.vencimento) : 'sem vencimento';
+      const proximo = fiscal.vencimento ? formatBR(fiscal.vencimento) : 'sem vencimento';
+      historico = normalizarHistoricoVencimento([
+        criarHistoricoVencimentoItem({
+          titulo: fiscal.vencimento ? `Vencimento atualizado para ${proximo}` : 'Vencimento removido',
+          descricao: `Antes: ${anterior}`,
+          dataEvento: new Date().toISOString().slice(0, 10),
+          autorId: autor.autorId,
+          autorNome: autor.autorNome,
+        }),
+        ...historico,
+      ]);
+    }
+
+    if (atual && (fiscal.arquivoUrl || '') !== (atual.arquivoUrl || '')) {
+      historico = normalizarHistoricoVencimento([
+        criarHistoricoVencimentoItem({
+          titulo: fiscal.arquivoUrl ? 'Anexo atualizado' : 'Anexo removido',
+          dataEvento: new Date().toISOString().slice(0, 10),
+          autorId: autor.autorId,
+          autorNome: autor.autorNome,
+        }),
+        ...historico,
+      ]);
+    }
+
+    return {
+      ...fiscal,
+      tagVencimento,
+      historicoVencimento: historico,
+    };
+  });
+}
+
+function buildFiscalAlertNotification(empresa: Empresa, fiscal: VencimentoFiscal) {
+  const dias = daysUntil(fiscal.vencimento);
+  if (dias === null) return null;
+
+  const status = dias < 0
+    ? 'vencido'
+    : dias <= FISCAL_ALERT_LIMIARES.critico
+      ? 'critico'
+      : null;
+
+  if (!status) return null;
+
+  const empresaNome = empresa.razao_social || empresa.apelido || '-';
+  const diasLabel = dias < 0
+    ? `${Math.abs(dias)} dia(s) em atraso`
+    : dias === 0
+      ? 'vence hoje'
+      : `vence em ${dias} dia(s)`;
+
+  return {
+    key: `${empresa.id}:${fiscal.id}:${status}:${fiscal.vencimento}`,
+    titulo: FISCAL_ALERT_TITLES[status],
+    mensagem: `${empresa.codigo} - ${empresaNome}: ${fiscal.nome} com vencimento em ${formatBR(fiscal.vencimento)} (${diasLabel}). Abra o sininho e marque como lida quando estiver ciente.`,
+    tipo: status === 'vencido' ? 'erro' as const : 'aviso' as const,
+  };
+}
+
 function dedupeIds(ids?: UUID[] | null): UUID[] {
   return Array.from(new Set((ids ?? []).filter(Boolean)));
 }
@@ -332,6 +417,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [privileges, setPrivileges] = useState({ isGhost: false, isDeveloper: false, isPrivileged: false, protectedUserIds: [] as string[] });
   const loginAttemptsRef = useRef<number[]>([]);
+  const fiscalAlertQueueRef = useRef<Set<string>>(new Set());
 
   const [authReady, setAuthReady] = useState(false);
 
@@ -473,6 +559,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     }
     return { isGhost: false, isDeveloper: false, isPrivileged: false, protectedUserIds: [] as string[] };
   }, []);
+
   // -- Auth --
   useEffect(() => {
     let mounted = true;
@@ -592,11 +679,53 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
   const dismissAlert = (id: UUID) => setAlerts((prev) => prev.filter((a) => a.id !== id));
 
-  const addNotification = async (titulo: string, mensagem: string, tipo: Notificacao['tipo'], empresaId?: UUID | null) => {
+  const getNotificationDestinatarios = useCallback((empresaId?: UUID | null) => {
+    const destinatarios: UUID[] = [];
+    const addDestinatario = (userId?: UUID | null) => {
+      if (!userId || destinatarios.includes(userId)) return;
+      destinatarios.push(userId);
+    };
+
+    if (!empresaId) return destinatarios;
+
+    const empresa = state.empresas.find((item) => item.id === empresaId);
+    if (!empresa) return destinatarios;
+
+    const deptIdsComResp = new Set<string>();
+    for (const [deptId, uid] of Object.entries(empresa.responsaveis)) {
+      if (!uid) continue;
+      addDestinatario(uid as UUID);
+      deptIdsComResp.add(deptId);
+    }
+
+    for (const usuario of state.usuarios) {
+      if (!usuario.ativo) continue;
+      if ((usuario.role === 'gerente' || usuario.role === 'admin') && usuario.departamentoId && deptIdsComResp.has(usuario.departamentoId)) {
+        addDestinatario(usuario.id);
+      }
+    }
+
+    if (destinatarios.length === 0) {
+      for (const usuario of state.usuarios) {
+        if (!usuario.ativo) continue;
+        if (usuario.role === 'gerente' || usuario.role === 'admin') addDestinatario(usuario.id);
+      }
+    }
+
+    return destinatarios;
+  }, [state.empresas, state.usuarios]);
+
+  const addNotification = async (
+    titulo: string,
+    mensagem: string,
+    tipo: Notificacao['tipo'],
+    empresaId?: UUID | null,
+  ) => {
     try {
       // Computar destinatários: quem deve ver esta notificação
-      const destinatarios: UUID[] = [];
-      if (empresaId) {
+      const destinatarios = getNotificationDestinatarios(empresaId);
+      /*
+      if (false && empresaId) {
         const empresa = state.empresas.find(e => e.id === empresaId);
         if (empresa) {
           const deptIdsComResp = new Set<string>();
@@ -617,6 +746,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
           }
         }
       }
+      */
 
       const notif = await db.insertNotificacao({
         titulo,
@@ -636,6 +766,49 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       console.error('Erro ao inserir notificação:', err);
     }
   };
+
+  useEffect(() => {
+    if (!state.currentUserId || !canManage) return;
+
+    const pendentes = state.empresas.flatMap((empresa) =>
+      garantirVencimentosFiscais(empresa.vencimentosFiscais).flatMap((fiscal) => {
+        const alerta = buildFiscalAlertNotification(empresa, fiscal);
+        if (!alerta) return [];
+
+        const jaExiste = state.notificacoes.some((notificacao) =>
+          notificacao.empresaId === empresa.id &&
+          notificacao.titulo === alerta.titulo &&
+          notificacao.mensagem === alerta.mensagem
+        );
+
+        if (jaExiste || fiscalAlertQueueRef.current.has(alerta.key)) return [];
+
+        return [{ ...alerta, empresaId: empresa.id }];
+      })
+    );
+
+    if (pendentes.length === 0) return;
+
+    let ativo = true;
+
+    void (async () => {
+      for (const alerta of pendentes) {
+        if (!ativo) break;
+
+        fiscalAlertQueueRef.current.add(alerta.key);
+        try {
+          await addNotification(alerta.titulo, alerta.mensagem, alerta.tipo, alerta.empresaId);
+        } finally {
+          fiscalAlertQueueRef.current.delete(alerta.key);
+        }
+      }
+    })();
+
+    return () => {
+      ativo = false;
+    };
+  }, [addNotification, canManage, state.currentUserId, state.empresas, state.notificacoes]);
+
   // -- Auth --
 
   const login = async (email: string, senha: string): Promise<boolean | 'rate_limited'> => {
@@ -919,6 +1092,8 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
           tagVencimento: limparTagVencimento(ret.tagVencimento),
           historicoVencimento: normalizarHistoricoVencimento(ret.historicoVencimento),
         })),
+        vencimentosFiscais: garantirVencimentosFiscais(payload.vencimentosFiscais),
+        formaEnvio: payload.formaEnvio ?? [],
         inscricao_estadual: payload.inscricao_estadual,
         inscricao_municipal: payload.inscricao_municipal,
         regime_federal: payload.regime_federal,
@@ -968,6 +1143,17 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
                   autorId: state.currentUserId,
                   autorNome: currentUser?.nome,
                 }),
+          }
+        : {}),
+      ...(patch.vencimentosFiscais !== undefined
+        ? {
+            vencimentosFiscais: skipHistorico
+              ? patch.vencimentosFiscais
+              : enriquecerVencimentosFiscaisComHistorico(
+                  before.vencimentosFiscais ?? [],
+                  patch.vencimentosFiscais,
+                  { autorId: state.currentUserId, autorNome: currentUser?.nome }
+                ),
           }
         : {}),
     };
