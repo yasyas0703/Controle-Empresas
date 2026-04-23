@@ -1,14 +1,19 @@
 'use client';
 
 import React, { useMemo, useRef, useState, useEffect } from 'react';
-import { Loader2, Search, X, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Search, X, Plus, Trash2, Paperclip, AlertTriangle, CalendarClock, Eye, Download } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
-import type { Empresa, RetItem, TagCor, TipoInscricao, UUID } from '@/app/types';
+import type { Empresa, FormaEnvio, RetItem, TagCor, TipoInscricao, UUID, VencimentoFiscal } from '@/app/types';
+import { FORMAS_ENVIO } from '@/app/types';
 import ModalBase from '@/app/components/ModalBase';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { cepSchema, cpfSchema, cnpjSchema, detectTipoInscricao, detectTipoEstabelecimento, formatarDocumento } from '@/app/utils/validation';
 import { api } from '@/app/utils/api';
+import { garantirVencimentosFiscais } from '@/app/utils/vencimentos';
+import { uploadDocumentoArquivo, getVencimentoFiscalSignedUrl } from '@/lib/db';
 import { sortByPtBr, sortStringsPtBr } from '@/lib/sort';
+
+const MAX_FISCAL_FILE_SIZE = 10 * 1024 * 1024;
 
 interface ModalCadastrarEmpresaProps {
   onClose: () => void;
@@ -72,6 +77,9 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
     possuiRet: false,
     rets: [],
 
+    vencimentosFiscais: garantirVencimentosFiscais([]),
+    formaEnvio: [],
+
     inscricao_estadual: '',
     inscricao_municipal: '',
     regime_federal: '',
@@ -98,6 +106,9 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
   const [cnpjLookupError, setCnpjLookupError] = useState<string>('');
   const [cnpjTouched, setCnpjTouched] = useState(false);
   const [confirmDeleteRetId, setConfirmDeleteRetId] = useState<string | null>(null);
+  // Arquivos pendentes de upload para os vencimentos fiscais: { fiscalId -> File }
+  const [fiscaisPendingFiles, setFiscaisPendingFiles] = useState<Record<string, File>>({});
+  const [fiscalUploading, setFiscalUploading] = useState(false);
   const lastAutoLookupDigitsRef = useRef<string>('');
 
   const allServicos = useMemo(() => {
@@ -112,6 +123,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
     () => sortByPtBr(usuarios.filter((u) => u.ativo), (u) => u.nome),
     [usuarios]
   );
+  const formasEnvioSelecionadas = Array.isArray(formData.formaEnvio) ? formData.formaEnvio : [];
 
   const cnpjDigits = useMemo(() => String(formData.cnpj || '').replace(/\D/g, ''), [formData.cnpj]);
   const podeBuscarCnpj = cnpjDigits.length === 14 && !buscandoCnpj;
@@ -206,6 +218,8 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
         responsaveis: empresa.responsaveis ?? {},
         servicos: empresa.servicos ?? [],
         rets: empresa.rets ?? [],
+        vencimentosFiscais: garantirVencimentosFiscais(empresa.vencimentosFiscais),
+        formaEnvio: empresa.formaEnvio ?? [],
       });
       setEmpresaCadastrada(empresa.cadastrada !== false);
       setCnpjTouched(false);
@@ -303,6 +317,73 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
     }));
   };
 
+  const updateVencimentoFiscal = (id: UUID, patch: Partial<VencimentoFiscal>) => {
+    setFormData((prev) => ({
+      ...prev,
+      vencimentosFiscais: (prev.vencimentosFiscais ?? []).map((v) =>
+        v.id === id ? { ...v, ...patch } : v
+      ),
+    }));
+  };
+
+  const setFiscalFile = (id: UUID, file: File | null) => {
+    if (file && file.size > MAX_FISCAL_FILE_SIZE) {
+      mostrarAlerta('Arquivo muito grande', 'O arquivo deve ter no máximo 10MB.', 'aviso');
+      return;
+    }
+    setFiscaisPendingFiles((prev) => {
+      const next = { ...prev };
+      if (file) next[id] = file;
+      else delete next[id];
+      return next;
+    });
+  };
+
+  const visualizarPendingFile = (file: File) => {
+    const url = URL.createObjectURL(file);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    // Revogar depois de um tempo para o navegador ter chance de carregar
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
+
+  const baixarPendingFile = (file: File) => {
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const visualizarArquivoSalvo = async (arquivoUrl: string) => {
+    try {
+      const url = await getVencimentoFiscalSignedUrl(arquivoUrl);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch {
+      mostrarAlerta('Erro ao abrir arquivo', 'Não foi possível gerar o link do arquivo.', 'erro');
+    }
+  };
+
+  const baixarArquivoSalvo = async (arquivoUrl: string, fileName: string) => {
+    try {
+      const url = await getVencimentoFiscalSignedUrl(arquivoUrl);
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = fileName || 'anexo';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      mostrarAlerta('Erro ao baixar', 'Não foi possível baixar o arquivo.', 'erro');
+    }
+  };
+
   const removeRet = async (id: UUID) => {
     // Se a empresa já existe no banco, mover o RET para lixeira
     if (empresa?.id) {
@@ -378,6 +459,40 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
     const temCnpjValido = cnpjDigits2.length === 14;
     const cadastrada = empresaCadastrada ? temCnpjValido : temCnpjValido;
 
+    // Upload dos arquivos pendentes dos vencimentos fiscais (antes de salvar a empresa)
+    let vencimentosFiscaisFinal: VencimentoFiscal[] = formData.vencimentosFiscais ?? [];
+    const pendingIds = Object.keys(fiscaisPendingFiles);
+    if (pendingIds.length > 0) {
+      setFiscalUploading(true);
+      try {
+        const empresaIdAtual = empresa?.id;
+        const atualizados = await Promise.all(
+          vencimentosFiscaisFinal.map(async (v) => {
+            const file = fiscaisPendingFiles[v.id];
+            if (!file) return v;
+            try {
+              // Se ainda não temos empresaId (novo cadastro), usa um placeholder — o ID real será aplicado
+              // pelo próprio upload de documento (o caminho inclui empresaId), então para empresas novas
+              // salvamos sem upload e avisamos o usuário.
+              if (!empresaIdAtual) return v;
+              const arquivoUrl = await uploadDocumentoArquivo(empresaIdAtual, file);
+              return { ...v, arquivoUrl };
+            } catch (err) {
+              console.error('Erro upload fiscal', err);
+              mostrarAlerta('Erro no anexo', `Falha ao enviar anexo de "${v.nome}".`, 'erro');
+              return v;
+            }
+          })
+        );
+        vencimentosFiscaisFinal = atualizados;
+        if (!empresa?.id) {
+          mostrarAlerta('Anexos fiscais', 'A empresa ainda não foi criada. Salve e reabra a edição para anexar arquivos aos vencimentos fiscais.', 'aviso');
+        }
+      } finally {
+        setFiscalUploading(false);
+      }
+    }
+
     const { responsaveis, ...formDataSemResp } = formData;
     const dadosParaSalvar: Partial<Empresa> = {
       ...formDataSemResp,
@@ -387,6 +502,8 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
       tags: (formData.tags ?? []).filter(Boolean),
       possuiRet: Boolean(formData.possuiRet) && (formData.rets ?? []).length > 0,
       rets: Boolean(formData.possuiRet) ? (formData.rets ?? []) : [],
+      vencimentosFiscais: vencimentosFiscaisFinal,
+      formaEnvio: Array.isArray(formData.formaEnvio) ? formData.formaEnvio : [],
       ...(canManage ? { responsaveis: responsaveis ?? {} } : {}),
     };
 
@@ -626,6 +743,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
               </div>
             </div>
 
+
             {!empresaCadastrada && (
               <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                 <p className="text-sm text-yellow-800">
@@ -825,6 +943,183 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                   Adicionar RET
                 </button>
               </div>
+            )}
+          </div>
+
+          {/* Vencimentos Fiscais */}
+          <div className="bg-red-50 rounded-xl p-4 border border-red-200">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle size={18} className="text-red-600" />
+              <h4 className="font-semibold text-red-800">Vencimentos Fiscais</h4>
+            </div>
+            <p className="text-xs text-red-700 mb-4">
+              Defina a data de vencimento de cada obrigação. O anexo é opcional — mas o vencimento aparece no painel
+              de Vencimentos piscando quando estiver próximo ou vencido, para nunca deixar o cliente na mão.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3" data-section="fiscais">
+              {(formData.vencimentosFiscais ?? []).map((v) => {
+                const pendingFile = fiscaisPendingFiles[v.id];
+                return (
+                  <div key={v.id} className="rounded-xl border border-red-100 bg-white p-3">
+                    <div className="flex items-center gap-2">
+                      <CalendarClock size={14} className="text-red-500 shrink-0" />
+                      <div className="text-sm font-bold text-gray-900 truncate" title={v.nome}>{v.nome}</div>
+                    </div>
+
+                    <label className="block mt-2 text-[11px] font-semibold text-gray-600">
+                      Data de vencimento
+                    </label>
+                    <input
+                      type="date"
+                      value={v.vencimento || ''}
+                      onChange={(e) => updateVencimentoFiscal(v.id, { vencimento: e.target.value })}
+                      className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    />
+
+                    <label className="block mt-2 text-[11px] font-semibold text-gray-600">
+                      Anexo <span className="font-normal text-gray-400">(opcional)</span>
+                    </label>
+                    {pendingFile ? (
+                      <div className="mt-1 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <Paperclip size={12} className="text-orange-600 shrink-0" />
+                          <span className="text-[11px] font-semibold text-gray-900 truncate flex-1" title={pendingFile.name}>{pendingFile.name}</span>
+                        </div>
+                        <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => visualizarPendingFile(pendingFile)}
+                            className="inline-flex items-center gap-1 text-[11px] text-blue-600 font-bold hover:text-blue-700"
+                            title="Visualizar"
+                          >
+                            <Eye size={12} /> Visualizar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => baixarPendingFile(pendingFile)}
+                            className="inline-flex items-center gap-1 text-[11px] text-emerald-600 font-bold hover:text-emerald-700"
+                            title="Baixar"
+                          >
+                            <Download size={12} /> Baixar
+                          </button>
+                          <label className="inline-flex items-center gap-1 text-[11px] text-violet-600 font-bold cursor-pointer hover:text-violet-700" title="Trocar arquivo">
+                            <Paperclip size={12} /> Trocar
+                            <input
+                              type="file"
+                              accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
+                              className="hidden"
+                              onChange={(e) => setFiscalFile(v.id, e.target.files?.[0] ?? null)}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setFiscalFile(v.id, null)}
+                            className="inline-flex items-center gap-1 text-[11px] text-red-500 font-bold hover:text-red-600 ml-auto"
+                            title="Remover"
+                          >
+                            <Trash2 size={12} /> Remover
+                          </button>
+                        </div>
+                        <div className="mt-1 text-[10px] text-orange-700">Novo arquivo - sera enviado ao salvar</div>
+                      </div>
+                    ) : v.arquivoUrl ? (
+                      <div className="mt-1 rounded-lg border border-green-200 bg-green-50 px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <Paperclip size={12} className="text-green-600 shrink-0" />
+                          <span className="text-[11px] font-semibold text-green-700 flex-1">Arquivo anexado</span>
+                        </div>
+                        <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => v.arquivoUrl && visualizarArquivoSalvo(v.arquivoUrl)}
+                            className="inline-flex items-center gap-1 text-[11px] text-blue-600 font-bold hover:text-blue-700"
+                            title="Visualizar"
+                          >
+                            <Eye size={12} /> Visualizar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => v.arquivoUrl && baixarArquivoSalvo(v.arquivoUrl, `${v.nome}${v.arquivoUrl.match(/\.[a-zA-Z0-9]+$/)?.[0] ?? ''}`)}
+                            className="inline-flex items-center gap-1 text-[11px] text-emerald-600 font-bold hover:text-emerald-700"
+                            title="Baixar"
+                          >
+                            <Download size={12} /> Baixar
+                          </button>
+                          <label className="inline-flex items-center gap-1 text-[11px] text-violet-600 font-bold cursor-pointer hover:text-violet-700" title="Trocar arquivo">
+                            <Paperclip size={12} /> Trocar
+                            <input
+                              type="file"
+                              accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
+                              className="hidden"
+                              onChange={(e) => setFiscalFile(v.id, e.target.files?.[0] ?? null)}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => updateVencimentoFiscal(v.id, { arquivoUrl: undefined })}
+                            className="inline-flex items-center gap-1 text-[11px] text-red-500 font-bold hover:text-red-600 ml-auto"
+                            title="Remover"
+                          >
+                            <Trash2 size={12} /> Remover
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="mt-1 block w-full rounded-lg border-2 border-dashed border-gray-300 px-3 py-2 text-center hover:border-red-400 hover:bg-red-50 transition text-[11px] text-gray-500 cursor-pointer">
+                        Anexar arquivo
+                        <input
+                          type="file"
+                          accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
+                          className="hidden"
+                          onChange={(e) => setFiscalFile(v.id, e.target.files?.[0] ?? null)}
+                        />
+                      </label>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Forma de Envio */}
+          <div className="bg-teal-50 rounded-xl p-4 border border-teal-200">
+            <h4 className="font-semibold text-teal-800 mb-2">Forma de Envio</h4>
+            <p className="text-xs text-teal-700 mb-3">
+              Como os documentos, guias e avisos devem ser enviados para esse cliente. Você pode marcar mais de uma opção.
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {FORMAS_ENVIO.map((opt) => {
+                const selected = formasEnvioSelecionadas.includes(opt.value);
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => handleChange(
+                      'formaEnvio',
+                      selected
+                        ? formasEnvioSelecionadas.filter((item) => item !== opt.value)
+                        : [...formasEnvioSelecionadas, opt.value]
+                    )}
+                    className={`rounded-xl border-2 px-3 py-3 font-bold text-sm transition ${
+                      selected
+                        ? 'bg-teal-100 border-teal-500 text-teal-800'
+                        : 'bg-white border-gray-200 text-gray-600 hover:border-teal-300 hover:bg-teal-50'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            {formasEnvioSelecionadas.length > 0 && (
+              <button
+                type="button"
+                onClick={() => handleChange('formaEnvio', [] as FormaEnvio[])}
+                className="mt-2 text-xs text-teal-700 font-semibold hover:text-teal-900"
+              >
+                Limpar seleções
+              </button>
             )}
           </div>
 
@@ -1040,8 +1335,13 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
             <button type="button" onClick={onClose} className="flex-1 px-6 py-3 text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-100">
               Cancelar
             </button>
-            <button type="submit" className="flex-1 px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-medium hover:shadow-lg transition-all">
-              {empresa ? 'Salvar Alterações' : 'Cadastrar Empresa'}
+            <button
+              type="submit"
+              disabled={fiscalUploading}
+              className="flex-1 px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-medium hover:shadow-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+            >
+              {fiscalUploading && <Loader2 size={16} className="animate-spin" />}
+              {fiscalUploading ? 'Enviando anexos...' : (empresa ? 'Salvar Alterações' : 'Cadastrar Empresa')}
             </button>
           </div>
         </form>

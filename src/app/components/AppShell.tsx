@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import React, { useMemo, useState, useEffect } from 'react';
-import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag } from 'lucide-react';
+import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, Grid3x3, ListChecks } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, isRetRenovado } from '@/app/utils/date';
 import AutoBackup from '@/app/components/AutoBackup';
@@ -29,6 +29,8 @@ function getErrorMessage(error: unknown, fallback: string): string {
 const nav: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/vencimentos', label: 'Vencimentos', icon: AlertTriangle, badge: true },
+  { href: '/vencimentos-fiscais', label: 'Painel Fiscal', icon: Grid3x3 },
+  { href: '/vencimentos-fiscais/checklist', label: 'Checklist Mensal', icon: ListChecks },
   { href: '/calendario', label: 'Calendário', icon: CalendarDays },
   { href: '/dev', label: 'Controle', icon: Terminal, ghostOnly: true },
   { href: '/empresas', label: 'Empresas', icon: Building2 },
@@ -41,6 +43,9 @@ const nav: NavItem[] = [
   { href: '/lixeira', label: 'Lixeira', icon: Trash2 },
   { href: '/backup', label: 'Backup', icon: HardDrive },
 ];
+
+const BROWSER_NOTIF_SESSION_KEY = 'controle-triar-browser-notifs-shown-v1';
+const FISCAL_NOTIF_TITLE_PREFIX = 'Vencimento fiscal ';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -62,6 +67,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [forgotResetLoading, setForgotResetLoading] = useState(false);
   const [forgotResetDone, setForgotResetDone] = useState(false);
   const [forgotError, setForgotError] = useState('');
+  const [browserNotifPermission, setBrowserNotifPermission] = useState<NotificationPermission | 'unsupported'>('unsupported');
 
   // isGhost e isPrivileged vêm do contexto (validados no servidor)
 
@@ -100,6 +106,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (currentUser) setShowLogin(false);
   }, [authReady, currentUser]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setBrowserNotifPermission('unsupported');
+      return;
+    }
+
+    setBrowserNotifPermission(Notification.permission);
+  }, []);
+
   const vencidosCount = useMemo(() => {
     let count = 0;
     for (const e of empresas) {
@@ -112,11 +127,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         const dias = daysUntil(r.vencimento);
         if (dias !== null && dias < 0) count++;
       }
+      for (const f of e.vencimentosFiscais ?? []) {
+        const dias = daysUntil(f.vencimento);
+        if (dias !== null && dias < 0) count++;
+      }
     }
     return count;
   }, [empresas]);
 
   const notifsNaoLidas = (notificacoes ?? []).filter((n) => !n.lida).length;
+  const fiscalUnreadNotifs = useMemo(
+    () => (notificacoes ?? []).filter((n) => !n.lida && n.titulo.startsWith(FISCAL_NOTIF_TITLE_PREFIX)),
+    [notificacoes]
+  );
   const lixeiraCount = (lixeira ?? []).length;
 
   const handleForgotPassword = async () => {
@@ -205,6 +228,87 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   // Tela de manutenção — bloqueia quem está logado mas não é privilegiado
   // (usuários não logados ainda veem o login para que o ghost possa entrar)
+  const ativarNotificacoesNavegador = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      mostrarAlerta('Navegador sem suporte', 'Esse navegador nao suporta notificacoes do sistema.', 'aviso');
+      return;
+    }
+
+    try {
+      const permissao = await Notification.requestPermission();
+      setBrowserNotifPermission(permissao);
+      if (permissao === 'granted') {
+        mostrarAlerta('Alertas ativados', 'As notificacoes do navegador foram habilitadas.', 'sucesso');
+      } else if (permissao === 'denied') {
+        mostrarAlerta('Permissao negada', 'O navegador bloqueou as notificacoes. Voce pode liberar isso nas configuracoes do site.', 'aviso');
+      }
+    } catch (error: unknown) {
+      mostrarAlerta('Falha ao ativar alertas', getErrorMessage(error, 'Nao foi possivel solicitar a permissao do navegador.'), 'erro');
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || browserNotifPermission !== 'granted' || fiscalUnreadNotifs.length === 0) return;
+
+    const unreadIds = new Set(fiscalUnreadNotifs.map((n) => n.id));
+    let shownIds = new Set<string>();
+
+    try {
+      const raw = window.sessionStorage.getItem(BROWSER_NOTIF_SESSION_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          shownIds = new Set(parsed.filter((id): id is string => typeof id === 'string' && unreadIds.has(id)));
+        }
+      }
+    } catch {
+      shownIds = new Set<string>();
+    }
+
+    const pendentes = fiscalUnreadNotifs.filter((n) => !shownIds.has(n.id));
+    if (pendentes.length === 0) {
+      window.sessionStorage.setItem(BROWSER_NOTIF_SESSION_KEY, JSON.stringify(Array.from(shownIds)));
+      return;
+    }
+
+    const abrirPainel = () => {
+      window.focus();
+      setShowNotifs(true);
+    };
+
+    const itensParaExibir = pendentes.slice(0, 3);
+    for (const notificacao of itensParaExibir) {
+      const alerta = new Notification(notificacao.titulo, {
+        body: notificacao.mensagem,
+        icon: '/triar.png',
+        badge: '/triar.png',
+        tag: notificacao.id,
+        requireInteraction: true,
+      });
+      alerta.onclick = () => {
+        abrirPainel();
+        alerta.close();
+      };
+    }
+
+    if (pendentes.length > itensParaExibir.length) {
+      const resumo = new Notification('Lembrete de vencimentos fiscais', {
+        body: `Voce tem ${pendentes.length} alerta(s) fiscal(is) pendentes. Abra o sininho para revisar.`,
+        icon: '/triar.png',
+        badge: '/triar.png',
+        tag: 'fiscal-alert-summary',
+        requireInteraction: true,
+      });
+      resumo.onclick = () => {
+        abrirPainel();
+        resumo.close();
+      };
+    }
+
+    for (const notificacao of pendentes) shownIds.add(notificacao.id);
+    window.sessionStorage.setItem(BROWSER_NOTIF_SESSION_KEY, JSON.stringify(Array.from(shownIds)));
+  }, [browserNotifPermission, fiscalUnreadNotifs]);
+
   if (manutencao && authReady && currentUser && !isPrivileged) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
@@ -246,6 +350,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-cyan-50 to-teal-50">
         <div className="font-bold text-gray-900 text-sm">Notificações</div>
         <div className="flex items-center gap-2">
+          {browserNotifPermission === 'default' && fiscalUnreadNotifs.length > 0 && (
+            <button onClick={ativarNotificacoesNavegador} className="text-[11px] text-violet-600 hover:text-violet-700 font-bold">
+              Ativar alertas do navegador
+            </button>
+          )}
+          {browserNotifPermission === 'granted' && fiscalUnreadNotifs.length > 0 && (
+            <span className="text-[11px] text-emerald-600 font-bold">Alertas do navegador ativos</span>
+          )}
           {notifsNaoLidas > 0 && (
             <button onClick={marcarTodasLidas} className="text-[11px] text-cyan-600 hover:text-cyan-700 font-bold">
               Marcar todas como lidas
@@ -568,9 +680,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* ── Conteúdo principal ── */}
       <div
-        className={`flex-1 min-h-screen transition-all duration-200 ease-in-out pt-14 md:pt-0 ${sidebarOpen ? 'md:ml-64' : 'md:ml-[72px]'}`}
+        className={`flex-1 min-w-0 min-h-screen transition-all duration-200 ease-in-out pt-14 md:pt-0 ${sidebarOpen ? 'md:ml-64' : 'md:ml-[72px]'}`}
       >
-        <main className="px-3 py-3 sm:px-4 sm:py-4 md:py-6">{children}</main>
+        <main className="px-3 py-3 sm:px-4 sm:py-4 md:py-6 min-w-0 max-w-full">{children}</main>
       </div>
 
       <AutoBackup />

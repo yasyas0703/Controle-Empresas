@@ -64,6 +64,56 @@ export interface HistoricoVencimentoItem {
 export type TipoEstabelecimento = '' | 'matriz' | 'filial';
 export type TipoInscricao = '' | 'CNPJ' | 'CPF' | 'MEI' | 'CEI' | 'CAEPF' | 'CNO';
 
+export type FormaEnvio = 'whatsapp' | 'email' | 'onvio' | 'protocolo';
+
+export const FORMAS_ENVIO: { value: FormaEnvio; label: string }[] = [
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'email', label: 'E-mail' },
+  { value: 'onvio', label: 'Onvio' },
+  { value: 'protocolo', label: 'Protocolo' },
+];
+
+export interface VencimentoFiscal {
+  id: UUID;
+  nome: string; // Nome fixo (de VENCIMENTOS_FISCAIS_NOMES)
+  vencimento: string; // ISO date (YYYY-MM-DD) — vazio se ainda não definida
+  arquivoUrl?: string; // caminho no Storage (opcional)
+  tagVencimento?: string;
+  historicoVencimento?: HistoricoVencimentoItem[];
+}
+
+/** Nomes fixos dos vencimentos fiscais que toda empresa possui. */
+export const VENCIMENTOS_FISCAIS_NOMES = [
+  'ICMS',
+  'SPED ICMS/IPI',
+  'IPI',
+  'GIA-ST/DIFAL',
+  'ICMS-ST/DIFAL',
+  'ISS - PRESTAÇÃO DE SERVIÇOS',
+  'REINF',
+  'DARF-SERVIÇOS TOMADOS',
+  'PIS/COFINS',
+  'SPED CONTRIBUIÇÕES',
+  'CSLL/IRPJ',
+  'DIFERENCIAL DE ALIQUOTA',
+] as const;
+
+export type VencimentoFiscalNome = (typeof VENCIMENTOS_FISCAIS_NOMES)[number];
+
+export interface ChecklistFiscalItem {
+  id: UUID;
+  empresaId: UUID;
+  mes: string; // formato 'YYYY-MM'
+  obrigacao: string; // nome da obrigação fiscal
+  concluido: boolean;
+  concluidoPorId?: UUID | null;
+  concluidoPorNome?: string;
+  concluidoEm?: string; // ISO
+  observacao?: string;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
 export interface Empresa {
   id: UUID;
   cadastrada: boolean;
@@ -87,6 +137,12 @@ export interface Empresa {
   // RET
   possuiRet: boolean;
   rets: RetItem[];
+
+  // Vencimentos fiscais (obrigações recorrentes do Fiscal)
+  vencimentosFiscais: VencimentoFiscal[];
+
+  // Formas de envio preferenciais (documentos/guias para o cliente)
+  formaEnvio?: FormaEnvio[];
 
   // Inscrições / regimes
   inscricao_estadual?: string;

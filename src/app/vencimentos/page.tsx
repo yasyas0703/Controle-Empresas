@@ -12,6 +12,7 @@ import { LIMIARES_DEFAULTS } from '@/app/types';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import ModalLimiares from '@/app/components/ModalLimiares';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
+import { garantirVencimentosFiscais } from '@/app/utils/vencimentos';
 import { sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
 
 type StatusVenc = 'vencido' | 'critico' | 'atencao' | 'proximo' | 'ok' | 'renovado';
@@ -21,7 +22,7 @@ interface VencimentoItem {
   itemId: UUID;
   empresaCodigo: string;
   empresaNome: string;
-  tipo: 'Documento' | 'RET';
+  tipo: 'Documento' | 'RET' | 'Fiscal';
   nome: string;
   vencimento: string;
   dias: number;
@@ -126,6 +127,25 @@ export default function VencimentosPage() {
           status: renovado ? 'renovado' : getStatus(dias, limiares),
           tagVencimento: r.tagVencimento,
           historicoVencimento: r.historicoVencimento,
+          responsaveis: e.responsaveis,
+          departamentosIds: [],
+        });
+      }
+      for (const f of e.vencimentosFiscais ?? []) {
+        const dias = daysUntil(f.vencimento);
+        if (dias === null) continue;
+        items.push({
+          empresaId: e.id,
+          itemId: f.id,
+          empresaCodigo: e.codigo,
+          empresaNome: e.razao_social || e.apelido || '-',
+          tipo: 'Fiscal',
+          nome: f.nome,
+          vencimento: f.vencimento,
+          dias,
+          status: getStatus(dias, limiares),
+          tagVencimento: f.tagVencimento,
+          historicoVencimento: f.historicoVencimento,
           responsaveis: e.responsaveis,
           departamentosIds: [],
         });
@@ -245,6 +265,7 @@ export default function VencimentosPage() {
   };
 
   const hasFilters = search || filtroStatus !== 'todos-risco' || filtroDep || filtroResp || filtroTipo || filtroTag || meusVencimentos;
+  const atalhoFiscaisVencidosAtivo = filtroTipo === 'Fiscal' && filtroStatus === 'vencido';
 
   const canEditHistoricoItem = (item: VencimentoItem | null) => {
     if (!item) return false;
@@ -262,6 +283,20 @@ export default function VencimentosPage() {
     try {
       if (historicoItem.tipo === 'Documento') {
         const ok = await atualizarDocumento(historicoItem.empresaId, historicoItem.itemId, payload);
+        if (ok === false) return;
+      } else if (historicoItem.tipo === 'Fiscal') {
+        const empresa = empresas.find((item) => item.id === historicoItem.empresaId);
+        if (!empresa) {
+          mostrarAlerta('Empresa não encontrada', 'Não foi possível localizar a empresa desse vencimento fiscal.', 'erro');
+          return;
+        }
+        const fiscaisAtuais = garantirVencimentosFiscais(empresa.vencimentosFiscais);
+        const vencimentosFiscais = fiscaisAtuais.map((f) =>
+          f.id === historicoItem.itemId
+            ? { ...f, tagVencimento: payload.tagVencimento, historicoVencimento: payload.historicoVencimento }
+            : f
+        );
+        const ok = await atualizarEmpresa(empresa.id, { vencimentosFiscais });
         if (ok === false) return;
       } else {
         const empresa = empresas.find((item) => item.id === historicoItem.empresaId);
@@ -285,29 +320,32 @@ export default function VencimentosPage() {
     }
   };
 
+  const buildExportRows = (items: VencimentoItem[]) => items.map((item) => {
+    const responsaveis = sortResponsaveisByNome(
+      Object.entries(item.responsaveis)
+        .filter(([, uid]) => uid)
+        .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid) }))
+        .filter((r) => r.dep && r.user)
+    )
+      .map(({ dep, user }) => `${dep}: ${user}`)
+      .join(' | ');
+
+    return [
+      statusConfig[item.status].label,
+      item.dias < 0 ? `${Math.abs(item.dias)}d atras` : `${item.dias}d`,
+      item.empresaCodigo,
+      item.empresaNome,
+      item.tipo,
+      item.nome,
+      formatBR(item.vencimento),
+      responsaveis,
+    ];
+  });
+
   // Export CSV
   const exportCSV = () => {
     const header = ['Status', 'Dias', 'Código', 'Empresa', 'Tipo', 'Nome', 'Vencimento', 'Responsáveis'];
-    const rows = filtered.map((item) => {
-      const responsaveis = sortResponsaveisByNome(
-        Object.entries(item.responsaveis)
-          .filter(([, uid]) => uid)
-          .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid) }))
-          .filter((r) => r.dep && r.user)
-      )
-        .map(({ dep, user }) => `${dep}: ${user}`)
-        .join(' | ');
-      return [
-        statusConfig[item.status].label,
-        item.dias.toString(),
-        item.empresaCodigo,
-        item.empresaNome,
-        item.tipo,
-        item.nome,
-        formatBR(item.vencimento),
-        responsaveis,
-      ];
-    });
+    const rows = buildExportRows(filtered);
 
     const csvContent = [header, ...rows].map((r) => r.map((c) => `"${c}"`).join(';')).join('\n');
     const BOM = '\uFEFF';
@@ -338,7 +376,9 @@ export default function VencimentosPage() {
     doc.text(`Total: ${filtered.length} itens`, 14, 26);
 
     const header = [['Status', 'Dias', 'Código', 'Empresa', 'Tipo', 'Nome', 'Vencimento', 'Responsáveis']];
-    const rows = filtered.map((item) => {
+    const rows = buildExportRows(filtered);
+    const fiscaisRows = buildExportRows(filtered.filter((item) => item.tipo === 'Fiscal'));
+    const _unusedRows = filtered.map((item) => {
       const responsaveis = sortResponsaveisByNome(
         Object.entries(item.responsaveis)
           .filter(([, uid]) => uid)
@@ -388,6 +428,36 @@ export default function VencimentosPage() {
       },
     });
 
+    if (fiscaisRows.length > 0) {
+      doc.addPage('a4', 'landscape');
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Relatorio Fiscal', 14, 15);
+
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Total de fiscais: ${fiscaisRows.length}`, 14, 21);
+      doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')} Ã s ${new Date().toLocaleTimeString('pt-BR')}`, 14, 26);
+
+      autoTable(doc, {
+        head: header,
+        body: fiscaisRows,
+        startY: 30,
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [127, 29, 29], textColor: 255, fontStyle: 'bold' },
+        columnStyles: {
+          0: { cellWidth: 22 },
+          1: { cellWidth: 18, halign: 'center' },
+          2: { cellWidth: 20 },
+          3: { cellWidth: 45 },
+          4: { cellWidth: 18 },
+          5: { cellWidth: 58 },
+          6: { cellWidth: 25 },
+          7: { cellWidth: 55 },
+        },
+      });
+    }
+
     doc.save(`vencimentos_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
@@ -402,7 +472,7 @@ export default function VencimentosPage() {
             </div>
             <div>
               <div className="text-xl sm:text-2xl font-bold text-gray-900">Controle de Vencimentos</div>
-              <div className="text-sm text-gray-500">Monitoramento completo de documentos e RETs com prazos</div>
+              <div className="text-sm text-gray-500">Monitoramento completo de documentos, RETs e fiscais com prazos</div>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -416,6 +486,26 @@ export default function VencimentosPage() {
                 <span className="hidden sm:inline">Limiares</span>
               </button>
             )}
+            <button
+              onClick={() => {
+                if (atalhoFiscaisVencidosAtivo) {
+                  setFiltroTipo('');
+                  setFiltroStatus('todos-risco');
+                  return;
+                }
+                setFiltroTipo('Fiscal');
+                setFiltroStatus('vencido');
+              }}
+              className={`inline-flex items-center gap-2 rounded-xl border-2 px-3 sm:px-4 py-2 sm:py-2.5 font-bold transition ${
+                atalhoFiscaisVencidosAtivo
+                  ? 'border-red-500 bg-red-50 text-red-700'
+                  : 'border-red-200 text-red-700 hover:bg-red-50'
+              }`}
+              title="Filtrar apenas fiscais vencidos"
+            >
+              <CalendarClock size={18} />
+              <span>So fiscais vencidos</span>
+            </button>
             <button
               onClick={exportPDF}
               className="inline-flex items-center gap-2 rounded-xl border-2 border-red-200 text-red-700 px-3 sm:px-4 py-2 sm:py-2.5 font-bold hover:bg-red-50 transition"
@@ -497,9 +587,10 @@ export default function VencimentosPage() {
             {responsaveisOptions.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
           </select>
           <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
-            <option value="">Doc & RET</option>
+            <option value="">Doc, RET & Fiscal</option>
             <option value="Documento">Documentos</option>
             <option value="RET">RETs</option>
+            <option value="Fiscal">Fiscais</option>
           </select>
           {allTags.length > 0 && (
             <select value={filtroTag} onChange={(e) => setFiltroTag(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-violet-400">
@@ -562,8 +653,8 @@ export default function VencimentosPage() {
                   <tr
                     key={rowKey}
                     className={`transition-colors ${
-                      item.status === 'vencido' ? 'bg-red-50/70 hover:bg-red-100/60' :
-                      item.status === 'critico' ? 'bg-orange-50/50 hover:bg-orange-100/40' :
+                      item.status === 'vencido' ? 'animate-alert-blink' :
+                      item.status === 'critico' ? 'animate-alert-blink' :
                       item.status === 'atencao' ? 'bg-amber-50/40 hover:bg-amber-100/30' :
                       item.status === 'proximo' ? 'bg-green-50/40 hover:bg-green-100/30' :
                       item.status === 'renovado' ? 'bg-blue-50/40 hover:bg-blue-100/30' :
@@ -596,10 +687,12 @@ export default function VencimentosPage() {
                       <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold ${
                         item.tipo === 'Documento'
                           ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : item.tipo === 'Fiscal'
+                            ? 'bg-red-50 text-red-700 border border-red-200'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                       }`}>
                         {item.tipo === 'Documento' ? <FileText size={13} /> : <CalendarClock size={13} />}
-                        {item.tipo === 'Documento' ? 'DOC' : 'RET'}
+                        {item.tipo === 'Documento' ? 'DOC' : item.tipo === 'Fiscal' ? 'FISCAL' : 'RET'}
                       </span>
                     </td>
                     <td className="px-5 py-4" style={{ overflow: 'visible', textOverflow: 'clip' }}>
@@ -696,7 +789,7 @@ export default function VencimentosPage() {
                 .filter((r) => r.dep && r.user)
             );
             return (
-              <div key={`mobile-${item.empresaId}-${item.nome}-${idx}`} className={`p-4 ${item.status === 'vencido' ? 'bg-red-50/70' : item.status === 'critico' ? 'bg-orange-50/50' : item.status === 'atencao' ? 'bg-amber-50/40' : item.status === 'proximo' ? 'bg-green-50/40' : item.status === 'renovado' ? 'bg-blue-50/40' : ''}`}>
+              <div key={`mobile-${item.empresaId}-${item.nome}-${idx}`} className={`p-4 ${item.status === 'vencido' || item.status === 'critico' ? 'animate-alert-blink' : item.status === 'atencao' ? 'bg-amber-50/40' : item.status === 'proximo' ? 'bg-green-50/40' : item.status === 'renovado' ? 'bg-blue-50/40' : ''}`}>
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold border ${sc.bg} ${sc.text} ${sc.border}`}>
                     <span className={`h-2 w-2 rounded-full ${sc.dot} ${item.status === 'vencido' ? 'animate-pulse' : ''}`} />
@@ -711,9 +804,9 @@ export default function VencimentosPage() {
                   <span className="text-xs text-gray-500 truncate">{item.empresaNome}</span>
                 </div>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-bold ${item.tipo === 'Documento' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                  <span className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-bold ${item.tipo === 'Documento' ? 'bg-blue-50 text-blue-700' : item.tipo === 'Fiscal' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
                     {item.tipo === 'Documento' ? <FileText size={12} /> : <CalendarClock size={12} />}
-                    {item.tipo === 'Documento' ? 'DOC' : 'RET'}
+                    {item.tipo === 'Documento' ? 'DOC' : item.tipo === 'Fiscal' ? 'FISCAL' : 'RET'}
                   </span>
                   <span className="text-sm font-semibold text-gray-800 break-words">{item.nome}</span>
                   <span className="text-xs text-gray-500 ml-auto whitespace-nowrap">{formatBR(item.vencimento)}</span>

@@ -12,6 +12,7 @@ import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
 import ConfirmModal from '@/app/components/ConfirmModal';
+import { garantirVencimentosFiscais } from '@/app/utils/vencimentos';
 import { exportEmpresasPdf } from '@/lib/exportPdf';
 import { comparePtBr, sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
 
@@ -40,7 +41,7 @@ type DashboardRiskItem = {
   nome: string;
   vencimento: string;
   dias: number;
-  tipo: 'Documento' | 'RET';
+  tipo: 'Documento' | 'RET' | 'Fiscal';
   tagVencimento?: string;
   historicoVencimento?: HistoricoVencimentoItem[];
 };
@@ -91,7 +92,7 @@ export default function DashboardPage() {
   const [historicoModal, setHistoricoModal] = useState<{
     empresaId: string;
     itemId: string;
-    tipo: 'Documento' | 'RET';
+    tipo: 'Documento' | 'RET' | 'Fiscal';
     empresaCodigo: string;
     empresaNome: string;
     nome: string;
@@ -102,7 +103,7 @@ export default function DashboardPage() {
   } | null>(null);
   const [savingHistorico, setSavingHistorico] = useState(false);
 
-  const abrirHistoricoItem = useCallback((empresaId: string, itemId: string, tipo: 'Documento' | 'RET') => {
+  const abrirHistoricoItem = useCallback((empresaId: string, itemId: string, tipo: 'Documento' | 'RET' | 'Fiscal') => {
     const emp = empresas.find((e) => e.id === empresaId);
     if (!emp) return;
     if (tipo === 'Documento') {
@@ -118,6 +119,20 @@ export default function DashboardPage() {
         dias: dias ?? 0,
         tagVencimento: doc.tagVencimento,
         historicoVencimento: doc.historicoVencimento,
+      });
+    } else if (tipo === 'Fiscal') {
+      const fiscal = (emp.vencimentosFiscais ?? []).find((f) => f.id === itemId);
+      if (!fiscal) return;
+      const dias = fiscal.vencimento ? daysUntil(fiscal.vencimento) : null;
+      setHistoricoModal({
+        empresaId, itemId, tipo,
+        empresaCodigo: emp.codigo,
+        empresaNome: emp.razao_social || emp.apelido || '-',
+        nome: fiscal.nome,
+        vencimento: fiscal.vencimento,
+        dias: dias ?? 0,
+        tagVencimento: fiscal.tagVencimento,
+        historicoVencimento: fiscal.historicoVencimento,
       });
     } else {
       const ret = emp.rets.find((r) => r.id === itemId);
@@ -142,6 +157,20 @@ export default function DashboardPage() {
     try {
       if (historicoModal.tipo === 'Documento') {
         const ok = await atualizarDocumento(historicoModal.empresaId, historicoModal.itemId, payload);
+        if (ok === false) return;
+      } else if (historicoModal.tipo === 'Fiscal') {
+        const emp = empresas.find((e) => e.id === historicoModal.empresaId);
+        if (!emp) {
+          mostrarAlerta('Empresa nao encontrada', 'Nao foi possivel localizar a empresa desse vencimento fiscal.', 'erro');
+          return;
+        }
+        const fiscaisAtuais = garantirVencimentosFiscais(emp.vencimentosFiscais);
+        const vencimentosFiscais = fiscaisAtuais.map((f) =>
+          f.id === historicoModal.itemId
+            ? { ...f, tagVencimento: payload.tagVencimento, historicoVencimento: payload.historicoVencimento }
+            : f
+        );
+        const ok = await atualizarEmpresa(emp.id, { vencimentosFiscais });
         if (ok === false) return;
       } else {
         const emp = empresas.find((e) => e.id === historicoModal.empresaId);
@@ -262,7 +291,16 @@ export default function DashboardPage() {
 
   const riskItems = useMemo(() => {
     const risk: DashboardRiskItem[] = [];
-    for (const e of filteredEmpresas) {
+    // Admin/gerente vê tudo; usuário comum só as empresas onde é responsável.
+    // Usamos `empresas` (não `filteredEmpresas`) para que o banner de alertas no topo
+    // ignore os filtros da listagem e mostre sempre os pendentes do usuário.
+    const base = canManage
+      ? empresas
+      : empresas.filter((e) =>
+          !!currentUserId && Object.values(e.responsaveis || {}).some((uid) => uid === currentUserId)
+        );
+
+    for (const e of base) {
       for (const d of e.documentos) {
         const dias = daysUntil(d.validade);
         if (dias !== null && dias <= limiares.proximo) {
@@ -298,9 +336,26 @@ export default function DashboardPage() {
           });
         }
       }
+      for (const f of e.vencimentosFiscais ?? []) {
+        const dias = daysUntil(f.vencimento);
+        if (dias !== null && dias <= limiares.proximo) {
+          risk.push({
+            empresaId: e.id,
+            itemId: f.id,
+            empresaNome: e.razao_social || e.apelido || '-',
+            empresaCodigo: e.codigo,
+            nome: `FISCAL: ${f.nome}`,
+            vencimento: f.vencimento,
+            dias,
+            tipo: 'Fiscal',
+            tagVencimento: f.tagVencimento,
+            historicoVencimento: f.historicoVencimento,
+          });
+        }
+      }
     }
     return risk.sort(compareDashboardRiskItems);
-  }, [filteredEmpresas, limiares]);
+  }, [empresas, canManage, currentUserId, limiares]);
 
   const vencidos = riskItems.filter((r) => r.dias < 0);
   const criticos = riskItems.filter((r) => r.dias >= 0 && r.dias <= limiares.critico);
@@ -350,7 +405,7 @@ export default function DashboardPage() {
 
       {/* VENCIDOS — Banner vermelho forte */}
       {vencidos.length > 0 && (
-        <div className="rounded-2xl bg-gradient-to-r from-red-600 to-red-700 p-5 shadow-lg ring-2 ring-red-300 animate-pulse-subtle">
+        <div className="rounded-2xl bg-gradient-to-r from-red-600 to-red-700 p-5 shadow-lg ring-2 ring-red-300 animate-alert-banner">
           <div className="flex items-center gap-3 mb-3">
             <div className="h-12 w-12 rounded-xl bg-white/20 flex items-center justify-center">
               <AlertTriangle className="text-white" size={28} />
@@ -370,6 +425,9 @@ export default function DashboardPage() {
                   <span className="font-bold text-white truncate">{r.empresaNome}</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 pl-6 sm:pl-0 sm:ml-auto">
+                  {r.tipo === 'Fiscal' && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-yellow-300 text-red-900 whitespace-nowrap">FISCAL</span>
+                  )}
                   <span className="text-red-100 text-sm break-words" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.nome}</span>
                   <span className="px-2.5 py-1 rounded-full text-xs font-black bg-white text-red-700 whitespace-nowrap">
                     VENCIDO HÁ {Math.abs(r.dias)}d
@@ -422,7 +480,7 @@ export default function DashboardPage() {
           </div>
           <div className="space-y-2">
             {[...criticos, ...atencao].slice(0, 8).map((r, idx) => (
-              <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 bg-white/70 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3">
+              <div key={idx} className={`flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 ${r.dias <= limiares.critico ? 'animate-alert-blink border border-red-400' : 'bg-white/70'}`}>
                 <div className="flex items-center gap-2 min-w-0">
                   <Clock size={16} className={`shrink-0 ${r.dias <= limiares.critico ? 'text-red-500' : 'text-amber-500'}`} />
                   <span className="font-bold text-gray-800 shrink-0">{r.empresaCodigo}</span>
@@ -430,6 +488,9 @@ export default function DashboardPage() {
                   <span className="font-bold text-gray-800 truncate">{r.empresaNome}</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 pl-6 sm:pl-0 sm:ml-auto">
+                  {r.tipo === 'Fiscal' && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-600 text-white whitespace-nowrap">FISCAL</span>
+                  )}
                   <span className="text-gray-700 text-sm break-words" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.nome}</span>
                   <span className={`px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap ${r.dias <= limiares.critico ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
                     {r.dias}d restantes

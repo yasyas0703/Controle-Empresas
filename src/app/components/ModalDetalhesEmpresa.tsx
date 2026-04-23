@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useMemo, useState, useCallback } from 'react';
-import { X, Plus, Trash2, Send, MessageSquare, Pencil, Download, Eye, Paperclip, FileText, Globe, Building2, Lock, Users, Loader2, History } from 'lucide-react';
-import type { Empresa, DocumentoEmpresa, HistoricoVencimentoItem, UUID } from '@/app/types';
+import { X, Plus, Trash2, Send, MessageSquare, Pencil, Download, Eye, Paperclip, FileText, Globe, Building2, Lock, Users, Loader2, History, AlertTriangle, CalendarClock } from 'lucide-react';
+import type { Empresa, DocumentoEmpresa, HistoricoVencimentoItem, UUID, VencimentoFiscal } from '@/app/types';
+import { FORMAS_ENVIO } from '@/app/types';
 import ModalBase from '@/app/components/ModalBase';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { useSistema } from '@/app/context/SistemaContext';
@@ -10,7 +11,8 @@ import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
 import ModalAdicionarDocumento from '@/app/components/ModalAdicionarDocumento';
 import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
-import { getDocumentoSignedUrl } from '@/lib/db';
+import { garantirVencimentosFiscais } from '@/app/utils/vencimentos';
+import { getDocumentoSignedUrl, getVencimentoFiscalSignedUrl, uploadDocumentoArquivo } from '@/lib/db';
 import { sortResponsaveisByNome } from '@/lib/sort';
 
 const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
@@ -88,17 +90,22 @@ export default function ModalDetalhesEmpresa({
   const [confirmDeleteObsId, setConfirmDeleteObsId] = useState<string | null>(null);
   const [confirmDeleteRetId, setConfirmDeleteRetId] = useState<string | null>(null);
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
+  const [previewFiscalId, setPreviewFiscalId] = useState<string | null>(null);
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
+  const [editingFiscalId, setEditingFiscalId] = useState<string | null>(null);
   const [editDocNome, setEditDocNome] = useState('');
   const [editDocValidade, setEditDocValidade] = useState('');
   const [editDocDepts, setEditDocDepts] = useState<UUID[]>([]);
   const [editDocVis, setEditDocVis] = useState<import('@/app/types').Visibilidade>('publico');
   const [editDocUsers, setEditDocUsers] = useState<UUID[]>([]);
   const [editDocFile, setEditDocFile] = useState<File | null>(null);
+  const [editFiscalVencimento, setEditFiscalVencimento] = useState('');
+  const [editFiscalFile, setEditFiscalFile] = useState<File | null>(null);
+  const [confirmRemoveFiscalFileId, setConfirmRemoveFiscalFileId] = useState<string | null>(null);
   const [historicoModal, setHistoricoModal] = useState<{
     empresaCodigo: string;
     empresaNome: string;
-    tipo: 'Documento' | 'RET';
+    tipo: 'Documento' | 'RET' | 'Fiscal';
     nome: string;
     vencimento: string;
     dias: number;
@@ -110,26 +117,50 @@ export default function ModalDetalhesEmpresa({
   } | null>(null);
   const [savingHistorico, setSavingHistorico] = useState(false);
   const editFileRef = React.useRef<HTMLInputElement>(null);
+  const editFiscalFileRef = React.useRef<HTMLInputElement>(null);
 
   // Signed URLs cache & loading
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [loadingUrlId, setLoadingUrlId] = useState<string | null>(null);
 
-  const resolveUrl = useCallback(async (doc: DocumentoEmpresa): Promise<string | null> => {
-    if (!doc.arquivoUrl) return null;
-    if (signedUrls[doc.id]) return signedUrls[doc.id];
+  const resolveArquivoUrl = useCallback(async (
+    cacheKey: string,
+    arquivoUrl: string | undefined,
+    resolver: (path: string) => Promise<string>
+  ): Promise<string | null> => {
+    if (!arquivoUrl) return null;
+    if (signedUrls[cacheKey]) return signedUrls[cacheKey];
     try {
-      setLoadingUrlId(doc.id);
-      const url = await getDocumentoSignedUrl(doc.arquivoUrl);
-      setSignedUrls((prev) => ({ ...prev, [doc.id]: url }));
+      setLoadingUrlId(cacheKey);
+      const url = await resolver(arquivoUrl);
+      setSignedUrls((prev) => ({ ...prev, [cacheKey]: url }));
       return url;
     } catch {
       // Fallback: tentar URL direta (legado)
-      return doc.arquivoUrl;
+      return arquivoUrl;
     } finally {
       setLoadingUrlId(null);
     }
   }, [signedUrls]);
+
+  const clearSignedUrl = useCallback((cacheKey: string) => {
+    setSignedUrls((prev) => {
+      if (!(cacheKey in prev)) return prev;
+      const next = { ...prev };
+      delete next[cacheKey];
+      return next;
+    });
+  }, []);
+
+  const resolveUrl = useCallback(
+    async (doc: DocumentoEmpresa) => resolveArquivoUrl(`doc:${doc.id}`, doc.arquivoUrl, getDocumentoSignedUrl),
+    [resolveArquivoUrl]
+  );
+
+  const resolveFiscalUrl = useCallback(
+    async (fiscal: VencimentoFiscal) => resolveArquivoUrl(`fiscal:${fiscal.id}`, fiscal.arquivoUrl, getVencimentoFiscalSignedUrl),
+    [resolveArquivoUrl]
+  );
 
   const forceDownload = useCallback(async (url: string, fileName: string) => {
     try {
@@ -179,7 +210,78 @@ export default function ModalDetalhesEmpresa({
     setEditDocFile(nextFile);
   }, [mostrarAlerta]);
 
-  const abrirHistorico = useCallback((tipo: 'Documento' | 'RET', itemId: string) => {
+  const handleFiscalPreview = useCallback(async (fiscal: VencimentoFiscal) => {
+    if (!fiscal.arquivoUrl) return;
+    if (previewFiscalId === fiscal.id) {
+      setPreviewFiscalId(null);
+      return;
+    }
+    const url = await resolveFiscalUrl(fiscal);
+    if (url) setPreviewFiscalId(fiscal.id);
+  }, [previewFiscalId, resolveFiscalUrl]);
+
+  const handleEditFiscalFileChange = useCallback((nextFile: File | null) => {
+    if (!nextFile) {
+      setEditFiscalFile(null);
+      if (editFiscalFileRef.current) editFiscalFileRef.current.value = '';
+      return;
+    }
+
+    if (nextFile.size > MAX_DOCUMENT_SIZE) {
+      mostrarAlerta('Arquivo muito grande', 'O arquivo deve ter no maximo 10MB.', 'aviso');
+      if (editFiscalFileRef.current) editFiscalFileRef.current.value = '';
+      return;
+    }
+
+    setEditFiscalFile(nextFile);
+  }, [mostrarAlerta]);
+
+  const salvarFiscal = useCallback(async (fiscal: VencimentoFiscal) => {
+    try {
+      let arquivoUrl = fiscal.arquivoUrl;
+      if (editFiscalFile) {
+        arquivoUrl = await uploadDocumentoArquivo(empresa.id, editFiscalFile);
+      }
+
+      const vencimentosFiscais = garantirVencimentosFiscais(empresa.vencimentosFiscais).map((item) =>
+        item.id === fiscal.id
+          ? { ...item, vencimento: editFiscalVencimento, arquivoUrl }
+          : item
+      );
+
+      const ok = await atualizarEmpresa(empresa.id, { vencimentosFiscais });
+      if (ok === false) return;
+
+      clearSignedUrl(`fiscal:${fiscal.id}`);
+      setPreviewFiscalId(null);
+      setEditingFiscalId(null);
+      setEditFiscalFile(null);
+      if (editFiscalFileRef.current) editFiscalFileRef.current.value = '';
+      mostrarAlerta('Vencimento fiscal atualizado', 'As alteracoes foram salvas com sucesso.', 'sucesso');
+    } catch {
+      mostrarAlerta('Erro no anexo', 'Nao foi possivel salvar esse vencimento fiscal.', 'erro');
+    }
+  }, [atualizarEmpresa, clearSignedUrl, editFiscalFile, editFiscalVencimento, empresa.id, empresa.vencimentosFiscais, mostrarAlerta]);
+
+  const removerAnexoFiscal = useCallback(async (fiscalId: string) => {
+    const vencimentosFiscais = garantirVencimentosFiscais(empresa.vencimentosFiscais).map((item) =>
+      item.id === fiscalId ? { ...item, arquivoUrl: undefined } : item
+    );
+
+    const ok = await atualizarEmpresa(empresa.id, { vencimentosFiscais });
+    if (ok === false) return;
+
+    clearSignedUrl(`fiscal:${fiscalId}`);
+    if (previewFiscalId === fiscalId) setPreviewFiscalId(null);
+    if (editingFiscalId === fiscalId) {
+      setEditingFiscalId(null);
+      setEditFiscalFile(null);
+      if (editFiscalFileRef.current) editFiscalFileRef.current.value = '';
+    }
+    mostrarAlerta('Anexo removido', 'O arquivo desse vencimento fiscal foi removido.', 'sucesso');
+  }, [atualizarEmpresa, clearSignedUrl, editingFiscalId, empresa.id, empresa.vencimentosFiscais, mostrarAlerta, previewFiscalId]);
+
+  const abrirHistorico = useCallback((tipo: 'Documento' | 'RET' | 'Fiscal', itemId: string) => {
     const metaBase = {
       empresaCodigo: empresa.codigo,
       empresaNome: empresa.razao_social || empresa.apelido || '-',
@@ -200,6 +302,24 @@ export default function ModalDetalhesEmpresa({
         statusClassName: meta.statusClassName,
         tagVencimento: documento.tagVencimento,
         historicoVencimento: documento.historicoVencimento,
+      });
+      return;
+    }
+
+    if (tipo === 'Fiscal') {
+      const fiscal = (empresa.vencimentosFiscais ?? []).find((item) => item.id === itemId);
+      if (!fiscal) return;
+      const meta = getHistoricoStatusMeta(fiscal.vencimento ? daysUntil(fiscal.vencimento) : null);
+      setHistoricoModal({
+        ...metaBase,
+        tipo,
+        nome: fiscal.nome,
+        vencimento: fiscal.vencimento,
+        dias: meta.dias,
+        statusLabel: meta.statusLabel,
+        statusClassName: meta.statusClassName,
+        tagVencimento: fiscal.tagVencimento,
+        historicoVencimento: fiscal.historicoVencimento,
       });
       return;
     }
@@ -226,6 +346,15 @@ export default function ModalDetalhesEmpresa({
     try {
       if (historicoModal.tipo === 'Documento') {
         const ok = await atualizarDocumento(empresa.id, historicoModal.itemId, payload);
+        if (ok === false) return;
+      } else if (historicoModal.tipo === 'Fiscal') {
+        const fiscaisAtuais = garantirVencimentosFiscais(empresa.vencimentosFiscais);
+        const vencimentosFiscais = fiscaisAtuais.map((item) =>
+          item.id === historicoModal.itemId
+            ? { ...item, tagVencimento: payload.tagVencimento, historicoVencimento: payload.historicoVencimento }
+            : item
+        );
+        const ok = await atualizarEmpresa(empresa.id, { vencimentosFiscais });
         if (ok === false) return;
       } else {
         const rets = empresa.rets.map((item) =>
@@ -459,6 +588,306 @@ export default function ModalDetalhesEmpresa({
               )}
             </Section>
 
+            <Section title="Vencimentos Fiscais" tone="red">
+              {(() => {
+                const fiscais = garantirVencimentosFiscais(empresa.vencimentosFiscais);
+                return (
+                  <>
+                    <div className="mb-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                      <AlertTriangle size={14} className="shrink-0" />
+                      Nunca deixe um vencimento fiscal passar — cada atraso vira multa para o cliente.
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {fiscais.map((f) => {
+                        const dias = f.vencimento ? daysUntil(f.vencimento) : null;
+                        const vencido = dias !== null && dias < 0;
+                        const critico = dias !== null && !vencido && dias <= 15;
+                        const atencao = dias !== null && !vencido && !critico && dias <= 30;
+                        const semData = !f.vencimento;
+                        const alertar = vencido || critico;
+                        const histLen = f.historicoVencimento?.length ?? 0;
+                        const fiscalCacheKey = `fiscal:${f.id}`;
+                        const isLoadingFiscal = loadingUrlId === fiscalCacheKey;
+                        const isEditingFiscal = editingFiscalId === f.id;
+                        return (
+                          <React.Fragment key={f.id}>
+                            <div
+                              className={`rounded-xl border p-3 ${
+                              alertar
+                                ? 'animate-alert-blink border-red-400'
+                                : atencao
+                                ? 'bg-amber-50 border-amber-200'
+                                : semData
+                                ? 'bg-slate-50 border-slate-200'
+                                : 'bg-white border-gray-200'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className={`font-bold text-sm ${alertar ? 'animate-alert-blink-text' : 'text-gray-900'}`}>
+                                  {f.nome}
+                                </div>
+                                <div className="mt-0.5 text-xs text-gray-600 flex items-center gap-1">
+                                  <CalendarClock size={12} className="shrink-0" />
+                                  {f.vencimento ? (
+                                    <>
+                                      Venc.:&nbsp;
+                                      <span className={
+                                        vencido ? 'font-bold text-red-700' :
+                                        critico ? 'font-bold text-red-600' :
+                                        atencao ? 'font-bold text-amber-700' :
+                                        'font-semibold text-gray-900'
+                                      }>
+                                        {formatBR(f.vencimento)}
+                                      </span>
+                                      {dias !== null && (
+                                        <span className={`ml-1 ${
+                                          vencido ? 'font-bold text-red-700' :
+                                          critico ? 'font-bold text-red-600' :
+                                          atencao ? 'font-semibold text-amber-700' :
+                                          'text-gray-500'
+                                        }`}>
+                                          • {dias < 0 ? `${Math.abs(dias)}d atrás` : `${dias}d`}
+                                        </span>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <span className="italic text-gray-400">Sem data definida</span>
+                                  )}
+                                </div>
+                                {(f.tagVencimento || histLen > 0) && (
+                                  <div className="mt-1.5 flex flex-wrap gap-1">
+                                    {f.tagVencimento && (
+                                      <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
+                                        {f.tagVencimento}
+                                      </span>
+                                    )}
+                                    {histLen > 0 && (
+                                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                                        {histLen} andamento(s)
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                {f.arquivoUrl && (
+                                  <div className="mt-1.5 flex items-center gap-1.5">
+                                    <Paperclip size={12} className="text-orange-400 shrink-0" />
+                                    <span className="text-xs font-semibold text-orange-600">Arquivo anexado</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="shrink-0 flex items-center gap-1">
+                                <button
+                                  onClick={() => abrirHistorico('Fiscal', f.id)}
+                                  className="rounded-lg border p-1.5 hover:bg-slate-50 transition"
+                                  title="Histórico do vencimento"
+                                >
+                                  <History className="text-slate-600" size={14} />
+                                </button>
+                                {f.arquivoUrl && (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        const url = await getVencimentoFiscalSignedUrl(f.arquivoUrl!);
+                                        if (url) window.open(url, '_blank');
+                                      } catch {
+                                        mostrarAlerta('Arquivo indisponível', 'Não foi possível abrir o arquivo.', 'erro');
+                                      }
+                                    }}
+                                    className="rounded-lg border border-orange-200 bg-white p-1.5 hover:bg-orange-50 transition"
+                                    title="Abrir arquivo anexo"
+                                  >
+                                    <Paperclip className="text-orange-600" size={14} />
+                                  </button>
+                                )}
+                                {f.arquivoUrl && (
+                                  <button
+                                    onClick={() => void handleFiscalPreview(f)}
+                                    disabled={isLoadingFiscal}
+                                    className={`rounded-lg border p-1.5 hover:bg-orange-50 transition ${
+                                      previewFiscalId === f.id ? 'bg-orange-100 border-orange-300' : ''
+                                    }`}
+                                    title="Visualizar arquivo"
+                                  >
+                                    {isLoadingFiscal ? (
+                                      <Loader2 className="text-orange-600 animate-spin" size={14} />
+                                    ) : (
+                                      <Eye className="text-orange-600" size={14} />
+                                    )}
+                                  </button>
+                                )}
+                                {canEdit && (
+                                  <button
+                                    onClick={() => {
+                                      if (isEditingFiscal) {
+                                        setEditingFiscalId(null);
+                                        setEditFiscalFile(null);
+                                        if (editFiscalFileRef.current) editFiscalFileRef.current.value = '';
+                                      } else {
+                                        setEditingFiscalId(f.id);
+                                        setEditFiscalVencimento(f.vencimento ?? '');
+                                        setEditFiscalFile(null);
+                                        if (editFiscalFileRef.current) editFiscalFileRef.current.value = '';
+                                      }
+                                    }}
+                                    className={`rounded-lg border p-1.5 hover:bg-blue-50 transition ${
+                                      isEditingFiscal ? 'bg-blue-100 border-blue-300' : ''
+                                    }`}
+                                    title="Editar vencimento fiscal"
+                                  >
+                                    <Pencil className="text-blue-600" size={14} />
+                                  </button>
+                                )}
+                                {canEdit && f.arquivoUrl && (
+                                  <button
+                                    onClick={() => setConfirmRemoveFiscalFileId(f.id)}
+                                    className="rounded-lg border border-red-200 p-1.5 hover:bg-red-50 transition"
+                                    title="Excluir anexo"
+                                  >
+                                    <Trash2 className="text-red-500" size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {isEditingFiscal && canEdit && (
+                              <div className="mt-3 border-t border-gray-200 pt-3 space-y-3">
+                                <div>
+                                  <div className="text-xs font-bold text-gray-600 mb-1">Data de vencimento:</div>
+                                  <div className="flex gap-2 items-center">
+                                    <input
+                                      type="date"
+                                      value={editFiscalVencimento}
+                                      onChange={(e) => setEditFiscalVencimento(e.target.value)}
+                                      className="flex-1 rounded-lg border px-3 py-2 text-sm"
+                                    />
+                                    {editFiscalVencimento && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditFiscalVencimento('')}
+                                        className="text-xs text-red-500 hover:text-red-700 font-semibold whitespace-nowrap"
+                                      >
+                                        Limpar
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <div className="text-xs font-bold text-gray-600 mb-1">Arquivo:</div>
+                                  <input
+                                    ref={editFiscalFileRef}
+                                    type="file"
+                                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
+                                    onChange={(e) => handleEditFiscalFileChange(e.target.files?.[0] ?? null)}
+                                    className="hidden"
+                                  />
+                                  {editFiscalFile ? (
+                                    <div className="flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2">
+                                      <FileText size={14} className="text-orange-600 shrink-0" />
+                                      <span className="text-xs font-semibold text-gray-900 truncate flex-1">{editFiscalFile.name}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditFiscalFile(null);
+                                          if (editFiscalFileRef.current) editFiscalFileRef.current.value = '';
+                                        }}
+                                        className="text-xs text-red-500 font-bold"
+                                      >
+                                        Remover
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => editFiscalFileRef.current?.click()}
+                                      className="w-full rounded-lg border-2 border-dashed border-gray-300 px-3 py-3 text-center hover:border-orange-400 hover:bg-orange-50 transition text-xs text-gray-500"
+                                    >
+                                      {f.arquivoUrl ? 'Trocar arquivo' : 'Anexar arquivo'}
+                                    </button>
+                                  )}
+                                  {f.arquivoUrl && !editFiscalFile && (
+                                    <div className="flex items-center gap-1.5 mt-1">
+                                      <Paperclip size={11} className="text-orange-400" />
+                                      <span className="text-[10px] text-orange-600 font-semibold">Arquivo atual mantido</span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingFiscalId(null);
+                                      setEditFiscalFile(null);
+                                      if (editFiscalFileRef.current) editFiscalFileRef.current.value = '';
+                                    }}
+                                    className="rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-gray-50"
+                                  >
+                                    Cancelar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void salvarFiscal(f)}
+                                    className="rounded-lg bg-blue-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-blue-700"
+                                  >
+                                    Salvar
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {previewFiscalId === f.id && (signedUrls[fiscalCacheKey] || f.arquivoUrl) && (
+                            <div className="rounded-xl border border-orange-200 bg-orange-50/50 overflow-hidden sm:col-span-2" style={{ height: 360 }}>
+                              <iframe
+                                src={signedUrls[fiscalCacheKey] || f.arquivoUrl}
+                                className="w-full h-full border-0"
+                                title={`Preview fiscal: ${f.nome}`}
+                              />
+                            </div>
+                          )}
+                        </React.Fragment>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
+            </Section>
+
+            <Section title="Forma de Envio" tone="cyan">
+              {(() => {
+                const formasAtuais = empresa.formaEnvio ?? [];
+                if (formasAtuais.length === 0) {
+                  return (
+                    <div className="text-sm text-gray-600">
+                      Nenhuma forma de envio definida. Edite a empresa para escolher uma ou mais opcoes entre WhatsApp, E-mail, Onvio ou Protocolo.
+                    </div>
+                  );
+                }
+                return (
+                  <div className="flex flex-wrap gap-2">
+                    {FORMAS_ENVIO.map((opt) => {
+                      const selected = formasAtuais.includes(opt.value);
+                      return (
+                        <span
+                          key={opt.value}
+                          className={`inline-flex items-center rounded-xl border-2 px-4 py-2 text-sm font-bold ${
+                            selected
+                              ? 'bg-teal-100 border-teal-500 text-teal-800'
+                              : 'bg-white border-gray-200 text-gray-400'
+                          }`}
+                        >
+                          {opt.label}
+                        </span>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </Section>
+
             <Section title="Documentos da Empresa" tone="orange" right={
               canEdit ? (
                 <button
@@ -483,7 +912,8 @@ export default function ModalDetalhesEmpresa({
                     const docUsers = (d.usuariosPermitidos ?? []).map((id) => usuarios.find((u) => u.id === id)?.nome).filter(Boolean);
                     const isEditingThis = editingDocId === d.id;
                     const visBadge = VIS_BADGE[d.visibilidade ?? 'publico'] ?? VIS_BADGE.publico;
-                    const isLoadingThis = loadingUrlId === d.id;
+                    const docCacheKey = `doc:${d.id}`;
+                    const isLoadingThis = loadingUrlId === docCacheKey;
                     return (
                       <React.Fragment key={d.id}>
                       <div className={`rounded-xl border p-4 ${
@@ -809,10 +1239,10 @@ export default function ModalDetalhesEmpresa({
                           </div>
                         )}
                       </div>
-                      {previewDocId === d.id && (signedUrls[d.id] || d.arquivoUrl) && (
+                      {previewDocId === d.id && (signedUrls[docCacheKey] || d.arquivoUrl) && (
                         <div className="rounded-xl border border-orange-200 bg-orange-50/50 overflow-hidden" style={{ height: 400 }}>
                           <iframe
-                            src={signedUrls[d.id] || d.arquivoUrl}
+                            src={signedUrls[docCacheKey] || d.arquivoUrl}
                             className="w-full h-full border-0"
                             title={`Preview: ${d.nome}`}
                           />
@@ -960,6 +1390,19 @@ export default function ModalDetalhesEmpresa({
       />
 
       <ConfirmModal
+        open={!!confirmRemoveFiscalFileId}
+        title="Excluir anexo fiscal"
+        message="Tem certeza que deseja remover o arquivo anexado deste vencimento fiscal?"
+        confirmText="Excluir"
+        variant="danger"
+        onConfirm={() => {
+          if (confirmRemoveFiscalFileId) void removerAnexoFiscal(confirmRemoveFiscalFileId);
+          setConfirmRemoveFiscalFileId(null);
+        }}
+        onCancel={() => setConfirmRemoveFiscalFileId(null)}
+      />
+
+      <ConfirmModal
         open={!!confirmDeleteObsId}
         title="Remover observação"
         message="Tem certeza que deseja remover esta observação?"
@@ -989,7 +1432,7 @@ function Section({
   children,
 }: {
   title: string;
-  tone: 'green' | 'blue' | 'cyan' | 'orange' | 'emerald';
+  tone: 'green' | 'blue' | 'cyan' | 'orange' | 'emerald' | 'red';
   right?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -1002,7 +1445,9 @@ function Section({
           ? 'bg-cyan-50 border-cyan-200'
           : tone === 'orange'
             ? 'bg-orange-50 border-orange-200'
-            : 'bg-emerald-50 border-emerald-200';
+            : tone === 'red'
+              ? 'bg-red-50 border-red-200'
+              : 'bg-emerald-50 border-emerald-200';
 
   const titleClass =
     tone === 'green'
@@ -1013,7 +1458,9 @@ function Section({
           ? 'text-cyan-800'
           : tone === 'orange'
             ? 'text-orange-800'
-            : 'text-emerald-800';
+            : tone === 'red'
+              ? 'text-red-800'
+              : 'text-emerald-800';
 
   return (
     <div className={`rounded-xl p-4 border ${toneClass}`}>

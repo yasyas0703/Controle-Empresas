@@ -1,8 +1,10 @@
 import { supabase } from '@/lib/supabase';
 import type {
+  ChecklistFiscalItem,
   Departamento,
   DocumentoEmpresa,
   Empresa,
+  FormaEnvio,
   HistoricoVencimentoItem,
   LixeiraItem,
   LogEntry,
@@ -14,6 +16,7 @@ import type {
   TagCor,
   Usuario,
   UUID,
+  VencimentoFiscal,
 } from '@/app/types';
 import { limparTagVencimento, normalizarHistoricoVencimento } from '@/app/utils/vencimentos';
 
@@ -40,8 +43,15 @@ function stripColumns<T extends Record<string, unknown>>(row: T, keys: string[])
   return clone;
 }
 
-function hasMissingColumn(error: { message?: string } | null | undefined, columns: string[]): boolean {
+function hasMissingColumn(error: { message?: string; code?: string } | null | undefined, columns: string[]): boolean {
   const message = String(error?.message ?? '');
+  const code = String((error as { code?: string } | null | undefined)?.code ?? '');
+  // Postgres 42703 = undefined_column. Mensagens tipicas: "column X does not exist" / "could not find the X column"
+  const looksLikeMissingColumn = code === '42703'
+    || /column .* does not exist/i.test(message)
+    || /could not find the .* column/i.test(message)
+    || /unknown column/i.test(message);
+  if (!looksLikeMissingColumn) return false;
   return columns.some((column) => message.includes(column));
 }
 
@@ -75,6 +85,8 @@ type EmpresaRow = {
   cep: string | null;
   email: string | null;
   telefone: string | null;
+  forma_envio: string | null;
+  vencimentos_fiscais: VencimentoFiscal[] | null;
   criado_em: string;
   atualizado_em: string;
 };
@@ -188,6 +200,76 @@ function toLogSoftDeleteError(error: unknown): Error {
     return new Error('Banco desatualizado para auditoria de logs. Rode o supabase-schema.sql atualizado.');
   }
   return error instanceof Error ? error : new Error('Falha ao atualizar o histórico.');
+}
+
+const FORMA_ENVIO_VALIDAS: FormaEnvio[] = ['whatsapp', 'email', 'onvio', 'protocolo'];
+
+function deduplicarFormasEnvio(values: string[]): FormaEnvio[] {
+  const unique: FormaEnvio[] = [];
+  const seen = new Set<FormaEnvio>();
+
+  for (const rawValue of values) {
+    const value = rawValue.toLowerCase().trim() as FormaEnvio;
+    if (!FORMA_ENVIO_VALIDAS.includes(value) || seen.has(value)) continue;
+    seen.add(value);
+    unique.push(value);
+  }
+
+  return unique;
+}
+
+function normalizarFormaEnvio(value: unknown): FormaEnvio[] {
+  if (Array.isArray(value)) {
+    return deduplicarFormasEnvio(value.map((item) => String(item ?? '')));
+  }
+
+  if (typeof value === 'string') {
+    const raw = value.trim();
+    if (!raw) return [];
+
+    if (raw.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return normalizarFormaEnvio(parsed);
+      } catch {
+        // Mantém fallback para o formato legado em string simples.
+      }
+    }
+
+    return deduplicarFormasEnvio(raw.split(/[;,]/g));
+  }
+
+  return [];
+}
+
+function serializarFormaEnvio(value: unknown): string {
+  const formas = normalizarFormaEnvio(value);
+  return formas.length > 0 ? formas.join(',') : '';
+}
+
+function normalizarVencimentosFiscais(value: unknown): VencimentoFiscal[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const r = item as Record<string, unknown>;
+      const nome = String(r.nome ?? '').trim();
+      if (!nome) return null;
+      return {
+        id: String(r.id ?? newUUID()),
+        nome,
+        vencimento: String(r.vencimento ?? '').trim(),
+        arquivoUrl: r.arquivoUrl ? String(r.arquivoUrl) : undefined,
+        tagVencimento: limparTagVencimento(r.tagVencimento as string | undefined),
+        historicoVencimento: normalizarHistoricoVencimento(r.historicoVencimento as HistoricoVencimentoItem[] | undefined),
+      } as VencimentoFiscal;
+    })
+    .filter((v): v is VencimentoFiscal => v !== null);
+}
+
+/** Gera signed URL para um arquivo de vencimento fiscal (usa o mesmo bucket de documentos). */
+export async function getVencimentoFiscalSignedUrl(arquivoUrl: string): Promise<string> {
+  return getDocumentoSignedUrl(arquivoUrl);
 }
 
 function buildRetRow(empresaId: UUID, ret: RetItem, includeTracking = true): Record<string, unknown> {
@@ -665,6 +747,8 @@ export async function fetchEmpresas(): Promise<Empresa[]> {
     cep: e.cep ?? undefined,
     email: e.email ?? undefined,
     telefone: e.telefone ?? undefined,
+    formaEnvio: normalizarFormaEnvio(e.forma_envio),
+    vencimentosFiscais: normalizarVencimentosFiscais(e.vencimentos_fiscais),
     responsaveis: respsMap.get(e.id) ?? {},
     documentos: docsMap.get(e.id) ?? [],
     observacoes: obsMap.get(e.id) ?? [],
@@ -700,37 +784,47 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
   }
 
   if (!empresaId) {
-    const { data, error } = await supabase
-      .from('empresas')
-      .insert({
-        cadastrada: payload.cadastrada ?? false,
-        cnpj: payload.cnpj || null,
-        codigo,
-        razao_social: payload.razao_social || null,
-        apelido: payload.apelido || null,
-        data_abertura: payload.data_abertura || null,
-        tipo_estabelecimento: payload.tipoEstabelecimento ?? '',
-        tipo_inscricao: payload.tipoInscricao ?? '',
-        servicos: payload.servicos ?? [],
-        tags: payload.tags ?? [],
-        possui_ret: payload.possuiRet ?? false,
-        inscricao_estadual: payload.inscricao_estadual || null,
-        inscricao_municipal: payload.inscricao_municipal || null,
-        regime_federal: payload.regime_federal || null,
-        regime_estadual: payload.regime_estadual || null,
-        regime_municipal: payload.regime_municipal || null,
-        estado: payload.estado || null,
-        cidade: payload.cidade || null,
-        bairro: payload.bairro || null,
-        logradouro: payload.logradouro || null,
-        numero: payload.numero || null,
-        cep: payload.cep || null,
-        email: payload.email || null,
-        telefone: payload.telefone || null,
-      })
-      .select('id')
-      .single();
+    const baseRow: Record<string, unknown> = {
+      cadastrada: payload.cadastrada ?? false,
+      cnpj: payload.cnpj || null,
+      codigo,
+      razao_social: payload.razao_social || null,
+      apelido: payload.apelido || null,
+      data_abertura: payload.data_abertura || null,
+      tipo_estabelecimento: payload.tipoEstabelecimento ?? '',
+      tipo_inscricao: payload.tipoInscricao ?? '',
+      servicos: payload.servicos ?? [],
+      tags: payload.tags ?? [],
+      possui_ret: payload.possuiRet ?? false,
+      inscricao_estadual: payload.inscricao_estadual || null,
+      inscricao_municipal: payload.inscricao_municipal || null,
+      regime_federal: payload.regime_federal || null,
+      regime_estadual: payload.regime_estadual || null,
+      regime_municipal: payload.regime_municipal || null,
+      estado: payload.estado || null,
+      cidade: payload.cidade || null,
+      bairro: payload.bairro || null,
+      logradouro: payload.logradouro || null,
+      numero: payload.numero || null,
+      cep: payload.cep || null,
+      email: payload.email || null,
+      telefone: payload.telefone || null,
+      forma_envio: serializarFormaEnvio(payload.formaEnvio),
+      vencimentos_fiscais: normalizarVencimentosFiscais(payload.vencimentosFiscais),
+    };
+    let { data, error } = await supabase.from('empresas').insert(baseRow).select('id').single();
+    if (error && hasMissingColumn(error, ['forma_envio', 'vencimentos_fiscais'])) {
+      console.warn('[DB] Coluna vencimentos_fiscais ou forma_envio ausente no Supabase (insert). Rode a migration. Erro original:', error.message);
+      const fallback = stripColumns(baseRow, ['forma_envio', 'vencimentos_fiscais']);
+      const retry = await supabase.from('empresas').insert(fallback).select('id').single();
+      data = retry.data;
+      error = retry.error;
+      if (!error) {
+        throw new Error('Coluna vencimentos_fiscais nao existe no Supabase. Rode no SQL Editor: alter table empresas add column if not exists vencimentos_fiscais jsonb not null default \'[]\'::jsonb;');
+      }
+    }
     if (error) throw error;
+    if (!data) throw new Error('Falha ao criar empresa: resposta vazia do Supabase.');
     empresaId = data.id as string;
   } else {
     // Mantém os dados sincronizados caso esteja reimportando
@@ -757,8 +851,19 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
     if (payload.cep !== undefined) row.cep = payload.cep || null;
     if (payload.email !== undefined) row.email = payload.email || null;
     if (payload.telefone !== undefined) row.telefone = payload.telefone || null;
+    if (payload.formaEnvio !== undefined) row.forma_envio = serializarFormaEnvio(payload.formaEnvio);
+    if (payload.vencimentosFiscais !== undefined) row.vencimentos_fiscais = normalizarVencimentosFiscais(payload.vencimentosFiscais);
 
-    const { error: updErr } = await supabase.from('empresas').update(row).eq('id', empresaId);
+    let { error: updErr } = await supabase.from('empresas').update(row).eq('id', empresaId);
+    if (updErr && hasMissingColumn(updErr, ['forma_envio', 'vencimentos_fiscais'])) {
+      console.warn('[DB] Coluna vencimentos_fiscais ou forma_envio ausente no Supabase (upsert). Rode a migration. Erro original:', updErr.message);
+      const fallback = stripColumns(row, ['forma_envio', 'vencimentos_fiscais']);
+      const retry = await supabase.from('empresas').update(fallback).eq('id', empresaId);
+      updErr = retry.error;
+      if (!updErr && ('vencimentos_fiscais' in row || 'forma_envio' in row)) {
+        throw new Error('Coluna vencimentos_fiscais nao existe no Supabase. Rode no SQL Editor: alter table empresas add column if not exists vencimentos_fiscais jsonb not null default \'[]\'::jsonb;');
+      }
+    }
     if (updErr) throw updErr;
   }
 
@@ -886,8 +991,19 @@ export async function updateEmpresa(id: UUID, patch: Partial<Empresa>) {
   if (patch.cep !== undefined) row.cep = patch.cep || null;
   if (patch.email !== undefined) row.email = patch.email || null;
   if (patch.telefone !== undefined) row.telefone = patch.telefone || null;
+  if (patch.formaEnvio !== undefined) row.forma_envio = serializarFormaEnvio(patch.formaEnvio);
+  if (patch.vencimentosFiscais !== undefined) row.vencimentos_fiscais = normalizarVencimentosFiscais(patch.vencimentosFiscais);
 
-  const { error } = await supabase.from('empresas').update(row).eq('id', id);
+  let { error } = await supabase.from('empresas').update(row).eq('id', id);
+  if (error && hasMissingColumn(error, ['forma_envio', 'vencimentos_fiscais'])) {
+    console.warn('[DB] Coluna vencimentos_fiscais ou forma_envio ausente no Supabase. Rode a migration do schema. Erro original:', error.message);
+    const fallback = stripColumns(row, ['forma_envio', 'vencimentos_fiscais']);
+    const retry = await supabase.from('empresas').update(fallback).eq('id', id);
+    error = retry.error;
+    if (!error && ('vencimentos_fiscais' in row || 'forma_envio' in row)) {
+      throw new Error('Coluna vencimentos_fiscais nao existe no Supabase. Rode no SQL Editor: alter table empresas add column if not exists vencimentos_fiscais jsonb not null default \'[]\'::jsonb;');
+    }
+  }
   if (error) throw error;
 
   // Atualizar RETs se fornecidos
@@ -1522,4 +1638,112 @@ export async function markAllNotificacoesLidas(userId: UUID) {
 
 export async function clearNotificacoes() {
   await supabase.from('notificacoes').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+}
+
+// ─── Checklist Fiscal Mensal ─────────────────────────────────
+
+type ChecklistFiscalRow = {
+  id: string;
+  empresa_id: string;
+  mes: string;
+  obrigacao: string;
+  concluido: boolean;
+  concluido_por_id: string | null;
+  concluido_por_nome: string | null;
+  concluido_em: string | null;
+  observacao: string | null;
+  criado_em: string;
+  atualizado_em: string;
+};
+
+function toChecklistItem(row: ChecklistFiscalRow): ChecklistFiscalItem {
+  return {
+    id: row.id,
+    empresaId: row.empresa_id,
+    mes: row.mes,
+    obrigacao: row.obrigacao,
+    concluido: row.concluido,
+    concluidoPorId: row.concluido_por_id,
+    concluidoPorNome: row.concluido_por_nome ?? undefined,
+    concluidoEm: row.concluido_em ? toIso(row.concluido_em) : undefined,
+    observacao: row.observacao ?? undefined,
+    criadoEm: toIso(row.criado_em),
+    atualizadoEm: toIso(row.atualizado_em),
+  };
+}
+
+export async function fetchChecklistFiscalByMes(mes: string): Promise<ChecklistFiscalItem[]> {
+  const { data, error } = await supabase
+    .from('checklist_fiscal')
+    .select('*')
+    .eq('mes', mes);
+  if (error) throw error;
+  return (data ?? []).map((row) => toChecklistItem(row as ChecklistFiscalRow));
+}
+
+export async function fetchChecklistFiscalMesesDisponiveis(): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('checklist_fiscal')
+    .select('mes');
+  if (error) throw error;
+  const set = new Set<string>();
+  for (const row of (data ?? []) as { mes: string }[]) {
+    if (row.mes) set.add(row.mes);
+  }
+  return Array.from(set).sort().reverse();
+}
+
+export async function upsertChecklistFiscal(payload: {
+  empresaId: UUID;
+  mes: string;
+  obrigacao: string;
+  concluido: boolean;
+  concluidoPorId?: UUID | null;
+  concluidoPorNome?: string;
+  observacao?: string | null;
+}): Promise<ChecklistFiscalItem> {
+  const now = new Date().toISOString();
+  const row = {
+    empresa_id: payload.empresaId,
+    mes: payload.mes,
+    obrigacao: payload.obrigacao,
+    concluido: payload.concluido,
+    concluido_por_id: payload.concluido ? (payload.concluidoPorId ?? null) : null,
+    concluido_por_nome: payload.concluido ? (payload.concluidoPorNome ?? null) : null,
+    concluido_em: payload.concluido ? now : null,
+    observacao: payload.observacao ?? null,
+    atualizado_em: now,
+  };
+  const { data, error } = await supabase
+    .from('checklist_fiscal')
+    .upsert(row, { onConflict: 'empresa_id,mes,obrigacao' })
+    .select()
+    .single();
+  if (error) throw error;
+  return toChecklistItem(data as ChecklistFiscalRow);
+}
+
+export async function updateChecklistObservacao(
+  empresaId: UUID,
+  mes: string,
+  obrigacao: string,
+  observacao: string | null
+): Promise<ChecklistFiscalItem> {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('checklist_fiscal')
+    .upsert(
+      {
+        empresa_id: empresaId,
+        mes,
+        obrigacao,
+        observacao: observacao && observacao.trim() ? observacao.trim() : null,
+        atualizado_em: now,
+      },
+      { onConflict: 'empresa_id,mes,obrigacao', ignoreDuplicates: false }
+    )
+    .select()
+    .single();
+  if (error) throw error;
+  return toChecklistItem(data as ChecklistFiscalRow);
 }

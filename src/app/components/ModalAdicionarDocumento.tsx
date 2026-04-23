@@ -8,6 +8,10 @@ import type { Departamento, Usuario, UUID, Visibilidade } from '@/app/types';
 
 const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
 
+
+
+
+
 export default function ModalAdicionarDocumento({
   isOpen,
   onClose,
