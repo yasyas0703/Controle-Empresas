@@ -114,6 +114,51 @@ export interface ChecklistFiscalItem {
   atualizadoEm: string;
 }
 
+export type ObrigacaoDepartamento = 'fiscal' | 'pessoal' | 'contabil' | 'cadastro';
+
+export type ObrigacaoEsfera = 'federal' | 'estadual' | 'municipal' | 'interna';
+
+export type ObrigacaoFrequencia =
+  | 'mensal'
+  | 'bimestral'
+  | 'trimestral'
+  | 'quadrimestral'
+  | 'semestral'
+  | 'anual'
+  | 'eventual';
+
+export type ObrigacaoTipoData = 'dia_util' | 'dia_corrido' | 'dia_fixo';
+
+export interface Obrigacao {
+  id: UUID;
+  nome: string; // ex.: "DARF 2373"
+  codigo?: string; // ex.: "DARF-2373"
+  departamento: ObrigacaoDepartamento;
+  esfera: ObrigacaoEsfera;
+  frequencia: ObrigacaoFrequencia;
+  // Data legal (prazo oficial)
+  tipoDataLegal: ObrigacaoTipoData;
+  diaDataLegal: number; // 1..31
+  // Data meta (interna, normalmente antes da legal)
+  tipoDataMeta: ObrigacaoTipoData;
+  diaDataMeta: number; // 1..31
+  // Offset da competência em relação ao mês de referência (ex.: -1 = competência é o mês anterior)
+  competenciaOffset: number;
+  pontuacao: number;
+  agrupador?: string;
+  notificarCliente: boolean;
+  geraMulta: boolean;
+  autoConcluir: boolean;
+  palavrasChave: string[]; // para auto-detecção do PDF
+  templateEmailAssunto?: string;
+  templateEmailCorpo?: string;
+  descricao?: string;
+  empresasVinculadas: UUID[]; // empresas onde a obrigação se aplica
+  ativo: boolean;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
 export interface Empresa {
   id: UUID;
   cadastrada: boolean;

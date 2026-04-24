@@ -14,6 +14,7 @@ import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento'
 import { garantirVencimentosFiscais } from '@/app/utils/vencimentos';
 import { getDocumentoSignedUrl, getVencimentoFiscalSignedUrl, uploadDocumentoArquivo } from '@/lib/db';
 import { sortResponsaveisByNome } from '@/lib/sort';
+import { getDepartamentoSlugDoUsuario, type DepartamentoSlug } from '@/app/utils/departamento';
 
 const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
 
@@ -79,10 +80,13 @@ export default function ModalDetalhesEmpresa({
   empresa: Empresa;
   onClose: () => void;
 }) {
-  const { adicionarDocumento, removerDocumento, atualizarDocumento, atualizarEmpresa, adicionarObservacao, removerObservacao, removerRet, departamentos, usuarios, tags: tagsCadastradas, currentUser, canManage, empresas, currentUserId, mostrarAlerta } = useSistema();
+  const { adicionarDocumento, removerDocumento, atualizarDocumento, atualizarEmpresa, adicionarObservacao, removerObservacao, removerRet, departamentos, usuarios, tags: tagsCadastradas, currentUser, canManage, canAdmin, isPrivileged, empresas, currentUserId, mostrarAlerta } = useSistema();
   // Sempre buscar a versão mais atualizada da empresa no contexto
   const empresa = empresas.find((e) => e.id === empresaProp.id) ?? empresaProp;
   const canEdit = canManage || (!!currentUserId && Object.values(empresa.responsaveis || {}).some((uid) => uid === currentUserId));
+  const userDepartamentoSlug = getDepartamentoSlugDoUsuario(currentUser, departamentos);
+  const podeVerTodosVencimentos = canAdmin || isPrivileged;
+  const podeVerVencimentosDe = (slug: DepartamentoSlug) => podeVerTodosVencimentos || userDepartamentoSlug === slug;
   const [docOpen, setDocOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [obsTexto, setObsTexto] = useState('');
@@ -588,6 +592,7 @@ export default function ModalDetalhesEmpresa({
               )}
             </Section>
 
+            {podeVerVencimentosDe('fiscal') && (
             <Section title="Vencimentos Fiscais" tone="red">
               {(() => {
                 const fiscais = garantirVencimentosFiscais(empresa.vencimentosFiscais);
@@ -855,6 +860,25 @@ export default function ModalDetalhesEmpresa({
                 );
               })()}
             </Section>
+            )}
+
+            {podeVerVencimentosDe('pessoal') && (
+              <Section title="Vencimentos Pessoal" tone="emerald">
+                <VencimentosDepartamentoPlaceholder departamento="Pessoal" />
+              </Section>
+            )}
+
+            {podeVerVencimentosDe('contabil') && (
+              <Section title="Vencimentos Contábil" tone="blue">
+                <VencimentosDepartamentoPlaceholder departamento="Contábil" />
+              </Section>
+            )}
+
+            {podeVerVencimentosDe('cadastro') && (
+              <Section title="Vencimentos Cadastro" tone="orange">
+                <VencimentosDepartamentoPlaceholder departamento="Cadastro" />
+              </Section>
+            )}
 
             <Section title="Forma de Envio" tone="cyan">
               {(() => {
@@ -1478,6 +1502,17 @@ function Info({ label, value }: { label: string; value: string }) {
     <div>
       <div className="text-xs font-bold text-gray-500">{label}</div>
       <div className="text-sm font-semibold text-gray-900 mt-1 break-words">{value}</div>
+    </div>
+  );
+}
+
+function VencimentosDepartamentoPlaceholder({ departamento }: { departamento: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-gray-300 bg-white/60 px-4 py-6 text-center">
+      <div className="text-sm font-semibold text-gray-700">Em breve</div>
+      <div className="mt-1 text-xs text-gray-500">
+        Os vencimentos do departamento {departamento} serão configurados em uma próxima etapa.
+      </div>
     </div>
   );
 }
