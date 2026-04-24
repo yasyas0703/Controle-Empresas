@@ -4,9 +4,10 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import React, { useMemo, useState, useEffect } from 'react';
-import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, Grid3x3, ListChecks } from 'lucide-react';
+import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, Grid3x3, ListChecks, FileStack } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, isRetRenovado } from '@/app/utils/date';
+import { getDepartamentoSlugDoUsuario, type DepartamentoSlug } from '@/app/utils/departamento';
 import AutoBackup from '@/app/components/AutoBackup';
 
 type NavItem = {
@@ -15,6 +16,7 @@ type NavItem = {
   icon: React.ComponentType<{ size?: number; className?: string }>;
   badge?: boolean;
   ghostOnly?: boolean;
+  department?: DepartamentoSlug;
 };
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -29,10 +31,17 @@ function getErrorMessage(error: unknown, fallback: string): string {
 const nav: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/vencimentos', label: 'Vencimentos', icon: AlertTriangle, badge: true },
-  { href: '/vencimentos-fiscais', label: 'Painel Fiscal', icon: Grid3x3 },
-  { href: '/vencimentos-fiscais/checklist', label: 'Checklist Mensal', icon: ListChecks },
+  { href: '/vencimentos-fiscais', label: 'Painel Fiscal', icon: Grid3x3, department: 'fiscal' },
+  { href: '/vencimentos-fiscais/checklist', label: 'Checklist Mensal', icon: ListChecks, department: 'fiscal' },
+  { href: '/vencimentos-pessoal', label: 'Vencimentos Pessoal', icon: Grid3x3, department: 'pessoal' },
+  { href: '/vencimentos-pessoal/controle', label: 'Controle Pessoal', icon: ListChecks, department: 'pessoal' },
+  { href: '/vencimentos-contabil', label: 'Vencimentos Contábil', icon: Grid3x3, department: 'contabil' },
+  { href: '/vencimentos-contabil/controle', label: 'Controle Contábil', icon: ListChecks, department: 'contabil' },
+  { href: '/vencimentos-cadastro', label: 'Vencimentos Cadastro', icon: Grid3x3, department: 'cadastro' },
+  { href: '/vencimentos-cadastro/controle', label: 'Controle Cadastro', icon: ListChecks, department: 'cadastro' },
   { href: '/calendario', label: 'Calendário', icon: CalendarDays },
   { href: '/dev', label: 'Controle', icon: Terminal, ghostOnly: true },
+  { href: '/obrigacoes', label: 'Obrigações', icon: FileStack, ghostOnly: true },
   { href: '/empresas', label: 'Empresas', icon: Building2 },
   { href: '/servicos', label: 'Serviços', icon: Briefcase },
   { href: '/tags', label: 'Tags', icon: Tag },
@@ -49,7 +58,7 @@ const FISCAL_NOTIF_TITLE_PREFIX = 'Vencimento fiscal ';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { currentUser, canManage, canAdmin, isGhost, isPrivileged, logout, login, mostrarAlerta, empresas, notificacoes, marcarNotificacaoLida, marcarTodasLidas, limparNotificacoes, lixeira, authReady } = useSistema();
+  const { currentUser, canManage, canAdmin, isGhost, isPrivileged, logout, login, mostrarAlerta, empresas, notificacoes, marcarNotificacaoLida, marcarTodasLidas, limparNotificacoes, lixeira, authReady, departamentos } = useSistema();
   const [showLogin, setShowLogin] = useState(false);
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -338,10 +347,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const userDepartamentoSlug = getDepartamentoSlugDoUsuario(currentUser, departamentos);
   const navItems = nav.filter((i) => {
     if (i.ghostOnly) return isGhost;
     if (i.href === '/usuarios' || i.href === '/backup' || i.href === '/historico') return canAdmin;
     if (['/departamentos', '/servicos', '/tags', '/lixeira'].includes(i.href)) return canManage;
+    if (i.department) {
+      if (canAdmin || isPrivileged) return true;
+      return i.department === userDepartamentoSlug;
+    }
     return true;
   });
 
