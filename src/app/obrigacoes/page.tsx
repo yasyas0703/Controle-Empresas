@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   FileStack, Plus, Pencil, Trash2, Search, XCircle, Shield,
   Building2, Calendar, Bell, Award, Target, Clock, Sparkles, Mail, AlertTriangle, CheckCircle, FileText, Tags, ListChecks,
-  FlaskConical, Wand2,
+  FlaskConical, Wand2, Link2, Unlink,
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
+import { supabase } from '@/lib/supabase';
 import ModalBase from '@/app/components/ModalBase';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { comparePtBr } from '@/lib/sort';
@@ -114,6 +115,90 @@ export default function ObrigacoesPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editando, setEditando] = useState<Obrigacao | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const [gmailStatus, setGmailStatus] = useState<{ connected: boolean; email?: string; conectado_em?: string } | null>(null);
+  const [gmailLoading, setGmailLoading] = useState(false);
+  const [confirmDisconnectGmail, setConfirmDisconnectGmail] = useState(false);
+
+  const carregarGmailStatus = useCallback(async () => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) { setGmailStatus({ connected: false }); return; }
+      const res = await fetch('/api/auth/google/status', { headers: { Authorization: `Bearer ${token}` } });
+      const json = await res.json();
+      setGmailStatus(json);
+    } catch {
+      setGmailStatus({ connected: false });
+    }
+  }, []);
+
+  useEffect(() => { if (isGhost) carregarGmailStatus(); }, [isGhost, carregarGmailStatus]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('gmail');
+    if (!status) return;
+    if (status === 'connected') {
+      const email = params.get('email');
+      mostrarAlerta('Gmail conectado', email ? `Conta ${email} conectada com sucesso.` : 'Conta conectada com sucesso.', 'sucesso');
+      carregarGmailStatus();
+    } else if (status === 'error') {
+      const reason = params.get('reason') || 'erro desconhecido';
+      mostrarAlerta('Erro ao conectar Gmail', `Motivo: ${reason}. Tente novamente.`, 'aviso');
+    }
+    window.history.replaceState({}, '', window.location.pathname);
+  }, [mostrarAlerta, carregarGmailStatus]);
+
+  const conectarGmail = useCallback(async () => {
+    setGmailLoading(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        mostrarAlerta('Sessão expirada', 'Faça login novamente.', 'aviso');
+        return;
+      }
+      const res = await fetch('/api/auth/google/connect', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json();
+      if (!res.ok || !json.authUrl) {
+        mostrarAlerta('Erro', json.error || 'Não foi possível iniciar a conexão com o Google.', 'aviso');
+        return;
+      }
+      window.location.href = json.authUrl;
+    } catch (err) {
+      mostrarAlerta('Erro', err instanceof Error ? err.message : 'Erro inesperado', 'aviso');
+    } finally {
+      setGmailLoading(false);
+    }
+  }, [mostrarAlerta]);
+
+  const desconectarGmail = useCallback(async () => {
+    setGmailLoading(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+      const res = await fetch('/api/auth/google/status', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        mostrarAlerta('Erro', json.error || 'Falha ao desconectar.', 'aviso');
+        return;
+      }
+      setGmailStatus({ connected: false });
+      mostrarAlerta('Gmail desconectado', 'Você precisará autorizar novamente para enviar emails.', 'sucesso');
+    } finally {
+      setGmailLoading(false);
+      setConfirmDisconnectGmail(false);
+    }
+  }, [mostrarAlerta]);
 
   if (!isGhost) {
     return (
@@ -241,6 +326,42 @@ export default function ObrigacoesPage() {
               <div className="text-lg font-bold">{stats.porDep[d.value] ?? 0}</div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Conexão Gmail */}
+      <div className="rounded-2xl bg-white p-4 shadow-sm border border-gray-100">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${gmailStatus?.connected ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+            <Mail size={20} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold text-gray-900">
+              {gmailStatus?.connected ? 'Gmail conectado' : 'Conectar Gmail'}
+            </div>
+            <div className="text-xs text-gray-500 truncate">
+              {gmailStatus?.connected
+                ? `Emails serão enviados da conta ${gmailStatus.email}.`
+                : 'Autorize seu Gmail para que os envios de guia saiam da sua própria conta.'}
+            </div>
+          </div>
+          {gmailStatus?.connected ? (
+            <button
+              onClick={() => setConfirmDisconnectGmail(true)}
+              disabled={gmailLoading}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <Unlink size={14} /> Desconectar
+            </button>
+          ) : (
+            <button
+              onClick={conectarGmail}
+              disabled={gmailLoading}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+            >
+              <Link2 size={14} /> {gmailLoading ? 'Conectando…' : 'Conectar Gmail'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -470,6 +591,16 @@ export default function ObrigacoesPage() {
         variant="danger"
         onConfirm={() => confirmDeleteId && remover(confirmDeleteId)}
         onCancel={() => setConfirmDeleteId(null)}
+      />
+
+      <ConfirmModal
+        open={confirmDisconnectGmail}
+        title="Desconectar Gmail?"
+        message="Você precisará autorizar novamente para enviar guias por email. Tokens já salvos serão removidos."
+        confirmText="Desconectar"
+        variant="danger"
+        onConfirm={desconectarGmail}
+        onCancel={() => setConfirmDisconnectGmail(false)}
       />
     </div>
   );
