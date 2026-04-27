@@ -10,6 +10,7 @@ import { daysUntil, isRetRenovado } from '@/app/utils/date';
 import { getDepartamentoSlugDoUsuario, type DepartamentoSlug } from '@/app/utils/departamento';
 import AutoBackup from '@/app/components/AutoBackup';
 import BotaoTarefas from '@/app/components/BotaoTarefas';
+import ThemeToggle from '@/app/components/ThemeToggle';
 
 type NavItem = {
   href: string;
@@ -470,6 +471,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
           <div className="flex items-center gap-1">
             {currentUser && <BotaoTarefas variant="mobile-bar" />}
+            <ThemeToggle variant="mobile" />
             <button
               ref={notifBellMobileRef}
               onClick={() => setShowNotifs(!showNotifs)}
@@ -669,6 +671,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             >
               {sidebarOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
             </button>
+
+            <ThemeToggle variant="sidebar" />
 
             {/* Notificações (desktop) */}
             <div className="relative">
