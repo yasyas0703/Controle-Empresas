@@ -12,7 +12,6 @@ import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
 import ConfirmModal from '@/app/components/ConfirmModal';
-import BotaoTarefas from '@/app/components/BotaoTarefas';
 import { garantirVencimentosFiscais } from '@/app/utils/vencimentos';
 import { exportEmpresasPdf } from '@/lib/exportPdf';
 import { comparePtBr, sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
@@ -395,9 +394,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Acesso rápido ao Controle de Tarefas */}
-      <BotaoTarefas variant="card" />
-
       {/* Cards de Resumo */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
         <StatCard icon={<Building2 size={24} />} gradient="from-blue-500 to-blue-600" label="Total Empresas" value={totals.empresas} />
