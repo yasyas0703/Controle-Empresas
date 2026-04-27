@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, Grid3x3, ListChecks, FileStack } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, isRetRenovado } from '@/app/utils/date';
@@ -78,6 +78,34 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [forgotResetDone, setForgotResetDone] = useState(false);
   const [forgotError, setForgotError] = useState('');
   const [browserNotifPermission, setBrowserNotifPermission] = useState<NotificationPermission | 'unsupported'>('unsupported');
+
+  const notifPanelMobileRef = useRef<HTMLDivElement>(null);
+  const notifPanelDesktopRef = useRef<HTMLDivElement>(null);
+  const notifBellMobileRef = useRef<HTMLButtonElement>(null);
+  const notifBellDesktopRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!showNotifs) return;
+    const handler = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (
+        notifPanelMobileRef.current?.contains(target) ||
+        notifPanelDesktopRef.current?.contains(target) ||
+        notifBellMobileRef.current?.contains(target) ||
+        notifBellDesktopRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setShowNotifs(false);
+    };
+    document.addEventListener('mousedown', handler);
+    document.addEventListener('touchstart', handler);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('touchstart', handler);
+    };
+  }, [showNotifs]);
 
   // isGhost e isPrivileged vêm do contexto (validados no servidor)
 
@@ -443,6 +471,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-1">
             {currentUser && <BotaoTarefas variant="mobile-bar" />}
             <button
+              ref={notifBellMobileRef}
               onClick={() => setShowNotifs(!showNotifs)}
               className="p-2 rounded-lg hover:bg-gray-100 relative"
             >
@@ -644,6 +673,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             {/* Notificações (desktop) */}
             <div className="relative">
               <button
+                ref={notifBellDesktopRef}
                 onClick={() => setShowNotifs(!showNotifs)}
                 className="flex items-center justify-center rounded-lg p-2 hover:bg-gray-100 transition relative"
                 title="Notificações"
@@ -660,12 +690,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               </button>
 
               {showNotifs && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowNotifs(false)} />
-                  <div className="absolute left-full bottom-0 ml-2 z-50 w-[360px] max-h-[480px]">
-                    {notifPanel}
-                  </div>
-                </>
+                <div ref={notifPanelDesktopRef} className="absolute left-full bottom-0 ml-2 z-50 w-[360px] max-h-[480px]">
+                  {notifPanel}
+                </div>
               )}
             </div>
 
@@ -692,9 +719,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* ── Mobile Notification Panel ── */}
       {showNotifs && (
-        <div className="md:hidden fixed inset-0 z-[80]">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setShowNotifs(false)} />
-          <div className="absolute bottom-0 left-0 right-0 max-h-[80vh] z-[81]">
+        <div className="md:hidden fixed inset-0 z-[80] pointer-events-none">
+          <div className="absolute inset-0 bg-black/50" />
+          <div ref={notifPanelMobileRef} className="absolute top-14 right-2 left-2 max-h-[calc(100vh-72px)] z-[81] pointer-events-auto">
             {notifPanel}
           </div>
         </div>
