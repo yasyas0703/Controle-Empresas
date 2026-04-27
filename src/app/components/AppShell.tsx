@@ -9,6 +9,7 @@ import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, isRetRenovado } from '@/app/utils/date';
 import { getDepartamentoSlugDoUsuario, type DepartamentoSlug } from '@/app/utils/departamento';
 import AutoBackup from '@/app/components/AutoBackup';
+import BotaoTarefas from '@/app/components/BotaoTarefas';
 
 type NavItem = {
   href: string;
@@ -440,6 +441,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <span className="text-sm font-bold text-gray-900">Controle de Empresas</span>
           </Link>
           <div className="flex items-center gap-1">
+            {currentUser && <BotaoTarefas variant="mobile-bar" />}
             <button
               onClick={() => setShowNotifs(!showNotifs)}
               className="p-2 rounded-lg hover:bg-gray-100 relative"
@@ -479,6 +481,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <X size={20} />
           </button>
         </div>
+
+        {currentUser && <BotaoTarefas variant="mobile-menu" onClick={() => setMobileMenuOpen(false)} />}
 
         <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
           {navItems.map((i) => {
@@ -569,6 +573,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             )}
           </Link>
         </div>
+
+        {currentUser && (
+          <BotaoTarefas variant={sidebarOpen ? 'sidebar-expanded' : 'sidebar-collapsed'} />
+        )}
 
         {/* Itens de navegação */}
         <nav className="flex-1 overflow-y-auto py-2 px-1.5 space-y-0.5">
