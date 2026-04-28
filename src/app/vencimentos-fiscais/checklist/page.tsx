@@ -303,14 +303,14 @@ export default function ChecklistFiscalPage() {
         return { empresa, respId, cells, feitas, total, progresso };
       })
       .filter((l) => {
+        // Empresas sem responsável fiscal ficam fora do checklist
+        if (!l.respId) return false;
         if (q) {
           const hay = `${l.empresa.codigo} ${l.empresa.razao_social ?? ''} ${l.empresa.apelido ?? ''}`.toLowerCase();
           if (!hay.includes(q)) return false;
         }
         if (filtroUsuario) {
-          if (filtroUsuario === 'sem') {
-            if (l.respId) return false;
-          } else if (l.respId !== filtroUsuario) return false;
+          if (l.respId !== filtroUsuario) return false;
         }
         if (apenasMinhas && currentUserId) {
           if (l.respId !== currentUserId) return false;
@@ -591,7 +591,6 @@ export default function ChecklistFiscalPage() {
           >
             <option value="">Todos responsáveis fiscais</option>
             {fiscalUsers.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
-            <option value="sem">Empresas sem responsável fiscal</option>
           </select>
           <select
             value={filtroProgresso}

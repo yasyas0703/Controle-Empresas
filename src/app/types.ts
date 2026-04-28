@@ -159,6 +159,27 @@ export interface Obrigacao {
   atualizadoEm: string;
 }
 
+export type Tributacao = 'lucro_real' | 'lucro_presumido' | 'simples_nacional';
+
+export const TRIBUTACAO_LABELS: Record<Tributacao, string> = {
+  lucro_real: 'Lucro Real',
+  lucro_presumido: 'Lucro Presumido',
+  simples_nacional: 'Simples Nacional',
+};
+
+export const TRIBUTACAO_SIGLAS: Record<Tributacao, string> = {
+  lucro_real: 'LR',
+  lucro_presumido: 'LP',
+  simples_nacional: 'SN',
+};
+
+// Ordem de prioridade pra ordenação no controle contábil.
+export const TRIBUTACAO_ORDEM: Record<Tributacao, number> = {
+  lucro_real: 0,
+  lucro_presumido: 1,
+  simples_nacional: 2,
+};
+
 export interface Empresa {
   id: UUID;
   cadastrada: boolean;
@@ -195,6 +216,9 @@ export interface Empresa {
   regime_federal?: string;
   regime_estadual?: string;
   regime_municipal?: string;
+  tributacao?: Tributacao | null;
+  cliente_desde?: string | null;   // YYYY-MM-DD
+  desligada_em?: string | null;    // YYYY-MM-DD — quando preenchido, a empresa está desligada
 
   // Endereço
   estado?: string;
@@ -320,3 +344,111 @@ export const LIMIARES_DEFAULTS: Limiares = {
   atencao: 60,
   proximo: 90,
 };
+
+// ─── Controle Contábil — Extratos Bancários ────────────────────
+
+export interface ContaBancaria {
+  id: UUID;
+  empresaId: UUID;
+  nome: string;          // ex: "Itaú", "Bradesco PJ"
+  agencia?: string;
+  conta?: string;
+  ordem: number;
+  ativo: boolean;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+export type ControleContabilStatus = 'feito' | 'recebido_pendente' | 'sem_movimento';
+
+export interface ControleContabilExtrato {
+  id: UUID;
+  empresaId: UUID;
+  contaBancariaId: UUID;
+  mes: string; // 'YYYY-MM'
+  status: ControleContabilStatus;
+  marcadoPorId?: UUID | null;
+  marcadoPorNome?: string;
+  marcadoEm: string;
+  observacao?: string;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+export interface ExtratoArquivo {
+  id: UUID;
+  empresaId: UUID;
+  contaBancariaId: UUID;
+  mes: string; // 'YYYY-MM'
+  arquivoPath: string;
+  arquivoNome: string;
+  tamanhoBytes?: number;
+  uploadedPorId?: UUID | null;
+  uploadedPorNome?: string;
+  uploadedEm: string;
+}
+
+// ─── Anotações em arquivos (highlight, note, underline, strikethrough) ──
+
+export type AnotacaoTipo = 'highlight' | 'note' | 'underline' | 'strikethrough';
+export type AnotacaoContexto = 'extrato' | 'documento';
+
+// ─── Tarefas geradas a partir de obrigações ─────────────────
+
+export type ObrigacaoTarefaStatus =
+  | 'aberta'
+  | 'em_andamento'
+  | 'aguardando_cliente'
+  | 'concluida'
+  | 'atrasada'
+  | 'cancelada';
+
+export interface ObrigacaoTarefa {
+  id: UUID;
+  obrigacaoId: UUID;
+  empresaId: UUID;
+  competencia: string;            // 'YYYY-MM'
+  dataLegal?: string | null;      // YYYY-MM-DD
+  dataMeta?: string | null;
+  status: ObrigacaoTarefaStatus;
+  responsavelId?: UUID | null;
+  concluidaEm?: string | null;
+  concluidaPorId?: UUID | null;
+  arquivoUrl?: string | null;     // path no Storage
+  vencimentoDetectado?: string | null;
+  competenciaDetectada?: string | null;
+  valorDetectado?: number | null;
+  observacao?: string | null;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+// ─── E-mails de destinatário do cliente ─────────────────────
+
+export interface EmpresaEmailCliente {
+  id: UUID;
+  empresaId: UUID;
+  email: string;
+  rotulo?: string;
+  principal: boolean;
+  ativo: boolean;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+export interface ArquivoAnotacao {
+  id: UUID;
+  arquivoPath: string;
+  contexto: AnotacaoContexto;
+  empresaId: UUID;
+  tipo: AnotacaoTipo;
+  pagina: number;
+  /** JSON com coordenadas/areas conforme o plugin de PDF viewer. */
+  conteudo: unknown;
+  comentario?: string;
+  cor: string;
+  criadoPorId?: UUID | null;
+  criadoPorNome?: string;
+  criadoEm: string;
+  atualizadoEm: string;
+}

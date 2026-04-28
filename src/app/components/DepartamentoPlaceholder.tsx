@@ -54,7 +54,7 @@ export const DEPARTAMENTO_CONFIG: Record<Exclude<DepartamentoSlug, 'fiscal'>, De
   },
 };
 
-function DepartamentoTabs({ tabs }: { tabs: TabDef[] }) {
+export function DepartamentoTabs({ tabs }: { tabs: TabDef[] }) {
   const pathname = usePathname();
   return (
     <div className="flex items-center gap-1 sm:gap-2 rounded-2xl bg-white p-1.5 shadow-sm border border-gray-100 w-full overflow-x-auto">

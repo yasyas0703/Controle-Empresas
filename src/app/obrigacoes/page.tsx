@@ -7,8 +7,13 @@ import {
   FlaskConical, Wand2, Link2, Unlink,
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
-import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import { supabase } from '@/lib/supabase';
+import {
+  fetchObrigacoes,
+  upsertObrigacao,
+  deleteObrigacao as dbDeleteObrigacao,
+  toggleObrigacaoAtivo,
+} from '@/lib/db';
 import ModalBase from '@/app/components/ModalBase';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { comparePtBr } from '@/lib/sort';
@@ -23,11 +28,9 @@ import type {
 import { isoNow } from '@/app/utils/date';
 import { reconhecerGuia, type ResultadoReconhecimento } from '@/app/utils/reconhecerGuia';
 
-const STORAGE_KEY = 'triar-obrigacoes-v1';
-
 function newId(): UUID {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-  return `id_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+  return `temp_${Math.random().toString(16).slice(2)}_${Date.now()}`;
 }
 
 const DEPARTAMENTOS: { value: ObrigacaoDepartamento; label: string }[] = [
@@ -106,7 +109,22 @@ function obrigacaoVazia(): Obrigacao {
 
 export default function ObrigacoesPage() {
   const { isGhost, mostrarAlerta, empresas } = useSistema();
-  const [obrigacoes, setObrigacoes] = useLocalStorageState<Obrigacao[]>(STORAGE_KEY, []);
+  const [obrigacoes, setObrigacoes] = useState<Obrigacao[]>([]);
+  const [carregando, setCarregando] = useState(true);
+
+  // Carrega obrigações do Supabase ao montar
+  useEffect(() => {
+    let cancelado = false;
+    setCarregando(true);
+    fetchObrigacoes()
+      .then((lista) => { if (!cancelado) setObrigacoes(lista); })
+      .catch((err) => {
+        console.error(err);
+        mostrarAlerta('Erro', 'Não foi possível carregar as obrigações.', 'erro');
+      })
+      .finally(() => { if (!cancelado) setCarregando(false); });
+    return () => { cancelado = true; };
+  }, [mostrarAlerta]);
 
   const [search, setSearch] = useState('');
   const [filtroDep, setFiltroDep] = useState<'' | ObrigacaoDepartamento>('');
@@ -224,7 +242,7 @@ export default function ObrigacoesPage() {
     setEditOpen(true);
   };
 
-  const salvar = () => {
+  const salvar = async () => {
     if (!editando) return;
     if (!editando.nome.trim()) {
       mostrarAlerta('Campo obrigatório', 'Informe o nome da obrigação.', 'aviso');
@@ -238,31 +256,52 @@ export default function ObrigacoesPage() {
       mostrarAlerta('Data meta inválida', 'O dia precisa estar entre 1 e 31.', 'aviso');
       return;
     }
-    const atualizado: Obrigacao = { ...editando, atualizadoEm: isoNow() };
-    setObrigacoes((prev) => {
-      const idx = prev.findIndex((o) => o.id === atualizado.id);
-      if (idx >= 0) {
-        const copia = [...prev];
-        copia[idx] = atualizado;
-        return copia;
-      }
-      return [...prev, atualizado];
-    });
-    setEditOpen(false);
-    setEditando(null);
-    mostrarAlerta('Obrigação salva', 'Configuração salva com sucesso.', 'sucesso');
+    try {
+      const persistido = await upsertObrigacao(editando);
+      setObrigacoes((prev) => {
+        const idx = prev.findIndex((o) => o.id === persistido.id);
+        if (idx >= 0) {
+          const copia = [...prev];
+          copia[idx] = persistido;
+          return copia;
+        }
+        return [...prev, persistido];
+      });
+      setEditOpen(false);
+      setEditando(null);
+      mostrarAlerta('Obrigação salva', 'Configuração salva com sucesso.', 'sucesso');
+    } catch (err) {
+      console.error(err);
+      mostrarAlerta('Erro ao salvar', err instanceof Error ? err.message : 'Falha ao gravar no banco.', 'erro');
+    }
   };
 
-  const remover = (id: string) => {
-    setObrigacoes((prev) => prev.filter((o) => o.id !== id));
-    setConfirmDeleteId(null);
-    mostrarAlerta('Obrigação removida', 'A obrigação foi excluída.', 'sucesso');
+  const remover = async (id: string) => {
+    try {
+      await dbDeleteObrigacao(id);
+      setObrigacoes((prev) => prev.filter((o) => o.id !== id));
+      setConfirmDeleteId(null);
+      mostrarAlerta('Obrigação removida', 'A obrigação foi excluída.', 'sucesso');
+    } catch (err) {
+      console.error(err);
+      mostrarAlerta('Erro', 'Não foi possível remover.', 'erro');
+    }
   };
 
-  const toggleAtivo = (id: string) => {
-    setObrigacoes((prev) =>
-      prev.map((o) => (o.id === id ? { ...o, ativo: !o.ativo, atualizadoEm: isoNow() } : o))
-    );
+  const toggleAtivo = async (id: string) => {
+    const atual = obrigacoes.find((o) => o.id === id);
+    if (!atual) return;
+    const novoAtivo = !atual.ativo;
+    // Otimista
+    setObrigacoes((prev) => prev.map((o) => (o.id === id ? { ...o, ativo: novoAtivo } : o)));
+    try {
+      await toggleObrigacaoAtivo(id, novoAtivo);
+    } catch (err) {
+      console.error(err);
+      // Reverte se falhou
+      setObrigacoes((prev) => prev.map((o) => (o.id === id ? { ...o, ativo: !novoAtivo } : o)));
+      mostrarAlerta('Erro', 'Não foi possível alterar o status.', 'erro');
+    }
   };
 
   const lista = useMemo(() => {

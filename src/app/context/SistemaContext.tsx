@@ -335,6 +335,8 @@ type AlertType = 'sucesso' | 'aviso' | 'erro';
 export type AlertItem = { id: UUID; title: string; message: string; type: AlertType };
 
 interface SistemaContextValue extends SistemaState {
+  empresasDesligadas: Empresa[];   // só desligadas — usado em /empresas-desligadas
+  empresasTodas: Empresa[];        // todas (ativas + desligadas) — uso em casos específicos
   currentUser: Usuario | null;
   canManage: boolean;
   canAdmin: boolean;
@@ -646,9 +648,17 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
   const canManage = currentUser?.role === 'gerente' || currentUser?.role === 'admin';
   const canAdmin = currentUser?.role === 'admin';
-  const empresasVisiveis = useMemo(
+  const empresasVisiveisTodas = useMemo(
     () => filtrarEmpresasPorPermissaoDocumentos(state.empresas, currentUser),
     [currentUser, state.empresas]
+  );
+  const empresasVisiveis = useMemo(
+    () => empresasVisiveisTodas.filter((e) => !e.desligada_em),
+    [empresasVisiveisTodas]
+  );
+  const empresasVisiveisDesligadas = useMemo(
+    () => empresasVisiveisTodas.filter((e) => !!e.desligada_em),
+    [empresasVisiveisTodas]
   );
 
   const pushLog = async (entry: Omit<LogEntry, 'id' | 'em' | 'userId' | 'userNome'> & { diff?: LogEntry['diff'] }, nomeOverride?: string | null, userIdOverride?: string | null) => {
@@ -1652,6 +1662,8 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   const value: SistemaContextValue = {
     ...state,
     empresas: empresasVisiveis,
+    empresasDesligadas: empresasVisiveisDesligadas,
+    empresasTodas: empresasVisiveisTodas,
     usuarios: usuariosVisiveis,
     logs: logsVisiveis,
     currentUser,

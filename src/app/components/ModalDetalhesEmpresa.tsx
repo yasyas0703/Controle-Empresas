@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useCallback } from 'react';
-import { X, Plus, Trash2, Send, MessageSquare, Pencil, Download, Eye, Paperclip, FileText, Globe, Building2, Lock, Users, Loader2, History, AlertTriangle, CalendarClock } from 'lucide-react';
+import { X, Plus, Trash2, Send, MessageSquare, Pencil, Download, Eye, Mail, Paperclip, FileText, Folder, Globe, Building2, Lock, Users, Loader2, History, AlertTriangle, CalendarClock } from 'lucide-react';
 import type { Empresa, DocumentoEmpresa, HistoricoVencimentoItem, UUID, VencimentoFiscal } from '@/app/types';
 import { FORMAS_ENVIO } from '@/app/types';
 import ModalBase from '@/app/components/ModalBase';
@@ -11,6 +11,8 @@ import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
 import ModalAdicionarDocumento from '@/app/components/ModalAdicionarDocumento';
 import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
+import ModalCentralExtratos from '@/app/components/ModalCentralExtratos';
+import ModalEmailsCliente from '@/app/components/ModalEmailsCliente';
 import { garantirVencimentosFiscais } from '@/app/utils/vencimentos';
 import { getDocumentoSignedUrl, getVencimentoFiscalSignedUrl, uploadDocumentoArquivo } from '@/lib/db';
 import { sortResponsaveisByNome } from '@/lib/sort';
@@ -87,8 +89,12 @@ export default function ModalDetalhesEmpresa({
   const userDepartamentoSlug = getDepartamentoSlugDoUsuario(currentUser, departamentos);
   const podeVerTodosVencimentos = canAdmin || isPrivileged;
   const podeVerVencimentosDe = (slug: DepartamentoSlug) => podeVerTodosVencimentos || userDepartamentoSlug === slug;
+  // Número PTA do RET só fica visível pra fiscal/admin (informação sensível)
+  const podeVerNumeroRet = canAdmin || isPrivileged || userDepartamentoSlug === 'fiscal';
   const [docOpen, setDocOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [showCentralExtratos, setShowCentralExtratos] = useState(false);
+  const [showEmailsCliente, setShowEmailsCliente] = useState(false);
   const [obsTexto, setObsTexto] = useState('');
   const [confirmDeleteDocId, setConfirmDeleteDocId] = useState<string | null>(null);
   const [confirmDeleteObsId, setConfirmDeleteObsId] = useState<string | null>(null);
@@ -395,6 +401,26 @@ export default function ModalDetalhesEmpresa({
                 Detalhes da Empresa
               </h3>
               <div className="flex items-center gap-2">
+                {(canAdmin || isPrivileged || userDepartamentoSlug === 'contabil') && (
+                  <button
+                    onClick={() => setShowCentralExtratos(true)}
+                    className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-semibold px-3 py-2 rounded-lg transition"
+                    title="Central de Extratos (apenas Contábil)"
+                  >
+                    <Folder size={16} />
+                    Extratos
+                  </button>
+                )}
+                {canManage && (
+                  <button
+                    onClick={() => setShowEmailsCliente(true)}
+                    className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-semibold px-3 py-2 rounded-lg transition"
+                    title="Gerenciar e-mails do cliente"
+                  >
+                    <Mail size={16} />
+                    E-mails
+                  </button>
+                )}
                 {canEdit && (
                   <button
                     onClick={() => setEditOpen(true)}
@@ -553,7 +579,9 @@ export default function ModalDetalhesEmpresa({
                               )}
                             </div>
                           )}
-                          <div className="text-sm text-gray-600">PTA: {r.numeroPta ? formatRetNumber(r.numeroPta) : '-'}</div>
+                          {podeVerNumeroRet && (
+                            <div className="text-sm text-gray-600">PTA: {r.numeroPta ? formatRetNumber(r.numeroPta) : '-'}</div>
+                          )}
                           {r.portaria && <div className="text-sm text-gray-600">Portaria: {r.portaria}</div>}
                           <div className="text-sm text-gray-600">
                             Vencimento: <span className={
@@ -1387,6 +1415,24 @@ export default function ModalDetalhesEmpresa({
         <ModalCadastrarEmpresa
           empresa={empresa}
           onClose={() => setEditOpen(false)}
+        />
+      )}
+
+      {showCentralExtratos && (
+        <ModalCentralExtratos
+          isOpen
+          onClose={() => setShowCentralExtratos(false)}
+          empresa={empresa}
+          zIndex={1400}
+        />
+      )}
+
+      {showEmailsCliente && (
+        <ModalEmailsCliente
+          isOpen
+          onClose={() => setShowEmailsCliente(false)}
+          empresa={empresa}
+          zIndex={1400}
         />
       )}
 

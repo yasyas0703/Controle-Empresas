@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useCallback } from 'react';
-import { AlertTriangle, CalendarClock, FileText, Building2, Clock, Search, MapPin, Briefcase, Eye, Pencil, Trash2, CheckSquare, Square, FileDown, X, Tag, History } from 'lucide-react';
+import { AlertTriangle, Calendar, CalendarClock, FileText, Building2, Clock, Search, MapPin, Briefcase, Eye, Pencil, PowerOff, Trash2, CheckSquare, Square, FileDown, X, Tag, History } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
 import { detectTipoEstabelecimento, detectTipoInscricao, formatarDocumento, getTipoInscricaoDisplay } from '@/app/utils/validation';
@@ -13,6 +13,7 @@ import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { garantirVencimentosFiscais } from '@/app/utils/vencimentos';
+import { getDepartamentoSlugDoUsuario } from '@/app/utils/departamento';
 import { exportEmpresasPdf } from '@/lib/exportPdf';
 import { comparePtBr, sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
 
@@ -66,7 +67,7 @@ const DASHBOARD_TAG_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full b
 const DASHBOARD_HISTORY_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-500 px-2.5 py-1 text-[10px] font-black text-white shadow-sm';
 
 export default function DashboardPage() {
-  const { empresas, usuarios, departamentos, tags: tagsCadastradas, currentUserId, canManage, removerEmpresa, atualizarEmpresa, atualizarDocumento, mostrarAlerta } = useSistema();
+  const { empresas, usuarios, departamentos, tags: tagsCadastradas, currentUser, currentUserId, canManage, canAdmin, isPrivileged, removerEmpresa, atualizarEmpresa, atualizarDocumento, mostrarAlerta } = useSistema();
 
   const [limiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
 
@@ -87,6 +88,7 @@ export default function DashboardPage() {
   const [empresaEdit, setEmpresaEdit] = useState<Empresa | null>(null);
   const [empresaView, setEmpresaView] = useState<Empresa | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Empresa | null>(null);
+  const [confirmDesligar, setConfirmDesligar] = useState<Empresa | null>(null);
 
   // Histórico/Tag de vencimento modal
   const [historicoModal, setHistoricoModal] = useState<{
@@ -289,6 +291,13 @@ export default function DashboardPage() {
       });
   }, [empresas, search, depId, responsavelId, tipoEstabelecimento, tipoDocumento, regimeFederal, servico, tagFiltro, estado, statusVenc, sortBy, limiares]);
 
+  // Permissão pra ver alertas de RET/Fiscal: só fiscal/admin/privileged
+  const userDepartamentoSlug = useMemo(
+    () => getDepartamentoSlugDoUsuario(currentUser, departamentos),
+    [currentUser, departamentos]
+  );
+  const podeVerFiscalERet = canAdmin || isPrivileged || userDepartamentoSlug === 'fiscal';
+
   const riskItems = useMemo(() => {
     const risk: DashboardRiskItem[] = [];
     // Admin/gerente vê tudo; usuário comum só as empresas onde é responsável.
@@ -318,44 +327,47 @@ export default function DashboardPage() {
           });
         }
       }
-      for (const r of e.rets) {
-        const dias = daysUntil(r.vencimento);
-        const renovado = isRetRenovado(r.vencimento, r.ultimaRenovacao);
-        if (dias !== null && dias <= limiares.proximo && !renovado) {
-          risk.push({
-            empresaId: e.id,
-            itemId: r.id,
-            empresaNome: e.razao_social || e.apelido || '-',
-            empresaCodigo: e.codigo,
-            nome: `RET: ${r.nome}`,
-            vencimento: r.vencimento,
-            dias,
-            tipo: 'RET',
-            tagVencimento: r.tagVencimento,
-            historicoVencimento: r.historicoVencimento,
-          });
+      // RET e Fiscal: só pra fiscal/admin
+      if (podeVerFiscalERet) {
+        for (const r of e.rets) {
+          const dias = daysUntil(r.vencimento);
+          const renovado = isRetRenovado(r.vencimento, r.ultimaRenovacao);
+          if (dias !== null && dias <= limiares.proximo && !renovado) {
+            risk.push({
+              empresaId: e.id,
+              itemId: r.id,
+              empresaNome: e.razao_social || e.apelido || '-',
+              empresaCodigo: e.codigo,
+              nome: `RET: ${r.nome}`,
+              vencimento: r.vencimento,
+              dias,
+              tipo: 'RET',
+              tagVencimento: r.tagVencimento,
+              historicoVencimento: r.historicoVencimento,
+            });
+          }
         }
-      }
-      for (const f of e.vencimentosFiscais ?? []) {
-        const dias = daysUntil(f.vencimento);
-        if (dias !== null && dias <= limiares.proximo) {
-          risk.push({
-            empresaId: e.id,
-            itemId: f.id,
-            empresaNome: e.razao_social || e.apelido || '-',
-            empresaCodigo: e.codigo,
-            nome: `FISCAL: ${f.nome}`,
-            vencimento: f.vencimento,
-            dias,
-            tipo: 'Fiscal',
-            tagVencimento: f.tagVencimento,
-            historicoVencimento: f.historicoVencimento,
-          });
+        for (const f of e.vencimentosFiscais ?? []) {
+          const dias = daysUntil(f.vencimento);
+          if (dias !== null && dias <= limiares.proximo) {
+            risk.push({
+              empresaId: e.id,
+              itemId: f.id,
+              empresaNome: e.razao_social || e.apelido || '-',
+              empresaCodigo: e.codigo,
+              nome: `FISCAL: ${f.nome}`,
+              vencimento: f.vencimento,
+              dias,
+              tipo: 'Fiscal',
+              tagVencimento: f.tagVencimento,
+              historicoVencimento: f.historicoVencimento,
+            });
+          }
         }
       }
     }
     return risk.sort(compareDashboardRiskItems);
-  }, [empresas, canManage, currentUserId, limiares]);
+  }, [empresas, canManage, currentUserId, limiares, podeVerFiscalERet]);
 
   const vencidos = riskItems.filter((r) => r.dias < 0);
   const criticos = riskItems.filter((r) => r.dias >= 0 && r.dias <= limiares.critico);
@@ -378,10 +390,10 @@ export default function DashboardPage() {
   const totals = useMemo(() => ({
     empresas: filteredEmpresas.length,
     documentos: filteredEmpresas.reduce((a, e) => a + e.documentos.length, 0),
-    rets: filteredEmpresas.reduce((a, e) => a + e.rets.length, 0),
+    rets: podeVerFiscalERet ? filteredEmpresas.reduce((a, e) => a + e.rets.length, 0) : 0,
     vencidos: vencidos.length,
     emRisco: criticos.length + atencao.length + proximo.length,
-  }), [filteredEmpresas, vencidos, criticos, atencao, proximo]);
+  }), [filteredEmpresas, vencidos, criticos, atencao, proximo, podeVerFiscalERet]);
 
   const hasFilters = search || depId || responsavelId || tipoEstabelecimento || tipoDocumento || regimeFederal || servico || tagFiltro || estado || statusVenc;
 
@@ -395,10 +407,12 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Cards de Resumo */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
+      <div className={`grid grid-cols-2 sm:grid-cols-3 ${podeVerFiscalERet ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-3 sm:gap-4`}>
         <StatCard icon={<Building2 size={24} />} gradient="from-blue-500 to-blue-600" label="Total Empresas" value={totals.empresas} />
         <StatCard icon={<FileText size={24} />} gradient="from-orange-400 to-orange-500" label="Documentos" value={totals.documentos} />
-        <StatCard icon={<CalendarClock size={24} />} gradient="from-emerald-500 to-emerald-600" label="RETs" value={totals.rets} />
+        {podeVerFiscalERet && (
+          <StatCard icon={<CalendarClock size={24} />} gradient="from-emerald-500 to-emerald-600" label="RETs" value={totals.rets} />
+        )}
         <StatCard icon={<AlertTriangle size={24} />} gradient="from-red-700 to-red-800" label="Vencidos" value={totals.vencidos} pulse={totals.vencidos > 0} />
         <StatCard icon={<Clock size={24} />} gradient="from-amber-500 to-orange-500" label={`Em Risco (≤${limiares.proximo}d)`} value={totals.emRisco} />
       </div>
@@ -464,14 +478,14 @@ export default function DashboardPage() {
 
       {/* Risk Alert Banner — próximos a vencer (crítico + atenção) */}
       {(criticos.length > 0 || atencao.length > 0) && (
-        <div className="rounded-2xl bg-gradient-to-r from-red-50 via-orange-50 to-amber-50 p-5 shadow-sm">
+        <div className="rounded-2xl bg-gradient-to-r from-red-50 via-orange-50 to-amber-50 dark:from-rose-500/85 dark:via-rose-500/85 dark:to-red-500/85 p-5 shadow-sm dark:shadow-md dark:ring-1 dark:ring-rose-300/30">
           <div className="flex items-center gap-3 mb-3">
-            <div className="h-10 w-10 rounded-xl bg-red-100 flex items-center justify-center">
-              <AlertTriangle className="text-red-500" size={22} />
+            <div className="h-10 w-10 rounded-xl bg-red-100 dark:bg-white/20 flex items-center justify-center">
+              <AlertTriangle className="text-red-500 dark:text-white" size={22} />
             </div>
             <div>
-              <div className="text-lg font-bold text-red-800">{criticos.length + atencao.length} Próximo(s) a Vencer</div>
-              <div className="text-sm text-red-600">
+              <div className="text-lg font-bold text-red-800 dark:text-white">{criticos.length + atencao.length} Próximo(s) a Vencer</div>
+              <div className="text-sm text-red-600 dark:text-rose-100">
                 {criticos.length > 0 && <span className="font-bold">🔴 {criticos.length} crítico(s) (≤{limiares.critico}d)</span>}
                 {criticos.length > 0 && atencao.length > 0 && ' • '}
                 {atencao.length > 0 && <span>🟡 {atencao.length} em atenção (≤{limiares.atencao}d)</span>}
@@ -480,22 +494,22 @@ export default function DashboardPage() {
           </div>
           <div className="space-y-2">
             {[...criticos, ...atencao].slice(0, 8).map((r, idx) => (
-              <div key={idx} className={`flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 ${r.dias <= limiares.critico ? 'animate-alert-blink border border-red-400' : 'bg-white/70'}`}>
+              <div key={idx} className={`flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 ${r.dias <= limiares.critico ? 'animate-alert-blink border border-red-400 dark:border-white/30 dark:bg-white/15' : 'bg-white/70 dark:bg-white/10'}`}>
                 <div className="flex items-center gap-2 min-w-0">
-                  <Clock size={16} className={`shrink-0 ${r.dias <= limiares.critico ? 'text-red-500' : 'text-amber-500'}`} />
-                  <span className="font-bold text-gray-800 shrink-0">{r.empresaCodigo}</span>
-                  <span className="text-gray-500 hidden sm:inline">—</span>
-                  <span className="font-bold text-gray-800 truncate">{r.empresaNome}</span>
+                  <Clock size={16} className={`shrink-0 ${r.dias <= limiares.critico ? 'text-red-500 dark:text-white' : 'text-amber-500 dark:text-white'}`} />
+                  <span className="font-bold text-gray-800 dark:text-white shrink-0">{r.empresaCodigo}</span>
+                  <span className="text-gray-500 dark:text-white/60 hidden sm:inline">—</span>
+                  <span className="font-bold text-gray-800 dark:text-white truncate">{r.empresaNome}</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 pl-6 sm:pl-0 sm:ml-auto">
                   {r.tipo === 'Fiscal' && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-600 text-white whitespace-nowrap">FISCAL</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-600 text-white dark:bg-white dark:text-rose-700 whitespace-nowrap">FISCAL</span>
                   )}
-                  <span className="text-gray-700 text-sm break-words" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.nome}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap ${r.dias <= limiares.critico ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                  <span className="text-gray-700 dark:text-white/90 text-sm break-words" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.nome}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap ${r.dias <= limiares.critico ? 'bg-red-100 text-red-700 dark:bg-white dark:text-red-700' : 'bg-amber-100 text-amber-700 dark:bg-white/85 dark:text-rose-700'}`}>
                     {r.dias}d restantes
                   </span>
-                  <span className="text-xs text-gray-400 whitespace-nowrap">{formatBR(r.vencimento)}</span>
+                  <span className="text-xs text-gray-400 dark:text-white/70 whitespace-nowrap">{formatBR(r.vencimento)}</span>
                   {r.tagVencimento && (
                     <span className={DASHBOARD_TAG_BADGE_CLASS}>
                       <Tag size={11} />
@@ -510,7 +524,7 @@ export default function DashboardPage() {
                   )}
                   <button
                     onClick={() => abrirHistoricoItem(r.empresaId, r.itemId, r.tipo)}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-white px-2.5 py-1 text-[10px] font-bold text-orange-700 hover:bg-orange-50"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-white px-2.5 py-1 text-[10px] font-bold text-orange-700 hover:bg-orange-50 dark:border-white/30 dark:bg-white/15 dark:text-white dark:hover:bg-white/25"
                   >
                     <History size={11} />
                     Historico
@@ -519,7 +533,7 @@ export default function DashboardPage() {
               </div>
             ))}
             {(criticos.length + atencao.length) > 8 && (
-              <div className="text-sm text-red-600 font-semibold pl-4">+{criticos.length + atencao.length - 8} mais itens em risco</div>
+              <div className="text-sm text-red-600 dark:text-white/90 font-semibold pl-4">+{criticos.length + atencao.length - 8} mais itens em risco</div>
             )}
           </div>
         </div>
@@ -527,31 +541,31 @@ export default function DashboardPage() {
 
       {/* Próximo (≤90d) — Banner verde */}
       {proximo.length > 0 && (
-        <div className="rounded-2xl bg-gradient-to-r from-green-50 via-emerald-50 to-teal-50 p-5 shadow-sm">
+        <div className="rounded-2xl bg-gradient-to-r from-green-50 via-emerald-50 to-teal-50 dark:from-emerald-500/85 dark:via-emerald-500/85 dark:to-teal-500/85 p-5 shadow-sm dark:shadow-md dark:ring-1 dark:ring-emerald-300/30">
           <div className="flex items-center gap-3 mb-3">
-            <div className="h-10 w-10 rounded-xl bg-green-100 flex items-center justify-center">
-              <Clock className="text-green-600" size={22} />
+            <div className="h-10 w-10 rounded-xl bg-green-100 dark:bg-white/20 flex items-center justify-center">
+              <Clock className="text-green-600 dark:text-white" size={22} />
             </div>
             <div>
-              <div className="text-lg font-bold text-green-800">🟢 {proximo.length} Próximo(s) (≤{limiares.proximo} dias)</div>
-              <div className="text-sm text-green-600">Estes documentos/RETs vencem nos próximos {limiares.atencao + 1} a {limiares.proximo} dias</div>
+              <div className="text-lg font-bold text-green-800 dark:text-white">🟢 {proximo.length} Próximo(s) (≤{limiares.proximo} dias)</div>
+              <div className="text-sm text-green-600 dark:text-emerald-100">Estes documentos/RETs vencem nos próximos {limiares.atencao + 1} a {limiares.proximo} dias</div>
             </div>
           </div>
           <div className="space-y-2">
             {proximo.slice(0, 8).map((r, idx) => (
-              <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 bg-white/70 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3">
+              <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 bg-white/70 dark:bg-white/10 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3">
                 <div className="flex items-center gap-2 min-w-0">
-                  <Clock size={16} className="shrink-0 text-green-500" />
-                  <span className="font-bold text-gray-800 shrink-0">{r.empresaCodigo}</span>
-                  <span className="text-gray-500 hidden sm:inline">—</span>
-                  <span className="font-bold text-gray-800 truncate">{r.empresaNome}</span>
+                  <Clock size={16} className="shrink-0 text-green-500 dark:text-white" />
+                  <span className="font-bold text-gray-800 dark:text-white shrink-0">{r.empresaCodigo}</span>
+                  <span className="text-gray-500 dark:text-white/60 hidden sm:inline">—</span>
+                  <span className="font-bold text-gray-800 dark:text-white truncate">{r.empresaNome}</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 pl-6 sm:pl-0 sm:ml-auto">
-                  <span className="text-gray-700 text-sm break-words" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.nome}</span>
-                  <span className="px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap bg-green-100 text-green-700">
+                  <span className="text-gray-700 dark:text-white/90 text-sm break-words" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.nome}</span>
+                  <span className="px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap bg-green-100 text-green-700 dark:bg-white dark:text-emerald-700">
                     {r.dias}d restantes
                   </span>
-                  <span className="text-xs text-gray-400 whitespace-nowrap">{formatBR(r.vencimento)}</span>
+                  <span className="text-xs text-gray-400 dark:text-white/70 whitespace-nowrap">{formatBR(r.vencimento)}</span>
                   {r.tagVencimento && (
                     <span className={DASHBOARD_TAG_BADGE_CLASS}>
                       <Tag size={11} />
@@ -566,7 +580,7 @@ export default function DashboardPage() {
                   )}
                   <button
                     onClick={() => abrirHistoricoItem(r.empresaId, r.itemId, r.tipo)}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-white px-2.5 py-1 text-[10px] font-bold text-green-700 hover:bg-green-50"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-white px-2.5 py-1 text-[10px] font-bold text-green-700 hover:bg-green-50 dark:border-white/30 dark:bg-white/15 dark:text-white dark:hover:bg-white/25"
                   >
                     <History size={11} />
                     Historico
@@ -575,7 +589,7 @@ export default function DashboardPage() {
               </div>
             ))}
             {proximo.length > 8 && (
-              <div className="text-sm text-green-600 font-semibold pl-4">+{proximo.length - 8} mais itens</div>
+              <div className="text-sm text-green-600 dark:text-white/90 font-semibold pl-4">+{proximo.length - 8} mais itens</div>
             )}
           </div>
         </div>
@@ -679,11 +693,12 @@ export default function DashboardPage() {
           const itensDashboard = riskItemsByEmpresa.get(e.id) ?? [];
           const docsRisco = e.documentos.filter((d) => { const dias = daysUntil(d.validade); return dias !== null && dias >= 0 && dias <= limiares.atencao; }).length;
           const docsVencidos = e.documentos.filter((d) => { const dias = daysUntil(d.validade); return dias !== null && dias < 0; }).length;
-          const retsRisco = e.rets.filter((r) => { if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) return false; const dias = daysUntil(r.vencimento); return dias !== null && dias >= 0 && dias <= limiares.atencao; }).length;
-          const retsVencidos = e.rets.filter((r) => { if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) return false; const dias = daysUntil(r.vencimento); return dias !== null && dias < 0; }).length;
+          // RETs só pra fiscal/admin — quem não pode ver, conta como 0
+          const retsRisco = podeVerFiscalERet ? e.rets.filter((r) => { if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) return false; const dias = daysUntil(r.vencimento); return dias !== null && dias >= 0 && dias <= limiares.atencao; }).length : 0;
+          const retsVencidos = podeVerFiscalERet ? e.rets.filter((r) => { if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) return false; const dias = daysUntil(r.vencimento); return dias !== null && dias < 0; }).length : 0;
           const totalRisco = docsRisco + retsRisco;
           const totalVencidos = docsVencidos + retsVencidos;
-          const totalRenovados = e.rets.filter((r) => isRetRenovado(r.vencimento, r.ultimaRenovacao)).length;
+          const totalRenovados = podeVerFiscalERet ? e.rets.filter((r) => isRetRenovado(r.vencimento, r.ultimaRenovacao)).length : 0;
           const proximoVencDias = (() => {
             let min: number | null = null;
             for (const d of e.documentos) {
@@ -788,6 +803,21 @@ export default function DashboardPage() {
                         <Clock size={10} /> Vence em {proximoVencDias}d
                       </span>
                     )}
+                    {e.cliente_desde && (() => {
+                      const [y, m] = e.cliente_desde.split('-');
+                      if (!y || !m) return null;
+                      const meses = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+                      const label = `${meses[Number(m) - 1] ?? m}/${y}`;
+                      const anosCliente = new Date().getFullYear() - Number(y);
+                      return (
+                        <span
+                          className="rounded-md bg-violet-50 text-violet-700 px-2 py-0.5 text-[10px] font-bold flex items-center gap-1 border border-violet-200"
+                          title={`Cliente há ${anosCliente} ano(s)`}
+                        >
+                          <Calendar size={10} /> Cliente desde {label}
+                        </span>
+                      );
+                    })()}
                   </div>
                   <div className="font-bold text-gray-900 text-lg mt-2 truncate">{nome}</div>
                   {e.apelido && e.razao_social && <div className="text-sm text-gray-500 truncate">({e.apelido})</div>}
@@ -800,7 +830,10 @@ export default function DashboardPage() {
                   <button onClick={() => setEmpresaEdit(e)} className="rounded-lg p-2 hover:bg-teal-50 transition" title="Editar" disabled={!canEditEmpresa(currentUserId, canManage, e)}>
                     <Pencil size={17} className="text-teal-500" />
                   </button>
-                  <button onClick={() => setConfirmDelete(e)} className="rounded-lg p-2 hover:bg-red-50 transition" title="Excluir" disabled={!canEditEmpresa(currentUserId, canManage, e)}>
+                  <button onClick={() => setConfirmDesligar(e)} className="rounded-lg p-2 hover:bg-amber-50 transition" title="Desligar (marcar como ex-cliente)" disabled={!canEditEmpresa(currentUserId, canManage, e)}>
+                    <PowerOff size={17} className="text-amber-500" />
+                  </button>
+                  <button onClick={() => setConfirmDelete(e)} className="rounded-lg p-2 hover:bg-red-50 transition" title="Excluir definitivo" disabled={!canEditEmpresa(currentUserId, canManage, e)}>
                     <Trash2 size={17} className="text-red-400" />
                   </button>
                 </div>
@@ -1031,6 +1064,22 @@ export default function DashboardPage() {
         variant="danger"
         onConfirm={() => { if (confirmDelete) removerEmpresa(confirmDelete.id); setConfirmDelete(null); }}
         onCancel={() => setConfirmDelete(null)}
+      />
+
+      <ConfirmModal
+        open={!!confirmDesligar}
+        title="Desligar empresa"
+        message={`A empresa "${confirmDesligar?.codigo} - ${confirmDesligar?.razao_social || confirmDesligar?.apelido || ''}" será marcada como desligada e sairá do dashboard e dos controles. Os dados continuam em "Empresas Desligadas" — você pode reativar a qualquer momento.`}
+        confirmText="Desligar"
+        variant="warning"
+        onConfirm={() => {
+          if (confirmDesligar) {
+            const hoje = new Date().toISOString().split('T')[0];
+            atualizarEmpresa(confirmDesligar.id, { desligada_em: hoje });
+          }
+          setConfirmDesligar(null);
+        }}
+        onCancel={() => setConfirmDesligar(null)}
       />
     </div>
   );

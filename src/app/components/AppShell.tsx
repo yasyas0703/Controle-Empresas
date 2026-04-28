@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, Grid3x3, ListChecks, FileStack } from 'lucide-react';
+import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Archive, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, Grid3x3, ListChecks, FileStack } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, isRetRenovado } from '@/app/utils/date';
 import { getDepartamentoSlugDoUsuario, type DepartamentoSlug } from '@/app/utils/departamento';
@@ -51,6 +51,7 @@ const nav: NavItem[] = [
   { href: '/departamentos', label: 'Departamentos', icon: Layers },
   { href: '/analises', label: 'Análises', icon: BarChart3 },
   { href: '/historico', label: 'Histórico', icon: ClipboardList },
+  { href: '/empresas-desligadas', label: 'Empresas Desligadas', icon: Archive },
   { href: '/lixeira', label: 'Lixeira', icon: Trash2 },
   { href: '/backup', label: 'Backup', icon: HardDrive },
 ];
@@ -381,7 +382,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const navItems = nav.filter((i) => {
     if (i.ghostOnly) return isGhost;
     if (i.href === '/usuarios' || i.href === '/backup' || i.href === '/historico') return canAdmin;
-    if (['/departamentos', '/servicos', '/tags', '/lixeira'].includes(i.href)) return canManage;
+    if (['/departamentos', '/servicos', '/tags', '/lixeira', '/empresas-desligadas'].includes(i.href)) return canManage;
     if (i.department) {
       if (canAdmin || isPrivileged) return true;
       return i.department === userDepartamentoSlug;

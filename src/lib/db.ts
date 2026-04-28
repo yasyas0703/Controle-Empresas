@@ -1,9 +1,24 @@
 import { supabase } from '@/lib/supabase';
 import type {
+  AnotacaoContexto,
+  AnotacaoTipo,
+  ArquivoAnotacao,
+  EmpresaEmailCliente,
+  Obrigacao,
+  ObrigacaoDepartamento,
+  ObrigacaoEsfera,
+  ObrigacaoFrequencia,
+  ObrigacaoTarefa,
+  ObrigacaoTarefaStatus,
+  ObrigacaoTipoData,
   ChecklistFiscalItem,
+  ContaBancaria,
+  ControleContabilExtrato,
+  ControleContabilStatus,
   Departamento,
   DocumentoEmpresa,
   Empresa,
+  ExtratoArquivo,
   FormaEnvio,
   HistoricoVencimentoItem,
   LixeiraItem,
@@ -14,6 +29,7 @@ import type {
   Servico,
   Tag,
   TagCor,
+  Tributacao,
   Usuario,
   UUID,
   VencimentoFiscal,
@@ -77,6 +93,9 @@ type EmpresaRow = {
   regime_federal: string | null;
   regime_estadual: string | null;
   regime_municipal: string | null;
+  tributacao: string | null;
+  cliente_desde: string | null;
+  desligada_em: string | null;
   estado: string | null;
   cidade: string | null;
   bairro: string | null;
@@ -739,6 +758,9 @@ export async function fetchEmpresas(): Promise<Empresa[]> {
     regime_federal: e.regime_federal ?? undefined,
     regime_estadual: e.regime_estadual ?? undefined,
     regime_municipal: e.regime_municipal ?? undefined,
+    tributacao: (e.tributacao as Tributacao | null) ?? null,
+    cliente_desde: e.cliente_desde ?? null,
+    desligada_em: e.desligada_em ?? null,
     estado: e.estado ?? undefined,
     cidade: e.cidade ?? undefined,
     bairro: e.bairro ?? undefined,
@@ -801,6 +823,9 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
       regime_federal: payload.regime_federal || null,
       regime_estadual: payload.regime_estadual || null,
       regime_municipal: payload.regime_municipal || null,
+      tributacao: payload.tributacao || null,
+      cliente_desde: payload.cliente_desde || null,
+      desligada_em: payload.desligada_em || null,
       estado: payload.estado || null,
       cidade: payload.cidade || null,
       bairro: payload.bairro || null,
@@ -813,13 +838,13 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
       vencimentos_fiscais: normalizarVencimentosFiscais(payload.vencimentosFiscais),
     };
     let { data, error } = await supabase.from('empresas').insert(baseRow).select('id').single();
-    if (error && hasMissingColumn(error, ['forma_envio', 'vencimentos_fiscais'])) {
-      console.warn('[DB] Coluna vencimentos_fiscais ou forma_envio ausente no Supabase (insert). Rode a migration. Erro original:', error.message);
-      const fallback = stripColumns(baseRow, ['forma_envio', 'vencimentos_fiscais']);
+    if (error && hasMissingColumn(error, ['forma_envio', 'vencimentos_fiscais', 'tributacao', 'cliente_desde', 'desligada_em'])) {
+      console.warn('[DB] Coluna ausente no Supabase (insert). Rode a migration. Erro original:', error.message);
+      const fallback = stripColumns(baseRow, ['forma_envio', 'vencimentos_fiscais', 'tributacao', 'cliente_desde', 'desligada_em']);
       const retry = await supabase.from('empresas').insert(fallback).select('id').single();
       data = retry.data;
       error = retry.error;
-      if (!error) {
+      if (!error && ('vencimentos_fiscais' in baseRow)) {
         throw new Error('Coluna vencimentos_fiscais nao existe no Supabase. Rode no SQL Editor: alter table empresas add column if not exists vencimentos_fiscais jsonb not null default \'[]\'::jsonb;');
       }
     }
@@ -843,6 +868,9 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
     if (payload.regime_federal !== undefined) row.regime_federal = payload.regime_federal || null;
     if (payload.regime_estadual !== undefined) row.regime_estadual = payload.regime_estadual || null;
     if (payload.regime_municipal !== undefined) row.regime_municipal = payload.regime_municipal || null;
+    if (payload.tributacao !== undefined) row.tributacao = payload.tributacao || null;
+    if (payload.cliente_desde !== undefined) row.cliente_desde = payload.cliente_desde || null;
+    if (payload.desligada_em !== undefined) row.desligada_em = payload.desligada_em || null;
     if (payload.estado !== undefined) row.estado = payload.estado || null;
     if (payload.cidade !== undefined) row.cidade = payload.cidade || null;
     if (payload.bairro !== undefined) row.bairro = payload.bairro || null;
@@ -855,9 +883,9 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
     if (payload.vencimentosFiscais !== undefined) row.vencimentos_fiscais = normalizarVencimentosFiscais(payload.vencimentosFiscais);
 
     let { error: updErr } = await supabase.from('empresas').update(row).eq('id', empresaId);
-    if (updErr && hasMissingColumn(updErr, ['forma_envio', 'vencimentos_fiscais'])) {
-      console.warn('[DB] Coluna vencimentos_fiscais ou forma_envio ausente no Supabase (upsert). Rode a migration. Erro original:', updErr.message);
-      const fallback = stripColumns(row, ['forma_envio', 'vencimentos_fiscais']);
+    if (updErr && hasMissingColumn(updErr, ['forma_envio', 'vencimentos_fiscais', 'tributacao'])) {
+      console.warn('[DB] Coluna ausente no Supabase (upsert). Rode a migration. Erro original:', updErr.message);
+      const fallback = stripColumns(row, ['forma_envio', 'vencimentos_fiscais', 'tributacao', 'cliente_desde', 'desligada_em']);
       const retry = await supabase.from('empresas').update(fallback).eq('id', empresaId);
       updErr = retry.error;
       if (!updErr && ('vencimentos_fiscais' in row || 'forma_envio' in row)) {
@@ -983,6 +1011,9 @@ export async function updateEmpresa(id: UUID, patch: Partial<Empresa>) {
   if (patch.regime_federal !== undefined) row.regime_federal = patch.regime_federal || null;
   if (patch.regime_estadual !== undefined) row.regime_estadual = patch.regime_estadual || null;
   if (patch.regime_municipal !== undefined) row.regime_municipal = patch.regime_municipal || null;
+  if (patch.tributacao !== undefined) row.tributacao = patch.tributacao || null;
+  if (patch.cliente_desde !== undefined) row.cliente_desde = patch.cliente_desde || null;
+  if (patch.desligada_em !== undefined) row.desligada_em = patch.desligada_em || null;
   if (patch.estado !== undefined) row.estado = patch.estado || null;
   if (patch.cidade !== undefined) row.cidade = patch.cidade || null;
   if (patch.bairro !== undefined) row.bairro = patch.bairro || null;
@@ -995,9 +1026,9 @@ export async function updateEmpresa(id: UUID, patch: Partial<Empresa>) {
   if (patch.vencimentosFiscais !== undefined) row.vencimentos_fiscais = normalizarVencimentosFiscais(patch.vencimentosFiscais);
 
   let { error } = await supabase.from('empresas').update(row).eq('id', id);
-  if (error && hasMissingColumn(error, ['forma_envio', 'vencimentos_fiscais'])) {
-    console.warn('[DB] Coluna vencimentos_fiscais ou forma_envio ausente no Supabase. Rode a migration do schema. Erro original:', error.message);
-    const fallback = stripColumns(row, ['forma_envio', 'vencimentos_fiscais']);
+  if (error && hasMissingColumn(error, ['forma_envio', 'vencimentos_fiscais', 'tributacao', 'cliente_desde', 'desligada_em'])) {
+    console.warn('[DB] Coluna ausente no Supabase. Rode a migration do schema. Erro original:', error.message);
+    const fallback = stripColumns(row, ['forma_envio', 'vencimentos_fiscais', 'tributacao', 'cliente_desde', 'desligada_em']);
     const retry = await supabase.from('empresas').update(fallback).eq('id', id);
     error = retry.error;
     if (!error && ('vencimentos_fiscais' in row || 'forma_envio' in row)) {
@@ -1746,4 +1777,833 @@ export async function updateChecklistObservacao(
     .single();
   if (error) throw error;
   return toChecklistItem(data as ChecklistFiscalRow);
+}
+
+// ─── Controle Contábil — Extratos Bancários ─────────────────
+
+const STORAGE_BUCKET = 'documentos';
+const EXTRATO_MAX_SIZE = 25 * 1024 * 1024; // 25MB
+const EXTRATO_ALLOWED_EXT = ['pdf', 'ofx', 'xls', 'xlsx', 'csv', 'txt', 'png', 'jpg', 'jpeg'];
+
+type ContaBancariaRow = {
+  id: string;
+  empresa_id: string;
+  nome: string;
+  agencia: string | null;
+  conta: string | null;
+  ordem: number;
+  ativo: boolean;
+  criado_em: string;
+  atualizado_em: string;
+};
+
+type ControleContabilExtratoRow = {
+  id: string;
+  empresa_id: string;
+  conta_bancaria_id: string;
+  mes: string;
+  status: ControleContabilStatus;
+  marcado_por_id: string | null;
+  marcado_por_nome: string | null;
+  marcado_em: string;
+  observacao: string | null;
+  criado_em: string;
+  atualizado_em: string;
+};
+
+type ExtratoArquivoRow = {
+  id: string;
+  empresa_id: string;
+  conta_bancaria_id: string;
+  mes: string;
+  arquivo_path: string;
+  arquivo_nome: string;
+  tamanho_bytes: number | null;
+  uploaded_por_id: string | null;
+  uploaded_por_nome: string | null;
+  uploaded_em: string;
+};
+
+function toContaBancaria(row: ContaBancariaRow): ContaBancaria {
+  return {
+    id: row.id,
+    empresaId: row.empresa_id,
+    nome: row.nome,
+    agencia: row.agencia ?? undefined,
+    conta: row.conta ?? undefined,
+    ordem: row.ordem,
+    ativo: row.ativo,
+    criadoEm: toIso(row.criado_em),
+    atualizadoEm: toIso(row.atualizado_em),
+  };
+}
+
+function toControleContabilExtrato(row: ControleContabilExtratoRow): ControleContabilExtrato {
+  return {
+    id: row.id,
+    empresaId: row.empresa_id,
+    contaBancariaId: row.conta_bancaria_id,
+    mes: row.mes,
+    status: row.status,
+    marcadoPorId: row.marcado_por_id,
+    marcadoPorNome: row.marcado_por_nome ?? undefined,
+    marcadoEm: toIso(row.marcado_em),
+    observacao: row.observacao ?? undefined,
+    criadoEm: toIso(row.criado_em),
+    atualizadoEm: toIso(row.atualizado_em),
+  };
+}
+
+function toExtratoArquivo(row: ExtratoArquivoRow): ExtratoArquivo {
+  return {
+    id: row.id,
+    empresaId: row.empresa_id,
+    contaBancariaId: row.conta_bancaria_id,
+    mes: row.mes,
+    arquivoPath: row.arquivo_path,
+    arquivoNome: row.arquivo_nome,
+    tamanhoBytes: row.tamanho_bytes ?? undefined,
+    uploadedPorId: row.uploaded_por_id,
+    uploadedPorNome: row.uploaded_por_nome ?? undefined,
+    uploadedEm: toIso(row.uploaded_em),
+  };
+}
+
+// ── Bancos ──────────────────────────────────────────────────
+
+export async function fetchContasBancarias(opts?: { ativasApenas?: boolean }): Promise<ContaBancaria[]> {
+  let q = supabase.from('contas_bancarias').select('*').order('ordem', { ascending: true }).order('nome', { ascending: true });
+  if (opts?.ativasApenas) q = q.eq('ativo', true);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []).map((r) => toContaBancaria(r as ContaBancariaRow));
+}
+
+export async function createContaBancaria(payload: {
+  empresaId: UUID;
+  nome: string;
+  agencia?: string;
+  conta?: string;
+  ordem?: number;
+}): Promise<ContaBancaria> {
+  const { data, error } = await supabase
+    .from('contas_bancarias')
+    .insert({
+      empresa_id: payload.empresaId,
+      nome: payload.nome.trim(),
+      agencia: payload.agencia?.trim() || null,
+      conta: payload.conta?.trim() || null,
+      ordem: payload.ordem ?? 0,
+      ativo: true,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return toContaBancaria(data as ContaBancariaRow);
+}
+
+export async function updateContaBancaria(
+  id: UUID,
+  patch: Partial<Pick<ContaBancaria, 'nome' | 'agencia' | 'conta' | 'ordem' | 'ativo'>>
+): Promise<ContaBancaria> {
+  const row: Record<string, unknown> = {};
+  if (patch.nome !== undefined) row.nome = patch.nome.trim();
+  if (patch.agencia !== undefined) row.agencia = patch.agencia?.trim() || null;
+  if (patch.conta !== undefined) row.conta = patch.conta?.trim() || null;
+  if (patch.ordem !== undefined) row.ordem = patch.ordem;
+  if (patch.ativo !== undefined) row.ativo = patch.ativo;
+  const { data, error } = await supabase
+    .from('contas_bancarias')
+    .update(row)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return toContaBancaria(data as ContaBancariaRow);
+}
+
+export async function deleteContaBancaria(id: UUID): Promise<void> {
+  // Cascata: status e arquivos do banco vão junto (FK on delete cascade).
+  // OBS: arquivos no Storage NÃO são removidos automaticamente — limpe antes com deleteExtrato.
+  const { error } = await supabase.from('contas_bancarias').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ── Status (banco × mês) ────────────────────────────────────
+
+export async function fetchControleContabilByAno(ano: number): Promise<ControleContabilExtrato[]> {
+  const inicio = `${ano}-01`;
+  const fim = `${ano}-12`;
+  const { data, error } = await supabase
+    .from('controle_contabil_extratos')
+    .select('*')
+    .gte('mes', inicio)
+    .lte('mes', fim);
+  if (error) throw error;
+  return (data ?? []).map((r) => toControleContabilExtrato(r as ControleContabilExtratoRow));
+}
+
+export async function upsertControleContabilStatus(payload: {
+  empresaId: UUID;
+  contaBancariaId: UUID;
+  mes: string;
+  status: ControleContabilStatus;
+  marcadoPorId?: UUID | null;
+  marcadoPorNome?: string;
+  observacao?: string | null;
+}): Promise<ControleContabilExtrato> {
+  const now = new Date().toISOString();
+  const row = {
+    empresa_id: payload.empresaId,
+    conta_bancaria_id: payload.contaBancariaId,
+    mes: payload.mes,
+    status: payload.status,
+    marcado_por_id: payload.marcadoPorId ?? null,
+    marcado_por_nome: payload.marcadoPorNome ?? null,
+    marcado_em: now,
+    observacao: payload.observacao ?? null,
+    atualizado_em: now,
+  };
+  const { data, error } = await supabase
+    .from('controle_contabil_extratos')
+    .upsert(row, { onConflict: 'conta_bancaria_id,mes' })
+    .select()
+    .single();
+  if (error) throw error;
+  return toControleContabilExtrato(data as ControleContabilExtratoRow);
+}
+
+export async function deleteControleContabilStatus(contaBancariaId: UUID, mes: string): Promise<void> {
+  const { error } = await supabase
+    .from('controle_contabil_extratos')
+    .delete()
+    .eq('conta_bancaria_id', contaBancariaId)
+    .eq('mes', mes);
+  if (error) throw error;
+}
+
+// ── Extratos (arquivos) ─────────────────────────────────────
+
+export async function fetchExtratosByEmpresa(empresaId: UUID): Promise<ExtratoArquivo[]> {
+  const { data, error } = await supabase
+    .from('extratos_arquivos')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .order('uploaded_em', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r) => toExtratoArquivo(r as ExtratoArquivoRow));
+}
+
+export async function fetchExtratosByContaMes(contaBancariaId: UUID, mes: string): Promise<ExtratoArquivo[]> {
+  const { data, error } = await supabase
+    .from('extratos_arquivos')
+    .select('*')
+    .eq('conta_bancaria_id', contaBancariaId)
+    .eq('mes', mes)
+    .order('uploaded_em', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r) => toExtratoArquivo(r as ExtratoArquivoRow));
+}
+
+export async function uploadExtrato(payload: {
+  empresaId: UUID;
+  contaBancariaId: UUID;
+  mes: string;
+  file: File;
+  uploadedPorId?: UUID | null;
+  uploadedPorNome?: string;
+}): Promise<ExtratoArquivo> {
+  const { file } = payload;
+  if (file.size > EXTRATO_MAX_SIZE) {
+    throw new Error('O arquivo excede o limite de 25MB.');
+  }
+  const ext = (file.name.split('.').pop() ?? '').toLowerCase();
+  if (!EXTRATO_ALLOWED_EXT.includes(ext)) {
+    throw new Error(`Tipo de arquivo não permitido (.${ext}). Permitidos: ${EXTRATO_ALLOWED_EXT.join(', ')}`);
+  }
+
+  const path = `extratos/${payload.empresaId}/${payload.contaBancariaId}/${payload.mes}/${newUUID()}.${ext || 'bin'}`;
+  const { error: upErr } = await supabase.storage.from(STORAGE_BUCKET).upload(path, file, { upsert: false });
+  if (upErr) {
+    if (upErr.message?.includes('Bucket not found')) {
+      throw new Error('Bucket "documentos" não existe no Supabase Storage.');
+    }
+    throw upErr;
+  }
+
+  const { data, error } = await supabase
+    .from('extratos_arquivos')
+    .insert({
+      empresa_id: payload.empresaId,
+      conta_bancaria_id: payload.contaBancariaId,
+      mes: payload.mes,
+      arquivo_path: path,
+      arquivo_nome: file.name,
+      tamanho_bytes: file.size,
+      uploaded_por_id: payload.uploadedPorId ?? null,
+      uploaded_por_nome: payload.uploadedPorNome ?? null,
+    })
+    .select()
+    .single();
+  if (error) {
+    await supabase.storage.from(STORAGE_BUCKET).remove([path]).catch(() => {});
+    throw error;
+  }
+  return toExtratoArquivo(data as ExtratoArquivoRow);
+}
+
+export async function deleteExtrato(id: UUID): Promise<void> {
+  const { data, error: fetchErr } = await supabase
+    .from('extratos_arquivos')
+    .select('arquivo_path')
+    .eq('id', id)
+    .single();
+  if (fetchErr) throw fetchErr;
+  const path = (data as { arquivo_path: string } | null)?.arquivo_path;
+  if (path) {
+    await supabase.storage.from(STORAGE_BUCKET).remove([path]).catch(() => {});
+  }
+  const { error } = await supabase.from('extratos_arquivos').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function getExtratoSignedUrl(arquivoPath: string): Promise<string> {
+  const { data, error } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(arquivoPath, 3600);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+// ─── Anotações em arquivos (highlight, note, etc.) ─────────
+
+type ArquivoAnotacaoRow = {
+  id: string;
+  arquivo_path: string;
+  contexto: AnotacaoContexto;
+  empresa_id: string;
+  tipo: AnotacaoTipo;
+  pagina: number;
+  conteudo: unknown;
+  comentario: string | null;
+  cor: string;
+  criado_por_id: string | null;
+  criado_por_nome: string | null;
+  criado_em: string;
+  atualizado_em: string;
+};
+
+function toArquivoAnotacao(row: ArquivoAnotacaoRow): ArquivoAnotacao {
+  return {
+    id: row.id,
+    arquivoPath: row.arquivo_path,
+    contexto: row.contexto,
+    empresaId: row.empresa_id,
+    tipo: row.tipo,
+    pagina: row.pagina,
+    conteudo: row.conteudo,
+    comentario: row.comentario ?? undefined,
+    cor: row.cor,
+    criadoPorId: row.criado_por_id,
+    criadoPorNome: row.criado_por_nome ?? undefined,
+    criadoEm: toIso(row.criado_em),
+    atualizadoEm: toIso(row.atualizado_em),
+  };
+}
+
+export async function fetchArquivoAnotacoes(arquivoPath: string): Promise<ArquivoAnotacao[]> {
+  const { data, error } = await supabase
+    .from('arquivo_anotacoes')
+    .select('*')
+    .eq('arquivo_path', arquivoPath)
+    .order('criado_em', { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((r) => toArquivoAnotacao(r as ArquivoAnotacaoRow));
+}
+
+export async function createArquivoAnotacao(payload: {
+  arquivoPath: string;
+  contexto: AnotacaoContexto;
+  empresaId: UUID;
+  tipo: AnotacaoTipo;
+  pagina: number;
+  conteudo: unknown;
+  comentario?: string | null;
+  cor?: string;
+  criadoPorId?: UUID | null;
+  criadoPorNome?: string;
+}): Promise<ArquivoAnotacao> {
+  const { data, error } = await supabase
+    .from('arquivo_anotacoes')
+    .insert({
+      arquivo_path: payload.arquivoPath,
+      contexto: payload.contexto,
+      empresa_id: payload.empresaId,
+      tipo: payload.tipo,
+      pagina: payload.pagina,
+      conteudo: payload.conteudo,
+      comentario: payload.comentario ?? null,
+      cor: payload.cor ?? '#FFEB3B',
+      criado_por_id: payload.criadoPorId ?? null,
+      criado_por_nome: payload.criadoPorNome ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return toArquivoAnotacao(data as ArquivoAnotacaoRow);
+}
+
+export async function updateArquivoAnotacao(
+  id: UUID,
+  patch: Partial<Pick<ArquivoAnotacao, 'comentario' | 'cor'>>
+): Promise<ArquivoAnotacao> {
+  const row: Record<string, unknown> = {};
+  if (patch.comentario !== undefined) row.comentario = patch.comentario || null;
+  if (patch.cor !== undefined) row.cor = patch.cor;
+  const { data, error } = await supabase
+    .from('arquivo_anotacoes')
+    .update(row)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return toArquivoAnotacao(data as ArquivoAnotacaoRow);
+}
+
+export async function deleteArquivoAnotacao(id: UUID): Promise<void> {
+  const { error } = await supabase.from('arquivo_anotacoes').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ─── Obrigações (templates de tarefa recorrente) ───────────
+
+type ObrigacaoRow = {
+  id: string;
+  nome: string;
+  codigo: string | null;
+  departamento: ObrigacaoDepartamento;
+  esfera: ObrigacaoEsfera;
+  frequencia: ObrigacaoFrequencia;
+  tipo_data_legal: ObrigacaoTipoData;
+  dia_data_legal: number;
+  tipo_data_meta: ObrigacaoTipoData;
+  dia_data_meta: number;
+  competencia_offset: number;
+  pontuacao: number;
+  agrupador: string | null;
+  notificar_cliente: boolean;
+  gera_multa: boolean;
+  auto_concluir: boolean;
+  palavras_chave: string[] | null;
+  template_email_assunto: string | null;
+  template_email_corpo: string | null;
+  descricao: string | null;
+  ativo: boolean;
+  criado_em: string;
+  atualizado_em: string;
+};
+
+function toObrigacao(row: ObrigacaoRow, empresasVinculadas: UUID[] = []): Obrigacao {
+  return {
+    id: row.id,
+    nome: row.nome,
+    codigo: row.codigo ?? undefined,
+    departamento: row.departamento,
+    esfera: row.esfera,
+    frequencia: row.frequencia,
+    tipoDataLegal: row.tipo_data_legal,
+    diaDataLegal: row.dia_data_legal,
+    tipoDataMeta: row.tipo_data_meta,
+    diaDataMeta: row.dia_data_meta,
+    competenciaOffset: row.competencia_offset,
+    pontuacao: row.pontuacao,
+    agrupador: row.agrupador ?? undefined,
+    notificarCliente: row.notificar_cliente,
+    geraMulta: row.gera_multa,
+    autoConcluir: row.auto_concluir,
+    palavrasChave: row.palavras_chave ?? [],
+    templateEmailAssunto: row.template_email_assunto ?? undefined,
+    templateEmailCorpo: row.template_email_corpo ?? undefined,
+    descricao: row.descricao ?? undefined,
+    empresasVinculadas,
+    ativo: row.ativo,
+    criadoEm: toIso(row.criado_em),
+    atualizadoEm: toIso(row.atualizado_em),
+  };
+}
+
+function obrigacaoToRow(o: Partial<Obrigacao>): Record<string, unknown> {
+  const row: Record<string, unknown> = {};
+  if (o.nome !== undefined) row.nome = o.nome;
+  if (o.codigo !== undefined) row.codigo = o.codigo || null;
+  if (o.departamento !== undefined) row.departamento = o.departamento;
+  if (o.esfera !== undefined) row.esfera = o.esfera;
+  if (o.frequencia !== undefined) row.frequencia = o.frequencia;
+  if (o.tipoDataLegal !== undefined) row.tipo_data_legal = o.tipoDataLegal;
+  if (o.diaDataLegal !== undefined) row.dia_data_legal = o.diaDataLegal;
+  if (o.tipoDataMeta !== undefined) row.tipo_data_meta = o.tipoDataMeta;
+  if (o.diaDataMeta !== undefined) row.dia_data_meta = o.diaDataMeta;
+  if (o.competenciaOffset !== undefined) row.competencia_offset = o.competenciaOffset;
+  if (o.pontuacao !== undefined) row.pontuacao = o.pontuacao;
+  if (o.agrupador !== undefined) row.agrupador = o.agrupador || null;
+  if (o.notificarCliente !== undefined) row.notificar_cliente = o.notificarCliente;
+  if (o.geraMulta !== undefined) row.gera_multa = o.geraMulta;
+  if (o.autoConcluir !== undefined) row.auto_concluir = o.autoConcluir;
+  if (o.palavrasChave !== undefined) row.palavras_chave = o.palavrasChave;
+  if (o.templateEmailAssunto !== undefined) row.template_email_assunto = o.templateEmailAssunto || null;
+  if (o.templateEmailCorpo !== undefined) row.template_email_corpo = o.templateEmailCorpo || null;
+  if (o.descricao !== undefined) row.descricao = o.descricao || null;
+  if (o.ativo !== undefined) row.ativo = o.ativo;
+  return row;
+}
+
+export async function fetchObrigacoes(): Promise<Obrigacao[]> {
+  // Carrega obrigações + vínculos de empresas em paralelo
+  const [respObr, respVinc] = await Promise.all([
+    supabase.from('obrigacoes').select('*').order('nome', { ascending: true }),
+    supabase.from('obrigacao_empresas').select('obrigacao_id, empresa_id'),
+  ]);
+  if (respObr.error) throw respObr.error;
+  if (respVinc.error) throw respVinc.error;
+
+  const vincPorObrigacao = new Map<string, UUID[]>();
+  for (const v of (respVinc.data ?? []) as { obrigacao_id: string; empresa_id: string }[]) {
+    const lista = vincPorObrigacao.get(v.obrigacao_id) ?? [];
+    lista.push(v.empresa_id);
+    vincPorObrigacao.set(v.obrigacao_id, lista);
+  }
+
+  return ((respObr.data ?? []) as ObrigacaoRow[]).map((r) =>
+    toObrigacao(r, vincPorObrigacao.get(r.id) ?? [])
+  );
+}
+
+export async function upsertObrigacao(payload: Obrigacao): Promise<Obrigacao> {
+  // Normaliza id pra inserção/update
+  const row = obrigacaoToRow(payload);
+  const isNova = !payload.id || payload.id.startsWith('temp_');
+  let salva: ObrigacaoRow;
+  if (isNova) {
+    const { data, error } = await supabase.from('obrigacoes').insert(row).select().single();
+    if (error) throw error;
+    salva = data as ObrigacaoRow;
+  } else {
+    const { data, error } = await supabase.from('obrigacoes').update(row).eq('id', payload.id).select().single();
+    if (error) throw error;
+    salva = data as ObrigacaoRow;
+  }
+
+  // Atualiza vínculos empresa↔obrigação substituindo todos
+  await setObrigacaoEmpresas(salva.id, payload.empresasVinculadas ?? []);
+  return toObrigacao(salva, payload.empresasVinculadas ?? []);
+}
+
+export async function deleteObrigacao(id: UUID): Promise<void> {
+  // Cascade já apaga vínculos e tarefas
+  const { error } = await supabase.from('obrigacoes').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function toggleObrigacaoAtivo(id: UUID, ativo: boolean): Promise<void> {
+  const { error } = await supabase.from('obrigacoes').update({ ativo }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function setObrigacaoEmpresas(obrigacaoId: UUID, empresasIds: UUID[]): Promise<void> {
+  // Carrega vínculos atuais
+  const { data: atuais, error: errAtuais } = await supabase
+    .from('obrigacao_empresas')
+    .select('empresa_id')
+    .eq('obrigacao_id', obrigacaoId);
+  if (errAtuais) throw errAtuais;
+
+  const setAtuais = new Set((atuais ?? []).map((r) => (r as { empresa_id: string }).empresa_id));
+  const setNovos = new Set(empresasIds);
+
+  const paraInserir = empresasIds.filter((e) => !setAtuais.has(e));
+  const paraRemover = Array.from(setAtuais).filter((e) => !setNovos.has(e));
+
+  if (paraInserir.length > 0) {
+    const { error } = await supabase.from('obrigacao_empresas').insert(
+      paraInserir.map((eid) => ({ obrigacao_id: obrigacaoId, empresa_id: eid }))
+    );
+    if (error) throw error;
+  }
+
+  if (paraRemover.length > 0) {
+    const { error } = await supabase
+      .from('obrigacao_empresas')
+      .delete()
+      .eq('obrigacao_id', obrigacaoId)
+      .in('empresa_id', paraRemover);
+    if (error) throw error;
+  }
+}
+
+// ─── E-mails de destinatário do cliente ────────────────────
+
+type EmpresaEmailRow = {
+  id: string;
+  empresa_id: string;
+  email: string;
+  rotulo: string | null;
+  principal: boolean;
+  ativo: boolean;
+  criado_em: string;
+  atualizado_em: string;
+};
+
+function toEmpresaEmailCliente(row: EmpresaEmailRow): EmpresaEmailCliente {
+  return {
+    id: row.id,
+    empresaId: row.empresa_id,
+    email: row.email,
+    rotulo: row.rotulo ?? undefined,
+    principal: row.principal,
+    ativo: row.ativo,
+    criadoEm: toIso(row.criado_em),
+    atualizadoEm: toIso(row.atualizado_em),
+  };
+}
+
+export async function fetchEmpresaEmailsCliente(empresaId: UUID): Promise<EmpresaEmailCliente[]> {
+  const { data, error } = await supabase
+    .from('empresa_emails_cliente')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .order('principal', { ascending: false })
+    .order('criado_em', { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((r) => toEmpresaEmailCliente(r as EmpresaEmailRow));
+}
+
+export async function createEmpresaEmailCliente(payload: {
+  empresaId: UUID;
+  email: string;
+  rotulo?: string;
+  principal?: boolean;
+}): Promise<EmpresaEmailCliente> {
+  const row = {
+    empresa_id: payload.empresaId,
+    email: payload.email.trim().toLowerCase(),
+    rotulo: payload.rotulo?.trim() || null,
+    principal: payload.principal ?? false,
+    ativo: true,
+  };
+  const { data, error } = await supabase
+    .from('empresa_emails_cliente')
+    .insert(row)
+    .select()
+    .single();
+  if (error) throw error;
+  return toEmpresaEmailCliente(data as EmpresaEmailRow);
+}
+
+export async function updateEmpresaEmailCliente(
+  id: UUID,
+  patch: Partial<Pick<EmpresaEmailCliente, 'email' | 'rotulo' | 'principal' | 'ativo'>>
+): Promise<EmpresaEmailCliente> {
+  const row: Record<string, unknown> = {};
+  if (patch.email !== undefined) row.email = patch.email.trim().toLowerCase();
+  if (patch.rotulo !== undefined) row.rotulo = patch.rotulo?.trim() || null;
+  if (patch.principal !== undefined) row.principal = patch.principal;
+  if (patch.ativo !== undefined) row.ativo = patch.ativo;
+  const { data, error } = await supabase
+    .from('empresa_emails_cliente')
+    .update(row)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return toEmpresaEmailCliente(data as EmpresaEmailRow);
+}
+
+export async function deleteEmpresaEmailCliente(id: UUID): Promise<void> {
+  const { error } = await supabase.from('empresa_emails_cliente').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ─── Tarefas de obrigação (instâncias mensais) ──────────────
+
+type ObrigacaoTarefaRow = {
+  id: string;
+  obrigacao_id: string;
+  empresa_id: string;
+  competencia: string;
+  data_legal: string | null;
+  data_meta: string | null;
+  status: ObrigacaoTarefaStatus;
+  responsavel_id: string | null;
+  concluida_em: string | null;
+  concluida_por_id: string | null;
+  arquivo_url: string | null;
+  vencimento_detectado: string | null;
+  competencia_detectada: string | null;
+  valor_detectado: number | null;
+  observacao: string | null;
+  criado_em: string;
+  atualizado_em: string;
+};
+
+function toObrigacaoTarefa(row: ObrigacaoTarefaRow): ObrigacaoTarefa {
+  return {
+    id: row.id,
+    obrigacaoId: row.obrigacao_id,
+    empresaId: row.empresa_id,
+    competencia: row.competencia,
+    dataLegal: row.data_legal,
+    dataMeta: row.data_meta,
+    status: row.status,
+    responsavelId: row.responsavel_id,
+    concluidaEm: row.concluida_em ? toIso(row.concluida_em) : null,
+    concluidaPorId: row.concluida_por_id,
+    arquivoUrl: row.arquivo_url,
+    vencimentoDetectado: row.vencimento_detectado,
+    competenciaDetectada: row.competencia_detectada,
+    valorDetectado: row.valor_detectado != null ? Number(row.valor_detectado) : null,
+    observacao: row.observacao,
+    criadoEm: toIso(row.criado_em),
+    atualizadoEm: toIso(row.atualizado_em),
+  };
+}
+
+const GUIA_BUCKET = 'documentos';
+const GUIA_MAX_SIZE = 25 * 1024 * 1024; // 25MB
+const GUIA_ALLOWED_EXT = ['pdf'];
+
+/**
+ * Faz upload do PDF da guia no Storage e retorna o path.
+ * Path: `obrigacoes/{empresa_id}/{obrigacao_id}/{competencia}/{uuid}.pdf`
+ */
+export async function uploadGuiaPdf(payload: {
+  file: File;
+  empresaId: UUID;
+  obrigacaoId: UUID;
+  competencia: string;          // 'YYYY-MM'
+}): Promise<string> {
+  const { file, empresaId, obrigacaoId, competencia } = payload;
+  if (file.size > GUIA_MAX_SIZE) {
+    throw new Error('A guia excede o limite de 25MB.');
+  }
+  const ext = (file.name.split('.').pop() ?? '').toLowerCase();
+  if (!GUIA_ALLOWED_EXT.includes(ext)) {
+    throw new Error(`Apenas PDF é aceito (recebido .${ext}).`);
+  }
+  const path = `obrigacoes/${empresaId}/${obrigacaoId}/${competencia}/${newUUID()}.${ext}`;
+  const { error } = await supabase.storage.from(GUIA_BUCKET).upload(path, file, { upsert: false });
+  if (error) {
+    if (error.message?.includes('Bucket not found')) {
+      throw new Error('Bucket "documentos" não existe no Supabase Storage.');
+    }
+    throw error;
+  }
+  return path;
+}
+
+export async function getGuiaSignedUrl(arquivoPath: string): Promise<string> {
+  const { data, error } = await supabase.storage.from(GUIA_BUCKET).createSignedUrl(arquivoPath, 3600);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+/**
+ * Cria ou atualiza uma tarefa pra (obrigação × empresa × competência).
+ * Se já existir (unique key), atualiza os campos detectados e o arquivo.
+ */
+export async function upsertObrigacaoTarefa(payload: {
+  obrigacaoId: UUID;
+  empresaId: UUID;
+  competencia: string;
+  dataLegal?: string | null;
+  dataMeta?: string | null;
+  status?: ObrigacaoTarefaStatus;
+  responsavelId?: UUID | null;
+  arquivoUrl?: string | null;
+  vencimentoDetectado?: string | null;
+  competenciaDetectada?: string | null;
+  valorDetectado?: number | null;
+  observacao?: string | null;
+}): Promise<ObrigacaoTarefa> {
+  const now = new Date().toISOString();
+  const row: Record<string, unknown> = {
+    obrigacao_id: payload.obrigacaoId,
+    empresa_id: payload.empresaId,
+    competencia: payload.competencia,
+    atualizado_em: now,
+  };
+  if (payload.dataLegal !== undefined) row.data_legal = payload.dataLegal;
+  if (payload.dataMeta !== undefined) row.data_meta = payload.dataMeta;
+  if (payload.status !== undefined) row.status = payload.status;
+  if (payload.responsavelId !== undefined) row.responsavel_id = payload.responsavelId;
+  if (payload.arquivoUrl !== undefined) row.arquivo_url = payload.arquivoUrl;
+  if (payload.vencimentoDetectado !== undefined) row.vencimento_detectado = payload.vencimentoDetectado;
+  if (payload.competenciaDetectada !== undefined) row.competencia_detectada = payload.competenciaDetectada;
+  if (payload.valorDetectado !== undefined) row.valor_detectado = payload.valorDetectado;
+  if (payload.observacao !== undefined) row.observacao = payload.observacao;
+
+  const { data, error } = await supabase
+    .from('obrigacao_tarefas')
+    .upsert(row, { onConflict: 'obrigacao_id,empresa_id,competencia' })
+    .select()
+    .single();
+  if (error) throw error;
+  return toObrigacaoTarefa(data as ObrigacaoTarefaRow);
+}
+
+export async function fetchObrigacaoTarefas(filtros?: {
+  competencia?: string;
+  obrigacaoId?: UUID;
+  empresaId?: UUID;
+  status?: ObrigacaoTarefaStatus;
+  responsavelId?: UUID | null;
+}): Promise<ObrigacaoTarefa[]> {
+  let q = supabase.from('obrigacao_tarefas').select('*').order('competencia', { ascending: false });
+  if (filtros?.competencia) q = q.eq('competencia', filtros.competencia);
+  if (filtros?.obrigacaoId) q = q.eq('obrigacao_id', filtros.obrigacaoId);
+  if (filtros?.empresaId) q = q.eq('empresa_id', filtros.empresaId);
+  if (filtros?.status) q = q.eq('status', filtros.status);
+  if (filtros?.responsavelId !== undefined) q = q.eq('responsavel_id', filtros.responsavelId as string);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []).map((r) => toObrigacaoTarefa(r as ObrigacaoTarefaRow));
+}
+
+export async function updateObrigacaoTarefaStatus(
+  id: UUID,
+  status: ObrigacaoTarefaStatus,
+  opts?: { concluidaPorId?: UUID | null; observacao?: string | null }
+): Promise<ObrigacaoTarefa> {
+  const now = new Date().toISOString();
+  const row: Record<string, unknown> = {
+    status,
+    atualizado_em: now,
+  };
+  if (status === 'concluida') {
+    row.concluida_em = now;
+    if (opts?.concluidaPorId !== undefined) row.concluida_por_id = opts.concluidaPorId;
+  }
+  if (opts?.observacao !== undefined) row.observacao = opts.observacao;
+  const { data, error } = await supabase
+    .from('obrigacao_tarefas')
+    .update(row)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return toObrigacaoTarefa(data as ObrigacaoTarefaRow);
+}
+
+export async function deleteObrigacaoTarefa(id: UUID): Promise<void> {
+  // Tenta limpar arquivo do Storage primeiro (best-effort)
+  const { data, error: fetchErr } = await supabase
+    .from('obrigacao_tarefas')
+    .select('arquivo_url')
+    .eq('id', id)
+    .single();
+  if (!fetchErr && data) {
+    const path = (data as { arquivo_url: string | null }).arquivo_url;
+    if (path) {
+      await supabase.storage.from(GUIA_BUCKET).remove([path]).catch(() => {});
+    }
+  }
+  const { error } = await supabase.from('obrigacao_tarefas').delete().eq('id', id);
+  if (error) throw error;
 }
