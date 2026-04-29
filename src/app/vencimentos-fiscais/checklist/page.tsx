@@ -101,6 +101,12 @@ export default function ChecklistFiscalPage() {
 
   const isHoje = mes === currentMonth();
 
+  // mostrarAlerta vem do contexto e não é estável (recriado a cada render).
+  // Sem ref, `carregar` é recriado a cada render e o useEffect entra em loop
+  // (carrega → some → carrega → some).
+  const mostrarAlertaRef = useRef(mostrarAlerta);
+  useEffect(() => { mostrarAlertaRef.current = mostrarAlerta; }, [mostrarAlerta]);
+
   // Load items for the selected month
   const carregar = useCallback(async (mesAlvo: string) => {
     setLoading(true);
@@ -111,11 +117,11 @@ export default function ChecklistFiscalPage() {
       setItems(mapa);
     } catch (err) {
       console.error(err);
-      mostrarAlerta('Erro ao carregar', 'Não foi possível carregar o checklist deste mês.', 'erro');
+      mostrarAlertaRef.current('Erro ao carregar', 'Não foi possível carregar o checklist deste mês.', 'erro');
     } finally {
       setLoading(false);
     }
-  }, [mostrarAlerta]);
+  }, []);
 
   useEffect(() => {
     carregar(mes);

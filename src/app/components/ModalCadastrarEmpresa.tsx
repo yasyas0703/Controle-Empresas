@@ -9,7 +9,7 @@ import ModalBase from '@/app/components/ModalBase';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { cepSchema, cpfSchema, cnpjSchema, detectTipoInscricao, detectTipoEstabelecimento, formatarDocumento } from '@/app/utils/validation';
 import { api } from '@/app/utils/api';
-import { garantirVencimentosFiscais } from '@/app/utils/vencimentos';
+import { garantirVencimentosFiscais, garantirVencimentosFiscaisComRegras } from '@/app/utils/vencimentos';
 import { uploadDocumentoArquivo, getVencimentoFiscalSignedUrl } from '@/lib/db';
 import { sortByPtBr, sortStringsPtBr } from '@/lib/sort';
 
@@ -150,13 +150,15 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
         const cepDigits = String(data?.cep || '').replace(/\D/g, '');
         const cepFormatado = cepDigits.length === 8 ? `${cepDigits.slice(0, 5)}-${cepDigits.slice(5, 8)}` : String(data?.cep || '');
         const numeroDigits = String(data?.numero || '').replace(/\D/g, '');
+        const estadoNovo = String(prev.estado || '').trim() ? prev.estado : (data?.estado || '');
+        const estadoMudou = estadoNovo !== prev.estado;
 
         return {
           ...prev,
           razao_social: String(prev.razao_social || '').trim() ? prev.razao_social : (data?.razao_social || ''),
           apelido: String(prev.apelido || '').trim() ? prev.apelido : (data?.nome_fantasia || ''),
           data_abertura: String(prev.data_abertura || '').trim() ? prev.data_abertura : (data?.data_abertura || ''),
-          estado: String(prev.estado || '').trim() ? prev.estado : (data?.estado || ''),
+          estado: estadoNovo,
           cidade: String(prev.cidade || '').trim() ? prev.cidade : (data?.cidade || ''),
           bairro: String(prev.bairro || '').trim() ? prev.bairro : (data?.bairro || ''),
           logradouro: String(prev.logradouro || '').trim() ? prev.logradouro : (data?.logradouro || ''),
@@ -164,6 +166,11 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
           cep: String(prev.cep || '').trim() ? prev.cep : (cepFormatado || ''),
           email: String(prev.email || '').trim() ? prev.email : (data?.email || ''),
           telefone: String(prev.telefone || '').trim() ? prev.telefone : (data?.telefone || ''),
+          // Se o estado foi descoberto pela consulta CNPJ, preenche automaticamente
+          // os vencimentos fiscais (sem mexer nos que o usuário já preencheu)
+          vencimentosFiscais: estadoMudou
+            ? garantirVencimentosFiscaisComRegras(prev.vencimentosFiscais, estadoNovo)
+            : prev.vencimentosFiscais,
         };
       });
 
@@ -195,10 +202,21 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
   }, [cnpjDigits, podeBuscarCnpj, cnpjTouched]);
 
   const handleChange = (field: keyof Empresa, value: unknown) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value as Empresa[keyof Empresa],
-    }));
+    setFormData((prev) => {
+      const next = {
+        ...prev,
+        [field]: value as Empresa[keyof Empresa],
+      };
+      // Quando o usuário muda a UF, recalcula os vencimentos fiscais com regra
+      // (sem sobrescrever os que ele preencheu na mão).
+      if (field === 'estado') {
+        next.vencimentosFiscais = garantirVencimentosFiscaisComRegras(
+          prev.vencimentosFiscais,
+          value as string,
+        );
+      }
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -218,7 +236,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
         responsaveis: empresa.responsaveis ?? {},
         servicos: empresa.servicos ?? [],
         rets: empresa.rets ?? [],
-        vencimentosFiscais: garantirVencimentosFiscais(empresa.vencimentosFiscais),
+        vencimentosFiscais: garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado),
         formaEnvio: empresa.formaEnvio ?? [],
       });
       setEmpresaCadastrada(empresa.cadastrada !== false);

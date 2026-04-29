@@ -12,7 +12,7 @@ import { LIMIARES_DEFAULTS } from '@/app/types';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import ModalLimiares from '@/app/components/ModalLimiares';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
-import { garantirVencimentosFiscais } from '@/app/utils/vencimentos';
+import { garantirVencimentosFiscaisComRegras } from '@/app/utils/vencimentos';
 import { sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
 
 type StatusVenc = 'vencido' | 'critico' | 'atencao' | 'proximo' | 'ok' | 'renovado';
@@ -290,7 +290,7 @@ export default function VencimentosPage() {
           mostrarAlerta('Empresa não encontrada', 'Não foi possível localizar a empresa desse vencimento fiscal.', 'erro');
           return;
         }
-        const fiscaisAtuais = garantirVencimentosFiscais(empresa.vencimentosFiscais);
+        const fiscaisAtuais = garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado);
         const vencimentosFiscais = fiscaisAtuais.map((f) =>
           f.id === historicoItem.itemId
             ? { ...f, tagVencimento: payload.tagVencimento, historicoVencimento: payload.historicoVencimento }

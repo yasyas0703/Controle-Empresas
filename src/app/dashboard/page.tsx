@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { AlertTriangle, Calendar, CalendarClock, FileText, Building2, Clock, Search, MapPin, Briefcase, Eye, Pencil, PowerOff, Trash2, CheckSquare, Square, FileDown, X, Tag, History } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
@@ -12,7 +12,9 @@ import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
 import ConfirmModal from '@/app/components/ConfirmModal';
-import { garantirVencimentosFiscais } from '@/app/utils/vencimentos';
+import CardVencimentosFiscais from '@/app/dashboard/CardVencimentosFiscais';
+import { ehEmpresaHistorica } from '@/app/utils/empresaHistorica';
+import { garantirVencimentosFiscaisComRegras } from '@/app/utils/vencimentos';
 import { getDepartamentoSlugDoUsuario } from '@/app/utils/departamento';
 import { exportEmpresasPdf } from '@/lib/exportPdf';
 import { comparePtBr, sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
@@ -67,7 +69,14 @@ const DASHBOARD_TAG_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full b
 const DASHBOARD_HISTORY_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-500 px-2.5 py-1 text-[10px] font-black text-white shadow-sm';
 
 export default function DashboardPage() {
-  const { empresas, usuarios, departamentos, tags: tagsCadastradas, currentUser, currentUserId, canManage, canAdmin, isPrivileged, removerEmpresa, atualizarEmpresa, atualizarDocumento, mostrarAlerta } = useSistema();
+  const { empresas: empresasRaw, usuarios, departamentos, tags: tagsCadastradas, currentUser, currentUserId, canManage, canAdmin, isPrivileged, removerEmpresa, atualizarEmpresa, atualizarDocumento, mostrarAlerta } = useSistema();
+
+  // Filtra empresas históricas (arquivadas, desligadas, código reciclado) do
+  // dashboard inteiro. Elas são registros de auditoria, não pagam mais nada.
+  const empresas = useMemo(
+    () => empresasRaw.filter((e) => !ehEmpresaHistorica(e)),
+    [empresasRaw],
+  );
 
   const [limiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
 
@@ -84,6 +93,7 @@ export default function DashboardPage() {
   const [sortBy, setSortBy] = useState<'alpha' | 'vencidos' | 'proximo' | 'recente'>('alpha');
   const [selecionando, setSelecionando] = useState(false);
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
+  const [paginaTamanho, setPaginaTamanho] = useState(50);
 
   const [empresaEdit, setEmpresaEdit] = useState<Empresa | null>(null);
   const [empresaView, setEmpresaView] = useState<Empresa | null>(null);
@@ -166,7 +176,7 @@ export default function DashboardPage() {
           mostrarAlerta('Empresa nao encontrada', 'Nao foi possivel localizar a empresa desse vencimento fiscal.', 'erro');
           return;
         }
-        const fiscaisAtuais = garantirVencimentosFiscais(emp.vencimentosFiscais);
+        const fiscaisAtuais = garantirVencimentosFiscaisComRegras(emp.vencimentosFiscais, emp.estado);
         const vencimentosFiscais = fiscaisAtuais.map((f) =>
           f.id === historicoModal.itemId
             ? { ...f, tagVencimento: payload.tagVencimento, historicoVencimento: payload.historicoVencimento }
@@ -291,6 +301,16 @@ export default function DashboardPage() {
       });
   }, [empresas, search, depId, responsavelId, tipoEstabelecimento, tipoDocumento, regimeFederal, servico, tagFiltro, estado, statusVenc, sortBy, limiares]);
 
+  // Reseta a pagina quando filtros mudarem (volta a mostrar os primeiros 50)
+  useEffect(() => {
+    setPaginaTamanho(50);
+  }, [search, depId, responsavelId, tipoEstabelecimento, tipoDocumento, regimeFederal, servico, tagFiltro, estado, statusVenc, sortBy]);
+
+  const empresasVisiveisPagina = useMemo(
+    () => filteredEmpresas.slice(0, paginaTamanho),
+    [filteredEmpresas, paginaTamanho],
+  );
+
   // Permissão pra ver alertas de RET/Fiscal: só fiscal/admin/privileged
   const userDepartamentoSlug = useMemo(
     () => getDepartamentoSlugDoUsuario(currentUser, departamentos),
@@ -327,7 +347,7 @@ export default function DashboardPage() {
           });
         }
       }
-      // RET e Fiscal: só pra fiscal/admin
+      // RET: só pra fiscal/admin (vencimentos fiscais agora aparecem no card consolidado acima)
       if (podeVerFiscalERet) {
         for (const r of e.rets) {
           const dias = daysUntil(r.vencimento);
@@ -344,23 +364,6 @@ export default function DashboardPage() {
               tipo: 'RET',
               tagVencimento: r.tagVencimento,
               historicoVencimento: r.historicoVencimento,
-            });
-          }
-        }
-        for (const f of e.vencimentosFiscais ?? []) {
-          const dias = daysUntil(f.vencimento);
-          if (dias !== null && dias <= limiares.proximo) {
-            risk.push({
-              empresaId: e.id,
-              itemId: f.id,
-              empresaNome: e.razao_social || e.apelido || '-',
-              empresaCodigo: e.codigo,
-              nome: `FISCAL: ${f.nome}`,
-              vencimento: f.vencimento,
-              dias,
-              tipo: 'Fiscal',
-              tagVencimento: f.tagVencimento,
-              historicoVencimento: f.historicoVencimento,
             });
           }
         }
@@ -595,6 +598,9 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* Card consolidado de vencimentos fiscais (mês corrente, com checklist) */}
+      <CardVencimentosFiscais />
+
       {/* Filtros */}
       <div className="rounded-2xl bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between mb-4">
@@ -688,7 +694,7 @@ export default function DashboardPage() {
 
       {/* Cards de Empresas */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {filteredEmpresas.map((e) => {
+        {empresasVisiveisPagina.map((e) => {
           const nome = e.razao_social || e.apelido || '-';
           const itensDashboard = riskItemsByEmpresa.get(e.id) ?? [];
           const docsRisco = e.documentos.filter((d) => { const dias = daysUntil(d.validade); return dias !== null && dias >= 0 && dias <= limiares.atencao; }).length;
@@ -986,6 +992,29 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Paginação: render lazy. Não monta as 400 empresas de uma vez. */}
+      {filteredEmpresas.length > paginaTamanho && (
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 mt-2 px-2">
+          <span className="text-xs text-gray-500">
+            Mostrando <strong>{empresasVisiveisPagina.length}</strong> de <strong>{filteredEmpresas.length}</strong> empresas
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPaginaTamanho((v) => v + 50)}
+              className="rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 text-xs sm:text-sm font-bold transition shadow-sm"
+            >
+              Mostrar mais 50
+            </button>
+            <button
+              onClick={() => setPaginaTamanho(filteredEmpresas.length)}
+              className="rounded-xl border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 text-xs sm:text-sm font-bold transition"
+            >
+              Ver todas ({filteredEmpresas.length})
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Floating Action Bar para Seleção em Massa */}
       {selecionando && (

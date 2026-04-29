@@ -216,10 +216,29 @@ export default function ControleContabilPage() {
     apenasMinhasInitRef.current = true;
   }, [authReady, currentUserId, userSlug, canAdmin, isPrivileged]);
 
+  // Bancos visíveis no ano selecionado.
+  //  - Ano corrente: mostra todos os bancos ativos (workflow normal — bancos
+  //    recém-criados aparecem mesmo sem marcação ainda).
+  //  - Anos anteriores: só bancos que têm pelo menos uma marcação naquele
+  //    ano. Isso garante que import de 2023 não polua a visão de 2024 e
+  //    vice-versa — cada ano é isolado pelos próprios statuses.
+  const bancosVisiveisIds = useMemo(() => {
+    const anoCorrente = new Date().getFullYear();
+    if (ano === anoCorrente) {
+      const set = new Set<UUID>();
+      for (const b of bancos) if (b.ativo) set.add(b.id);
+      return set;
+    }
+    const set = new Set<UUID>();
+    for (const s of statusMap.values()) set.add(s.contaBancariaId);
+    return set;
+  }, [bancos, statusMap, ano]);
+
   const bancosPorEmpresa = useMemo(() => {
     const map = new Map<UUID, ContaBancaria[]>();
     for (const b of bancos) {
       if (!b.ativo) continue;
+      if (!bancosVisiveisIds.has(b.id)) continue; // não tem nada nesse ano
       const list = map.get(b.empresaId) ?? [];
       list.push(b);
       map.set(b.empresaId, list);
@@ -228,7 +247,7 @@ export default function ControleContabilPage() {
       list.sort((a, b) => (a.ordem - b.ordem) || a.nome.localeCompare(b.nome, 'pt-BR'));
     }
     return map;
-  }, [bancos]);
+  }, [bancos, bancosVisiveisIds]);
 
   const contabilUsers: Usuario[] = useMemo(() => {
     if (!contabilDept) return [];
@@ -256,6 +275,9 @@ export default function ControleContabilPage() {
         respId: getRespContabil(e),
       }))
       .filter((l) => {
+        // Se a empresa não tem nenhum banco no ano selecionado, não mostra
+        // (isolamento por ano — só aparece quem teve marcação nesse ano).
+        if (l.bancos.length === 0) return false;
         if (!mostrarArquivadas && isArquivada(l.empresa)) return false;
         if (q) {
           const hay = `${l.empresa.codigo} ${l.empresa.razao_social ?? ''} ${l.empresa.apelido ?? ''}`.toLowerCase();
@@ -311,9 +333,8 @@ export default function ControleContabilPage() {
   const hasFilters = !!search || !!filtroResp || apenasMinhas;
   const anosOpcoes = useMemo(() => {
     const atual = new Date().getFullYear();
-    // Vai de 2020 até o próximo ano. Cobre imports históricos (2023, 2024, 2025…)
-    // sem precisar buscar no banco quais anos têm dado.
-    const inicio = Math.min(atual - 2, 2020);
+    // Vai de 2023 até o próximo ano (cobre imports históricos disponíveis).
+    const inicio = Math.min(atual - 2, 2023);
     const arr: number[] = [];
     for (let y = inicio; y <= atual + 1; y++) arr.push(y);
     return arr;

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR } from '@/app/utils/date';
-import { garantirVencimentosFiscais } from '@/app/utils/vencimentos';
+import { garantirVencimentosFiscaisComRegras } from '@/app/utils/vencimentos';
 import type {
   Empresa, HistoricoVencimentoItem, Limiares, UUID, Usuario, VencimentoFiscal,
 } from '@/app/types';
@@ -107,7 +107,7 @@ export default function VencimentosFiscaisPage() {
   const linhas: EmpresaLinha[] = useMemo(() => {
     const resultado: EmpresaLinha[] = [];
     for (const empresa of empresas) {
-      const fiscaisComData = garantirVencimentosFiscais(empresa.vencimentosFiscais)
+      const fiscaisComData = garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado)
         .filter((f) => f.vencimento);
 
       const itens: FiscalCellItem[] = fiscaisComData.map((fiscal) => {
@@ -202,7 +202,7 @@ export default function VencimentosFiscaisPage() {
     setSavingHistorico(true);
     try {
       const { empresa, fiscal } = historicoAlvo;
-      const fiscaisAtuais = garantirVencimentosFiscais(empresa.vencimentosFiscais);
+      const fiscaisAtuais = garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado);
       const vencimentosFiscais = fiscaisAtuais.map((f) =>
         f.id === fiscal.id
           ? { ...f, tagVencimento: payload.tagVencimento, historicoVencimento: payload.historicoVencimento }
@@ -588,7 +588,7 @@ function ModalDetalheEmpresa({
   onClickFiscal: (fiscal: VencimentoFiscal, dias: number | null, status: StatusFiscal) => void;
 }) {
   const fiscais = useMemo(() => {
-    return garantirVencimentosFiscais(empresa.vencimentosFiscais)
+    return garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado)
       .map((fiscal) => {
         const dias = daysUntil(fiscal.vencimento);
         return { fiscal, dias, status: getStatus(dias, limiares) };

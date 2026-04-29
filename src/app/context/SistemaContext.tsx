@@ -15,7 +15,7 @@ import type {
 } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
 import { daysUntil, formatBR, isoNow } from '@/app/utils/date';
-import { criarHistoricoVencimentoItem, garantirVencimentosFiscais, limparTagVencimento, normalizarHistoricoVencimento } from '@/app/utils/vencimentos';
+import { criarHistoricoVencimentoItem, garantirVencimentosFiscais, garantirVencimentosFiscaisComRegras, limparTagVencimento, normalizarHistoricoVencimento } from '@/app/utils/vencimentos';
 import * as db from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 
@@ -781,7 +781,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     if (!state.currentUserId || !canManage) return;
 
     const pendentes = state.empresas.flatMap((empresa) =>
-      garantirVencimentosFiscais(empresa.vencimentosFiscais).flatMap((fiscal) => {
+      garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado).flatMap((fiscal) => {
         const alerta = buildFiscalAlertNotification(empresa, fiscal);
         if (!alerta) return [];
 

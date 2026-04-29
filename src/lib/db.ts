@@ -1704,12 +1704,26 @@ function toChecklistItem(row: ChecklistFiscalRow): ChecklistFiscalItem {
 }
 
 export async function fetchChecklistFiscalByMes(mes: string): Promise<ChecklistFiscalItem[]> {
-  const { data, error } = await supabase
-    .from('checklist_fiscal')
-    .select('*')
-    .eq('mes', mes);
-  if (error) throw error;
-  return (data ?? []).map((row) => toChecklistItem(row as ChecklistFiscalRow));
+  const PAGE = 1000;
+  const todas: ChecklistFiscalRow[] = [];
+  let offset = 0;
+  // Em meses com muito uso (400 empresas × 12 obrigações = 4.800), o limite
+  // default do Supabase de 1000 corta o resultado. Pagina até esgotar.
+  while (true) {
+    const { data, error } = await supabase
+      .from('checklist_fiscal')
+      .select('*')
+      .eq('mes', mes)
+      .order('empresa_id', { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    const lote = (data ?? []) as ChecklistFiscalRow[];
+    todas.push(...lote);
+    if (lote.length < PAGE) break;
+    offset += PAGE;
+    if (offset > 100_000) break;
+  }
+  return todas.map((row) => toChecklistItem(row));
 }
 
 export async function fetchChecklistFiscalMesesDisponiveis(): Promise<string[]> {
@@ -1999,6 +2013,58 @@ export async function upsertControleContabilStatus(payload: {
     .single();
   if (error) throw error;
   return toControleContabilExtrato(data as ControleContabilExtratoRow);
+}
+
+/**
+ * Faz upsert de muitas marcações de uma vez (batch). Usado pelo importador.
+ * Retorna { sucesso, falhas } onde falhas tem detalhes do que deu errado.
+ *
+ * Quebra em lotes de 500 pra não estourar payload do Postgres. Faz a chamada
+ * SEM `.select()` pra evitar o limite de 1000 linhas no retorno.
+ */
+export async function upsertControleContabilStatusesBatch(
+  payloads: Array<{
+    empresaId: UUID;
+    contaBancariaId: UUID;
+    mes: string;
+    status: ControleContabilStatus;
+    marcadoPorId?: UUID | null;
+    marcadoPorNome?: string | null;
+    observacao?: string | null;
+  }>,
+): Promise<{ sucesso: number; falhas: Array<{ contaBancariaId: UUID; mes: string; erro: string }> }> {
+  if (payloads.length === 0) return { sucesso: 0, falhas: [] };
+  const now = new Date().toISOString();
+  const rows = payloads.map((p) => ({
+    empresa_id: p.empresaId,
+    conta_bancaria_id: p.contaBancariaId,
+    mes: p.mes,
+    status: p.status,
+    marcado_por_id: p.marcadoPorId ?? null,
+    marcado_por_nome: p.marcadoPorNome ?? null,
+    marcado_em: now,
+    observacao: p.observacao ?? null,
+    atualizado_em: now,
+  }));
+
+  const CHUNK = 500;
+  let sucesso = 0;
+  const falhas: Array<{ contaBancariaId: UUID; mes: string; erro: string }> = [];
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const lote = rows.slice(i, i + CHUNK);
+    const { error } = await supabase
+      .from('controle_contabil_extratos')
+      .upsert(lote, { onConflict: 'conta_bancaria_id,mes' });
+    if (error) {
+      const detalhe = error.message ?? 'Erro desconhecido';
+      for (const r of lote) {
+        falhas.push({ contaBancariaId: r.conta_bancaria_id, mes: r.mes, erro: detalhe });
+      }
+    } else {
+      sucesso += lote.length;
+    }
+  }
+  return { sucesso, falhas };
 }
 
 export async function deleteControleContabilStatus(contaBancariaId: UUID, mes: string): Promise<void> {

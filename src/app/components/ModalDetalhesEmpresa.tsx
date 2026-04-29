@@ -13,7 +13,7 @@ import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
 import ModalCentralExtratos from '@/app/components/ModalCentralExtratos';
 import ModalEmailsCliente from '@/app/components/ModalEmailsCliente';
-import { garantirVencimentosFiscais } from '@/app/utils/vencimentos';
+import { garantirVencimentosFiscais, garantirVencimentosFiscaisComRegras } from '@/app/utils/vencimentos';
 import { getDocumentoSignedUrl, getVencimentoFiscalSignedUrl, uploadDocumentoArquivo } from '@/lib/db';
 import { sortResponsaveisByNome } from '@/lib/sort';
 import { getDepartamentoSlugDoUsuario, type DepartamentoSlug } from '@/app/utils/departamento';
@@ -623,7 +623,7 @@ export default function ModalDetalhesEmpresa({
             {podeVerVencimentosDe('fiscal') && (
             <Section title="Vencimentos Fiscais" tone="red">
               {(() => {
-                const fiscais = garantirVencimentosFiscais(empresa.vencimentosFiscais);
+                const fiscais = garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado);
                 return (
                   <>
                     <div className="mb-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">

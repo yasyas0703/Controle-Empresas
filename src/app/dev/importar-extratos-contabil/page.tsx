@@ -12,7 +12,7 @@ import {
   fetchContasBancarias,
   fetchControleContabilByAno,
   insertEmpresa,
-  upsertControleContabilStatus,
+  upsertControleContabilStatusesBatch,
 } from '@/lib/db';
 import type { ContaBancaria, UUID } from '@/app/types';
 import { TRIBUTACAO_LABELS } from '@/app/types';
@@ -42,7 +42,10 @@ export default function ImportarExtratosContabilPage() {
   const [importando, setImportando] = useState(false);
   const [resultado, setResultado] = useState<EtapaResultado | null>(null);
 
-  // Carrega contas atuais ao montar
+  // Carrega contas atuais ao montar.
+  // mostrarAlerta NÃO entra nas deps: ela não é memoizada no provider e
+  // re-renders frequentes faziam o effect cancelar o próprio ciclo antes
+  // do .finally rodar, deixando "Carregando bancos atuais..." pra sempre.
   React.useEffect(() => {
     if (!authReady || !isPrivileged) return;
     let cancelado = false;
@@ -55,7 +58,8 @@ export default function ImportarExtratosContabilPage() {
       })
       .finally(() => { if (!cancelado) setCarregandoContas(false); });
     return () => { cancelado = true; };
-  }, [authReady, isPrivileged, mostrarAlerta]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, isPrivileged]);
 
   function selecionarArquivo(file: File) {
     setArquivoXlsx(file);
@@ -210,33 +214,57 @@ export default function ImportarExtratosContabilPage() {
           console.warn('Falha ao carregar marcações existentes; vai sobrescrever todas.', err);
         }
       }
+      // Monta batch dos statuses, pulando os que dependem de empresa/banco que
+      // falharam de criar e os preservados (caso a opção esteja ligada).
       let preservadas = 0;
+      let semContexto = 0;
+      const payloadsBatch: Parameters<typeof upsertControleContabilStatusesBatch>[0] = [];
+      const refsBatch: Array<{ codigoEmpresa: string; bancoNome: string; mes: string }> = [];
       for (const s of analisado.statuses) {
         const empresaId = s.empresaId ?? (s.empresaArquivadaTempKey ? arqTempKeyParaId.get(s.empresaArquivadaTempKey) : undefined);
         const contaId = s.bancoExistenteId ?? (s.bancoTempKey ? tempKeyParaId.get(s.bancoTempKey) : undefined);
-        if (!empresaId || !contaId) continue; // arquivada/banco anterior falhou
-        // Preserva marcações já existentes se a opção estiver ligada
+        if (!empresaId || !contaId) {
+          semContexto++;
+          continue;
+        }
         if (preservarExistentes && statusesExistentes.has(`${contaId}|${s.mes}`)) {
           preservadas++;
           continue;
         }
-        try {
-          await upsertControleContabilStatus({
-            empresaId,
-            contaBancariaId: contaId,
-            mes: s.mes,
-            status: s.status,
-            marcadoPorId: s.marcadoPorId,
-            marcadoPorNome: s.marcadoPorNome ?? undefined,
-            observacao: s.observacao,
-          });
-          out.statuses.sucesso++;
-        } catch (err) {
+        payloadsBatch.push({
+          empresaId,
+          contaBancariaId: contaId,
+          mes: s.mes,
+          status: s.status,
+          marcadoPorId: s.marcadoPorId,
+          marcadoPorNome: s.marcadoPorNome ?? undefined,
+          observacao: s.observacao,
+        });
+        refsBatch.push({ codigoEmpresa: s.codigoEmpresa, bancoNome: s.bancoNome, mes: s.mes });
+      }
+
+      // Upsert em batch (chunks de 500). Muito mais rápido e estável que
+      // sequencial: uma round-trip por chunk em vez de uma por linha.
+      const resBatch = await upsertControleContabilStatusesBatch(payloadsBatch);
+      out.statuses.sucesso += resBatch.sucesso;
+      // Mapeia falhas do batch de volta pros refs originais (por (conta,mes))
+      const indexFalhas = new Map<string, string>();
+      for (const f of resBatch.falhas) indexFalhas.set(`${f.contaBancariaId}|${f.mes}`, f.erro);
+      for (let i = 0; i < payloadsBatch.length; i++) {
+        const p = payloadsBatch[i];
+        const erro = indexFalhas.get(`${p.contaBancariaId}|${p.mes}`);
+        if (erro) {
           out.statuses.falhas.push({
-            codigo: s.codigoEmpresa, banco: s.bancoNome, mes: s.mes,
-            erro: err instanceof Error ? err.message : 'Erro desconhecido',
+            codigo: refsBatch[i].codigoEmpresa,
+            banco: refsBatch[i].bancoNome,
+            mes: refsBatch[i].mes,
+            erro,
           });
         }
+      }
+      // Loga quem ficou sem contexto (banco/empresa anterior falhou de criar)
+      if (semContexto > 0) {
+        console.warn(`[import] ${semContexto} marcações ignoradas — banco/empresa associada não foi criada.`);
       }
 
       setResultado(out);

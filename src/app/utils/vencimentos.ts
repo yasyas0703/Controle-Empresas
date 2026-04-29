@@ -1,6 +1,7 @@
 import type { HistoricoVencimentoItem, UUID, VencimentoFiscal } from '@/app/types';
 import { VENCIMENTOS_FISCAIS_NOMES } from '@/app/types';
 import { isoNow } from '@/app/utils/date';
+import { proximoVencimento } from '@/app/utils/regrasVencimentosFiscais';
 
 function newId(): UUID {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
@@ -57,6 +58,28 @@ export function garantirVencimentosFiscais(existentes?: VencimentoFiscal[] | nul
       };
     }
     return { id: newId(), nome, vencimento: '', historicoVencimento: [] };
+  });
+}
+
+/**
+ * Mesma coisa que `garantirVencimentosFiscais`, mas aplica as regras automáticas
+ * de UF×imposto preenchendo o `vencimento` de itens que estão vazios e onde
+ * existe regra. Itens que o usuário preencheu na mão são mantidos como estão.
+ *
+ * @param estado UF da empresa (ex.: 'MG'). Pode ser undefined.
+ * @param referencia Data base para o cálculo (default = hoje). Útil pra testes.
+ */
+export function garantirVencimentosFiscaisComRegras(
+  existentes: VencimentoFiscal[] | null | undefined,
+  estado: string | null | undefined,
+  referencia: Date = new Date(),
+): VencimentoFiscal[] {
+  const base = garantirVencimentosFiscais(existentes);
+  return base.map((item) => {
+    if (item.vencimento) return item; // usuário já preencheu manualmente
+    const sugerido = proximoVencimento(item.nome, estado, referencia);
+    if (!sugerido) return item;
+    return { ...item, vencimento: sugerido };
   });
 }
 
