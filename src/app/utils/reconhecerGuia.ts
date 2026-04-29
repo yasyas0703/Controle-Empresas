@@ -164,46 +164,122 @@ export function extrairDados(texto: string): DadosExtraidos {
 
   const textoNorm = normalizar(texto);
 
-  // --- Vencimento: procura por "vencimento" próximo a uma data dd/mm/yyyy
-  const padraoVencimento = /vencimento[^\d]{0,30}(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/i;
-  const mVenc = texto.match(padraoVencimento);
-  if (mVenc) {
-    const dia = mVenc[1].padStart(2, '0');
-    const mes = mVenc[2].padStart(2, '0');
-    let ano = mVenc[3];
-    if (ano.length === 2) ano = `20${ano}`;
-    dados.vencimento = `${ano}-${mes}-${dia}`;
-  } else {
-    // Fallback: primeira data dd/mm/yyyy encontrada
-    const qualquerData = texto.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/);
-    if (qualquerData) {
-      const dia = qualquerData[1].padStart(2, '0');
-      const mes = qualquerData[2].padStart(2, '0');
-      let ano = qualquerData[3];
-      if (ano.length === 2) ano = `20${ano}`;
-      dados.vencimento = `${ano}-${mes}-${dia}`;
+  // Valida e normaliza dia/mes/ano. Ano de 2 dígitos vira 20XX. Ano fora
+  // do range razoável (2000–2100) é rejeitado — extração de PDF às vezes
+  // junta dígitos, ex.: "07/01/2512" (na verdade 07/01/25 + "12" do campo
+  // seguinte). Sem essa checagem, esse lixo vira o "vencimento".
+  const parseData = (diaS: string, mesS: string, anoS: string): { iso: string; ts: number } | null => {
+    const dia = Number(diaS);
+    const mes = Number(mesS);
+    let ano = Number(anoS);
+    if (anoS.length === 2) ano += 2000;
+    if (anoS.length === 3) return null;
+    if (mes < 1 || mes > 12) return null;
+    if (dia < 1 || dia > 31) return null;
+    if (ano < 2000 || ano > 2100) return null;
+    const iso = `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+    const ts = Date.UTC(ano, mes - 1, dia);
+    return { iso, ts };
+  };
+
+  // --- Vencimento: tenta vários rótulos comuns em DARF, DAS, GPS, GARE etc.
+  // Em PDFs o texto extraído costuma vir embolado, então a janela é generosa.
+  // Procura *todas* as ocorrências de cada padrão e fica com a primeira data
+  // válida (alguns labels podem aparecer antes de lixo numérico).
+  const padroesVencimento: RegExp[] = [
+    /data[^a-z0-9]{0,5}(?:de[^a-z0-9]{0,5})?vencimento[^\d]{0,80}(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/gi,
+    /data[^a-z0-9]{0,5}(?:limite[^a-z0-9]{0,5})?(?:de[^a-z0-9]{0,5})?(?:para[^a-z0-9]{0,5})?(?:de[^a-z0-9]{0,5})?pagamento[^\d]{0,80}(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/gi,
+    /pagar[^a-z0-9]{0,5}at[eé][^\d]{0,40}(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/gi,
+    /vence(?:r|m)?[^a-z0-9]{0,5}(?:em|ate|at[eé])?[^\d]{0,40}(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/gi,
+    /venc(?:to|imento)[^\d]{0,80}(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/gi,
+  ];
+
+  let achou = false;
+  for (const re of padroesVencimento) {
+    for (const m of texto.matchAll(re)) {
+      const parsed = parseData(m[1], m[2], m[3]);
+      if (parsed) {
+        dados.vencimento = parsed.iso;
+        achou = true;
+        break;
+      }
     }
+    if (achou) break;
   }
 
-  // --- Competência: "competência 04/2026" ou "abril/2026" ou "MM/YYYY" isolado
-  const padraoCompNum = /compet[eê]ncia[^\d]{0,15}(\d{1,2})[\/\-.](\d{2,4})/i;
-  const mCompNum = texto.match(padraoCompNum);
-  if (mCompNum) {
-    const mes = mCompNum[1].padStart(2, '0');
-    let ano = mCompNum[2];
-    if (ano.length === 2) ano = `20${ano}`;
-    dados.competencia = `${ano}-${mes}`;
-  } else {
+  if (!achou) {
+    // Fallback: a maior (mais futura) data válida do documento. Em guia de
+    // tributo o vencimento é tipicamente a data mais à frente.
+    const todasDatas = [...texto.matchAll(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/g)];
+    let melhor: { iso: string; ts: number } | null = null;
+    for (const m of todasDatas) {
+      const parsed = parseData(m[1], m[2], m[3]);
+      if (!parsed) continue;
+      if (!melhor || parsed.ts > melhor.ts) melhor = parsed;
+    }
+    if (melhor) dados.vencimento = melhor.iso;
+  }
+
+  // --- Competência. DARF usa "Período de Apuração", DAS/GPS/GARE costumam
+  // usar "Competência". Tenta vários rótulos; aceita mm/yyyy, mes/yyyy, e
+  // o atalho "PA" comum em formulários compactos.
+  const parseCompMes = (mesS: string, anoS: string): string | null => {
+    const mes = Number(mesS);
+    let ano = Number(anoS);
+    if (anoS.length === 2) ano += 2000;
+    if (anoS.length === 3) return null;
+    if (mes < 1 || mes > 12) return null;
+    if (ano < 2000 || ano > 2100) return null;
+    return `${ano}-${String(mes).padStart(2, '0')}`;
+  };
+
+  const padroesCompNum: RegExp[] = [
+    /per[ií]odo[^a-z0-9]{0,5}de[^a-z0-9]{0,5}apura[çc][aã]o[^\d]{0,40}(\d{1,2})[\/\-.](\d{2,4})/gi,
+    /compet[eê]ncia[^\d]{0,40}(\d{1,2})[\/\-.](\d{2,4})/gi,
+    /\bp\.?\s?a\.?\b[^\d]{0,15}(\d{1,2})[\/\-.](\d{2,4})/gi,
+    /m[eê]s[^a-z0-9]{0,5}(?:de[^a-z0-9]{0,5})?refer[eê]ncia[^\d]{0,30}(\d{1,2})[\/\-.](\d{2,4})/gi,
+  ];
+
+  let compAchou = false;
+  for (const re of padroesCompNum) {
+    for (const m of texto.matchAll(re)) {
+      const c = parseCompMes(m[1], m[2]);
+      if (c) {
+        dados.competencia = c;
+        compAchou = true;
+        break;
+      }
+    }
+    if (compAchou) break;
+  }
+
+  if (!compAchou) {
+    // Variantes com nome do mês: "abril/2026", "Período de Apuração: abril 2026"
+    const labels = '(?:per[ií]odo[^a-z0-9]{0,5}de[^a-z0-9]{0,5}apura[çc][aã]o|compet[eê]ncia|m[eê]s[^a-z0-9]{0,5}(?:de[^a-z0-9]{0,5})?refer[eê]ncia)';
     const padraoCompNome = new RegExp(
-      `compet[eê]ncia[^a-z0-9]{0,15}(${Object.keys(MESES_PT).join('|')})[^\\d]{0,6}(\\d{2,4})`,
-      'i'
+      `${labels}[^a-z0-9]{0,15}(${Object.keys(MESES_PT).join('|')})[^\\d]{0,6}(\\d{2,4})`,
+      'i',
     );
     const mCompNome = textoNorm.match(padraoCompNome);
     if (mCompNome) {
       const mesNum = MESES_PT[mCompNome[1]];
-      let ano = mCompNome[2];
-      if (ano.length === 2) ano = `20${ano}`;
-      dados.competencia = `${ano}-${String(mesNum).padStart(2, '0')}`;
+      const c = parseCompMes(String(mesNum), mCompNome[2]);
+      if (c) {
+        dados.competencia = c;
+        compAchou = true;
+      }
+    }
+  }
+
+  if (!compAchou) {
+    // Último recurso: pega o primeiro mm/yyyy isolado do documento que faça
+    // sentido (mês 1-12, ano 2000-2100). Evita pegar o ano de vencimento.
+    for (const m of texto.matchAll(/\b(\d{1,2})[\/\-.](\d{4})\b/g)) {
+      const c = parseCompMes(m[1], m[2]);
+      if (c) {
+        dados.competencia = c;
+        break;
+      }
     }
   }
 

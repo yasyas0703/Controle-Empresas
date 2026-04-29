@@ -9,15 +9,16 @@ import type {
 } from '@/app/types';
 import {
   BANCO_IGNORAR,
-  INICIAIS_MAP,
   SIMILARIDADE_MIN_MATCH,
   TOKEN_SEM_MOVIMENTO,
   TOKEN_VAZIO,
   bancoIgnorar,
+  extrairInicial,
   findContaExistente,
   findEmpresaPorCodigo,
   findUsuarioPorNome,
   gerarCodigoSinteticoArquivada,
+  getIniciaisMapPorAno,
   nomeBancoLimpo,
   normalizarString,
   similaridadeNomes,
@@ -157,28 +158,88 @@ function getCellAt(row: ExcelJS.Row, col: number): ExcelJS.Cell {
   return row.getCell(col);
 }
 
-// Detecta as colunas onde estão os meses (1..12) procurando o cabeçalho
-// Em planilhas reais, normalmente a 1ª linha de cabeçalho tem "1", "2", ..., "12".
-function detectarColunasMeses(ws: ExcelJS.Worksheet, ate = 30): number[] {
-  for (let r = 1; r <= Math.min(ws.rowCount, 5); r++) {
+// Mapeia nomes em português pra número do mês (aceita versões com/sem acento).
+const NOMES_MES_PT: Record<string, number> = {
+  jan: 1, janeiro: 1,
+  fev: 2, fevereiro: 2,
+  mar: 3, marco: 3, 'março': 3,
+  abr: 4, abril: 4,
+  mai: 5, maio: 5,
+  jun: 6, junho: 6,
+  jul: 7, julho: 7,
+  ago: 8, agosto: 8,
+  set: 9, setembro: 9,
+  out: 10, outubro: 10,
+  nov: 11, novembro: 11,
+  dez: 12, dezembro: 12,
+};
+
+function detectarMesNaCelula(texto: string): number | null {
+  const t = texto.trim();
+  if (!t) return null;
+  // Número puro 1..12
+  const n = Number(t);
+  if (Number.isInteger(n) && n >= 1 && n <= 12) return n;
+  // Nome do mês em PT (case-insensitive, tolera acento/sufixo do tipo "Jan/2025")
+  const norm = t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+  // Pega o primeiro "token" alfabético (ex.: "jan/2025" → "jan")
+  const m = norm.match(/^([a-z]+)/);
+  if (m && NOMES_MES_PT[m[1]]) return NOMES_MES_PT[m[1]];
+  return null;
+}
+
+/**
+ * Detecta as colunas onde estão os 12 meses no cabeçalho.
+ *  - Aceita números (1..12) E nomes em português (jan, fev, ..., dezembro).
+ *  - Procura nas primeiras 10 linhas.
+ *  - Se achou pelo menos 2 meses consecutivos (ex.: 1 na col X, 2 na col X+1),
+ *    infere o resto assumindo colunas consecutivas — útil quando só algumas
+ *    colunas têm header preenchido na planilha histórica.
+ */
+function detectarColunasMeses(ws: ExcelJS.Worksheet, ate = 40): number[] {
+  let melhor: { score: number; mapa: Record<number, number> } = { score: 0, mapa: {} };
+
+  for (let r = 1; r <= Math.min(ws.rowCount, 10); r++) {
     const row = ws.getRow(r);
-    const map: Record<number, number> = {}; // mes 1..12 → coluna
+    const mapa: Record<number, number> = {};
     for (let c = 1; c <= ate; c++) {
       const t = lerTextoCelula(row.getCell(c));
-      const n = Number(t);
-      if (Number.isInteger(n) && n >= 1 && n <= 12 && !map[n]) {
-        map[n] = c;
+      const n = detectarMesNaCelula(t);
+      if (n != null && !mapa[n]) mapa[n] = c;
+    }
+    const found = Object.keys(mapa).length;
+    if (found === 12) {
+      return Array.from({ length: 12 }, (_, i) => mapa[i + 1]);
+    }
+    if (found > melhor.score) melhor = { score: found, mapa };
+  }
+
+  // Se achou pelo menos 2 meses consecutivos, infere os outros como colunas
+  // consecutivas a partir do mês 1.
+  if (melhor.score >= 2) {
+    const m = melhor.mapa;
+    // Tenta achar a coluna do mês 1. Se não tiver, calcula a partir do menor mês
+    // detectado (ex.: se mês 3 está na col 7, então mês 1 = col 5).
+    let colMes1: number | null = m[1] ?? null;
+    if (colMes1 == null) {
+      const mesesDetectados = Object.keys(m).map(Number).sort((a, b) => a - b);
+      const primeiro = mesesDetectados[0];
+      colMes1 = m[primeiro] - (primeiro - 1);
+    }
+    if (colMes1 != null && colMes1 >= 1) {
+      const coerente = Object.entries(m).every(([mes, col]) => col === colMes1! + Number(mes) - 1);
+      if (coerente) {
+        return Array.from({ length: 12 }, (_, i) => colMes1! + i);
       }
     }
-    if (Object.keys(map).length === 12) {
-      return Array.from({ length: 12 }, (_, i) => map[i + 1]);
-    }
   }
-  return []; // não detectou — fallback
+
+  return []; // não detectou — usa fallback do chamador
 }
 
 export async function parseXlsxImportacao(input: ParserXlsxInput): Promise<ParsedImportacao> {
   const { arquivo, ano, empresas, usuarios, contasExistentes } = input;
+  const iniciaisMap = getIniciaisMapPorAno(ano);
 
   const wb = new ExcelJS.Workbook();
   if (arquivo instanceof File) {
@@ -207,6 +268,7 @@ export async function parseXlsxImportacao(input: ParserXlsxInput): Promise<Parse
   const COL_BANCO = 3;
   // Se não detectou, assume colunas E..P (5..16) como meses 1..12
   const meses = colMeses.length === 12 ? colMeses : [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+  const detectouColMeses = colMeses.length === 12;
 
   const tributacoes: PreviewTributacao[] = [];
   const bancosNovos: PreviewBancoNovo[] = [];
@@ -216,6 +278,13 @@ export async function parseXlsxImportacao(input: ParserXlsxInput): Promise<Parse
   const empresasArquivadas: PreviewEmpresaArquivada[] = [];
   const tributacoesAplicadas = new Set<UUID>();
   const bancosNovosKey = new Set<string>();
+
+  if (!detectouColMeses) {
+    avisos.push({
+      tipo: 'linha_sem_codigo',
+      mensagem: `Cabeçalho dos meses não foi totalmente detectado. Usando colunas padrão E..P (5..16) como Jan..Dez. Se as marcações vieram em meses errados, confira em qual coluna está o cabeçalho do mês na sua planilha.`,
+    });
+  }
 
   let secao: Tributacao | null = null;
   let empresaAtual: Empresa | null = null;
@@ -277,9 +346,28 @@ export async function parseXlsxImportacao(input: ParserXlsxInput): Promise<Parse
 
       const e = findEmpresaPorCodigo(empresas, codigoRaw);
       if (!e) {
+        // Não está no sistema → cria como empresa desligada usando o próprio
+        // código original. Continua o processamento (bancos, status) tratando
+        // como se fosse arquivada.
+        const tempKey = `arq_${empresasArquivadas.length}`;
         empresasNaoEncontradas.push({ codigo: codigoRaw, nome: nomeEmpresaRaw });
+        empresasArquivadas.push({
+          tempKey,
+          motivo: 'nao_encontrada',
+          codigoOriginal: codigoRaw,
+          codigoSintetico: codigoRaw,
+          razaoSocial: nomeEmpresaRaw,
+          tributacaoSugerida: secao,
+          similaridade: 0,
+          nomeEmpresaAtualNoSistema: '',
+          selecionada: true,
+          // Sem data específica — fica null pra não confundir com a data real
+          // de desligamento. A flag de "desligada" é a tag desligada-historica
+          // aplicada na hora da importação.
+          desligadaEm: null,
+        });
         empresaAtual = null;
-        empresaArquivadaAtualTempKey = null;
+        empresaArquivadaAtualTempKey = tempKey;
         bancoAtualExistenteId = null;
         bancoAtualTempKey = null;
         bancoAtualNome = null;
@@ -295,6 +383,7 @@ export async function parseXlsxImportacao(input: ParserXlsxInput): Promise<Parse
         const tempKey = `arq_${empresasArquivadas.length}`;
         empresasArquivadas.push({
           tempKey,
+          motivo: 'codigo_reciclado',
           codigoOriginal: codigoRaw,
           codigoSintetico,
           razaoSocial: nomeEmpresaRaw,
@@ -302,6 +391,7 @@ export async function parseXlsxImportacao(input: ParserXlsxInput): Promise<Parse
           similaridade: sim,
           nomeEmpresaAtualNoSistema: nomeSistema,
           selecionada: true,
+          desligadaEm: null,
         });
         empresaAtual = null;
         empresaArquivadaAtualTempKey = tempKey;
@@ -411,6 +501,11 @@ export async function parseXlsxImportacao(input: ParserXlsxInput): Promise<Parse
       let marcadoPorId: UUID | null = null;
       let marcadoPorNome: string | null = null;
 
+      // "OK" literal sempre vira feito sem usuário (independente de cor)
+      const ehTextoOk = textoUpper === 'OK';
+      // Tenta extrair a inicial (aceita "D", "Diana", "Diane" → "D"; descarta se não bater no map do ano)
+      const inicialReconhecida = ehTextoOk ? null : extrairInicial(texto, iniciaisMap);
+
       if (ehSemMovimento) {
         status = 'sem_movimento';
         observacao = 'Importado: sem movimento';
@@ -419,12 +514,15 @@ export async function parseXlsxImportacao(input: ParserXlsxInput): Promise<Parse
         observacao = 'Importado: recebido (pendente)';
       } else if (corClasse === 'verde') {
         status = 'feito';
+      } else if (ehTextoOk) {
+        // Texto "OK" sem cor detectada — ainda assim trata como feito
+        status = 'feito';
       } else if (semTexto) {
         // sem cor + sem texto = pula (deixa branco)
         continue;
       } else {
-        // Tem texto mas cor não detectada → assume verde se o texto é uma inicial conhecida
-        if (textoUpper.length === 1 && INICIAIS_MAP[textoUpper]) {
+        // Tem texto mas cor não detectada → assume "feito" se a inicial bate no map do ano
+        if (inicialReconhecida) {
           status = 'feito';
           avisos.push({
             tipo: 'linha_sem_codigo',
@@ -433,22 +531,22 @@ export async function parseXlsxImportacao(input: ParserXlsxInput): Promise<Parse
         } else {
           avisos.push({
             tipo: 'inicial_desconhecida',
-            mensagem: `${ctx.codigo} ${ctx.nome}, banco "${bancoAtualNome}", mês ${i + 1}: valor "${texto}" não reconhecido (esperado D/B/A/E/N/V/T/P, S/M ou -).`,
+            mensagem: `${ctx.codigo} ${ctx.nome}, banco "${bancoAtualNome}", mês ${i + 1}: valor "${texto}" não reconhecido para o ano ${ano}.`,
           });
           continue;
         }
       }
 
-      // Mapear texto pra usuário (se tiver)
-      if (textoUpper.length === 1 && INICIAIS_MAP[textoUpper]) {
-        const nome = INICIAIS_MAP[textoUpper];
+      // Mapear pra usuário se a inicial existir no map do ano. Usuários que
+      // não estão mais no sistema ficam com marcadoPorId=null (sem criar).
+      if (inicialReconhecida) {
+        const nome = iniciaisMap[inicialReconhecida];
         const usuario = findUsuarioPorNome(usuarios, nome);
         marcadoPorNome = nome;
         marcadoPorId = usuario?.id ?? null;
-      } else if (status === 'feito' || status === 'recebido_pendente') {
-        // sem inicial mas tem cor — pode ser algo tipo "S/M" misturado, mas já foi tratado acima.
-        // Ou pode ser texto não-padronizado. Deixa como marcado por null.
       }
+      // Sem inicial reconhecida (incluindo "OK", células verdes vazias e
+      // letras de pessoas que saíram): fica só verde, sem nome nem user_id.
 
       statuses.push({
         empresaId: ctx.empresaId,

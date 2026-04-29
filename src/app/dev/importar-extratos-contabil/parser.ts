@@ -8,7 +8,37 @@ import type {
 } from '@/app/types';
 
 // ─── Mapeamento de iniciais → nome real do membro do dep contábil ───
-export const INICIAIS_MAP: Record<string, string> = {
+// O mapa muda por ano porque o time foi rotacionando. Iniciais que não estão
+// no map ficam só como "feito/verde" sem usuário (não vira aviso).
+const INICIAIS_POR_ANO: Record<number, Record<string, string>> = {
+  2023: {
+    A: 'Arnold',
+    D: 'Diana',
+    T: 'Thaciane',
+    L: 'Lucas',
+  },
+  2024: {
+    A: 'Arnold',
+    D: 'Diana',
+    E: 'Emily',
+    G: 'Guilherme',
+    J: 'João Victor',
+    L: 'Lucas',
+    P: 'Poliana',
+    T: 'Thaciane',
+  },
+  2025: {
+    A: 'Arnold',
+    D: 'Diego',
+    E: 'Emilly',
+    G: 'Guilherme',
+    P: 'Poliana',
+    T: 'Thaciane',
+  },
+};
+
+// Mapa default — usado pra 2026+ ou ano desconhecido. Mantém o time atual.
+const INICIAIS_DEFAULT: Record<string, string> = {
   D: 'Diego Henrique',
   B: 'Brenda',
   A: 'Arnold',
@@ -16,8 +46,37 @@ export const INICIAIS_MAP: Record<string, string> = {
   N: 'Nicolas',
   V: 'Victoria',
   T: 'Thaciane',
-  P: 'Poliana', // saiu — fica só o nome, sem user_id
+  P: 'Poliana',
 };
+
+export function getIniciaisMapPorAno(ano: number): Record<string, string> {
+  return INICIAIS_POR_ANO[ano] ?? INICIAIS_DEFAULT;
+}
+
+// Mantido pra compatibilidade — usa o mapa default
+export const INICIAIS_MAP = INICIAIS_DEFAULT;
+
+/**
+ * Aceita célula com inicial pura ('D') OU nome inteiro ('Diana', 'Diane').
+ * Retorna a letra inicial uppercase normalizada se o map do ano tem essa letra,
+ * caso contrário retorna null.
+ */
+export function extrairInicial(texto: string, mapaAno: Record<string, string>): string | null {
+  const limpo = texto.trim();
+  if (!limpo) return null;
+  // Procura a primeira letra alfabética (ignora dígitos, espaços, símbolos)
+  for (const ch of limpo) {
+    if (/[a-zA-ZÀ-ÿ]/.test(ch)) {
+      const upper = ch
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .toUpperCase();
+      if (mapaAno[upper]) return upper;
+      return null;
+    }
+  }
+  return null;
+}
 
 // Iniciais que NÃO devem virar usuário (S/M = sem movimento, S/E = sem extrato/equivalente)
 export const TOKEN_SEM_MOVIMENTO = new Set(['S/M', 'S/E', 'SM', 'SE']);
@@ -38,13 +97,22 @@ export interface PreviewTributacao {
 
 export interface PreviewEmpresaArquivada {
   tempKey: string;
+  /**
+   * `codigo_reciclado`: o código existe no sistema mas pertence a outra empresa
+   *   (foi reciclado). Cria-se uma nova com código sintético tipo 595-A.
+   * `nao_encontrada`: o código não existe no sistema. Cria-se uma nova empresa
+   *   com o próprio código original e marca como desligada (desligada_em).
+   */
+  motivo: 'codigo_reciclado' | 'nao_encontrada';
   codigoOriginal: string;
-  codigoSintetico: string;     // ex: 595-A
-  razaoSocial: string;         // nome do CSV
+  codigoSintetico: string;     // = codigoOriginal quando motivo=nao_encontrada
+  razaoSocial: string;
   tributacaoSugerida: Tributacao | null;
-  similaridade: number;
-  nomeEmpresaAtualNoSistema: string;
-  selecionada: boolean;        // user pode desmarcar
+  similaridade: number;        // 0 quando motivo=nao_encontrada
+  nomeEmpresaAtualNoSistema: string; // '' quando motivo=nao_encontrada
+  selecionada: boolean;
+  /** Data de desligamento sugerida — só usado em nao_encontrada. ISO YYYY-MM-DD. */
+  desligadaEm: string | null;
 }
 
 export interface PreviewBancoNovo {
@@ -90,6 +158,7 @@ export interface ParsedImportacao {
 }
 
 export const TAG_ARQUIVADA = 'arquivada';
+export const TAG_DESLIGADA_HISTORICA = 'desligada-historica';
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -210,6 +279,7 @@ export interface ParserInput {
 
 export function parseCsvImportacao(input: ParserInput): ParsedImportacao {
   const { csv, ano, empresas, usuarios, contasExistentes } = input;
+  const iniciaisMap = getIniciaisMapPorAno(ano);
 
   const linhas = csv.split(/\r?\n/);
   const tributacoes: PreviewTributacao[] = [];
@@ -282,9 +352,24 @@ export function parseCsvImportacao(input: ParserInput): ParsedImportacao {
 
       const e = findEmpresaPorCodigo(empresas, codigoRaw);
       if (!e) {
+        // Não está no sistema → cria como empresa desligada usando o próprio
+        // código original.
+        const tempKey = `arq_${empresasArquivadas.length}`;
         empresasNaoEncontradas.push({ codigo: codigoRaw, nome: nomeEmpresaRaw });
+        empresasArquivadas.push({
+          tempKey,
+          motivo: 'nao_encontrada',
+          codigoOriginal: codigoRaw,
+          codigoSintetico: codigoRaw,
+          razaoSocial: nomeEmpresaRaw,
+          tributacaoSugerida: secao,
+          similaridade: 0,
+          nomeEmpresaAtualNoSistema: '',
+          selecionada: true,
+          desligadaEm: null,
+        });
         empresaAtual = null;
-        empresaArquivadaAtualTempKey = null;
+        empresaArquivadaAtualTempKey = tempKey;
         bancoAtualExistenteId = null;
         bancoAtualTempKey = null;
         bancoAtualNome = null;
@@ -301,6 +386,7 @@ export function parseCsvImportacao(input: ParserInput): ParsedImportacao {
         const tempKey = `arq_${empresasArquivadas.length}`;
         empresasArquivadas.push({
           tempKey,
+          motivo: 'codigo_reciclado',
           codigoOriginal: codigoRaw,
           codigoSintetico,
           razaoSocial: nomeEmpresaRaw,
@@ -308,6 +394,7 @@ export function parseCsvImportacao(input: ParserInput): ParsedImportacao {
           similaridade: sim,
           nomeEmpresaAtualNoSistema: nomeSistema,
           selecionada: true,
+          desligadaEm: null,
         });
         empresaAtual = null;
         empresaArquivadaAtualTempKey = tempKey;
@@ -422,11 +509,17 @@ export function parseCsvImportacao(input: ParserInput): ParsedImportacao {
       let marcadoPorNome: string | null = null;
       let observacao: string | null = null;
 
+      const ehTextoOk = valorUpper === 'OK';
+      const inicialReconhecida = ehTextoOk ? null : extrairInicial(valor, iniciaisMap);
+
       if (TOKEN_SEM_MOVIMENTO.has(valorUpper)) {
         status = 'sem_movimento';
         observacao = 'Importado: sem movimento';
-      } else if (valorUpper.length === 1 && INICIAIS_MAP[valorUpper]) {
-        const nome = INICIAIS_MAP[valorUpper];
+      } else if (ehTextoOk) {
+        status = 'feito';
+        // sem usuário associado — só verde
+      } else if (inicialReconhecida) {
+        const nome = iniciaisMap[inicialReconhecida];
         const usuario = findUsuarioPorNome(usuarios, nome);
         marcadoPorNome = nome;
         marcadoPorId = usuario?.id ?? null;
@@ -434,7 +527,7 @@ export function parseCsvImportacao(input: ParserInput): ParsedImportacao {
       } else {
         avisos.push({
           tipo: 'inicial_desconhecida',
-          mensagem: `Empresa ${ctx.codigo} ${ctx.nome}, banco "${bancoAtualNome}", mês ${i + 1}: valor "${valor}" não reconhecido (esperado D/B/A/E/N/V/T/P, S/M ou -).`,
+          mensagem: `Empresa ${ctx.codigo} ${ctx.nome}, banco "${bancoAtualNome}", mês ${i + 1}: valor "${valor}" não reconhecido para o ano ${ano}.`,
         });
         continue;
       }

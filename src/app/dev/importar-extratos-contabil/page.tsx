@@ -16,7 +16,7 @@ import {
 } from '@/lib/db';
 import type { ContaBancaria, UUID } from '@/app/types';
 import { TRIBUTACAO_LABELS } from '@/app/types';
-import { INICIAIS_MAP, TAG_ARQUIVADA, type ParsedImportacao } from './parser';
+import { getIniciaisMapPorAno, TAG_ARQUIVADA, TAG_DESLIGADA_HISTORICA, type ParsedImportacao } from './parser';
 import { parseXlsxImportacao } from './parserXlsx';
 import { inspecionarXlsx } from './debugXlsx';
 
@@ -134,20 +134,26 @@ export default function ImportarExtratosContabilPage() {
         }
       }
 
-      // 2) Empresas arquivadas (selecionadas) — cadastra como nova empresa com tag arquivada
+      // 2) Empresas arquivadas / desligadas (selecionadas) — cadastra como nova empresa.
+      //    motivo=codigo_reciclado: tag arquivada + apelido [ARQ]
+      //    motivo=nao_encontrada:   desligada_em setado (aparece em "Empresas desligadas"),
+      //                             marcada com tag desligada-historica (UI esconde a data
+      //                             pra não confundir com data real de desligamento).
+      const hojeIso = new Date().toISOString().slice(0, 10);
       const arqTempKeyParaId = new Map<string, UUID>();
       const arquivadasSelecionadas = analisado.empresasArquivadas.filter((a) => a.selecionada);
       for (const arq of arquivadasSelecionadas) {
+        const ehDesligada = arq.motivo === 'nao_encontrada';
         try {
           const id = await insertEmpresa({
             cadastrada: false,
             codigo: arq.codigoSintetico,
             razao_social: arq.razaoSocial,
-            apelido: `[ARQ] ${arq.razaoSocial}`,
+            apelido: ehDesligada ? arq.razaoSocial : `[ARQ] ${arq.razaoSocial}`,
             tipoEstabelecimento: '',
             tipoInscricao: '',
             servicos: [],
-            tags: [TAG_ARQUIVADA],
+            tags: ehDesligada ? [TAG_DESLIGADA_HISTORICA] : [TAG_ARQUIVADA],
             possuiRet: false,
             rets: [],
             vencimentosFiscais: [],
@@ -155,6 +161,7 @@ export default function ImportarExtratosContabilPage() {
             documentos: [],
             observacoes: [],
             tributacao: arq.tributacaoSugerida ?? null,
+            desligada_em: ehDesligada ? hojeIso : null,
           }, []);
           arqTempKeyParaId.set(arq.tempKey, id);
           out.arquivadasCriadas.sucesso++;
@@ -323,15 +330,19 @@ export default function ImportarExtratosContabilPage() {
             <div className="flex items-center gap-2"><span className="inline-block h-4 w-4 rounded border border-dashed border-slate-400 bg-slate-50 text-[7px] font-bold text-slate-500 flex items-center justify-center leading-none">S/M</span> Texto &quot;S/M&quot; → <strong>sem movimento</strong></div>
             <div className="flex items-center gap-2"><span className="inline-block h-4 w-4 rounded border border-gray-300 bg-white" /> Sem cor + sem texto → não marca nada</div>
           </div>
-          <p><strong>Letra (D, B, A, E, N, V, T, P) → quem marcou:</strong></p>
+          <p><strong>Letras → quem marcou (mapa do ano {ano}):</strong></p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 ml-3">
-            {Object.entries(INICIAIS_MAP).map(([letra, nome]) => (
+            {Object.entries(getIniciaisMapPorAno(ano)).map(([letra, nome]) => (
               <div key={letra} className="flex items-center gap-1.5">
                 <span className="font-mono font-bold w-5 inline-block bg-emerald-100 text-emerald-700 rounded text-center">{letra}</span>
                 <span>{nome}</span>
               </div>
             ))}
           </div>
+          <p className="text-[11px] text-gray-500 ml-3">
+            Aceita célula com inicial (&quot;D&quot;) ou com nome completo (&quot;Diana&quot;) — pega só a primeira letra.
+            Texto <strong>&quot;OK&quot;</strong> ou letra de pessoa que saiu da empresa: fica só verde, sem usuário associado.
+          </p>
           <p><strong>FILIAL, SEM BANCO:</strong> ignorados (não criam banco).</p>
           <p><strong>Empresa não encontrada / código reciclado:</strong> tratada como cliente antigo (cadastrada como arquivada).</p>
         </div>
@@ -451,78 +462,112 @@ export default function ImportarExtratosContabilPage() {
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-            <BlocoStat label="Tributações" valor={analisado.tributacoes.length} cor="emerald" />
-            <BlocoStat label="Arquivadas" valor={analisado.empresasArquivadas.filter((a) => a.selecionada).length} cor="slate" />
-            <BlocoStat label="Bancos novos" valor={analisado.bancosNovos.length} cor="cyan" />
-            <BlocoStat label="Marcações" valor={analisado.statuses.length} cor="blue" />
-            <BlocoStat label="Avisos" valor={analisado.avisos.length + analisado.empresasNaoEncontradas.length} cor="amber" />
-          </div>
+          {(() => {
+            const recicladas = analisado.empresasArquivadas.filter((a) => a.motivo === 'codigo_reciclado');
+            const desligadasNovas = analisado.empresasArquivadas.filter((a) => a.motivo === 'nao_encontrada');
+            return (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+                  <BlocoStat label="Tributações" valor={analisado.tributacoes.length} cor="emerald" />
+                  <BlocoStat label="Recicladas" valor={recicladas.filter((a) => a.selecionada).length} cor="slate" />
+                  <BlocoStat label="Desligadas" valor={desligadasNovas.filter((a) => a.selecionada).length} cor="orange" />
+                  <BlocoStat label="Bancos novos" valor={analisado.bancosNovos.length} cor="cyan" />
+                  <BlocoStat label="Marcações" valor={analisado.statuses.length} cor="blue" />
+                  <BlocoStat label="Avisos" valor={analisado.avisos.length} cor="amber" />
+                </div>
 
-          {/* Empresas arquivadas — código reciclado vira empresa nova histórica */}
-          {analisado.empresasArquivadas.length > 0 && (
-            <div className="rounded-xl border border-slate-300 bg-slate-50 p-3">
-              <div className="flex items-center gap-2 font-bold text-xs text-slate-800 mb-2">
-                <Archive size={16} className="text-slate-600" />
-                {analisado.empresasArquivadas.length} empresa(s) com código reciclado
-              </div>
-              <p className="text-[11px] text-slate-700 mb-3">
-                Esses códigos hoje pertencem a outra empresa no sistema (provavelmente após exclusão e reaproveitamento). Cada uma será cadastrada como <strong>empresa nova com tag &quot;arquivada&quot;</strong>, com código sintético próprio. Vão aparecer no controle contábil em cinza, no fim da lista.
-              </p>
-              <ul className="space-y-1.5 max-h-72 overflow-y-auto">
-                {analisado.empresasArquivadas.map((a) => (
-                  <li
-                    key={a.tempKey}
-                    className={`rounded-lg border p-2.5 transition ${
-                      a.selecionada ? 'bg-white border-slate-300' : 'bg-slate-100 border-slate-200 opacity-60'
-                    }`}
-                  >
-                    <label className="flex items-start gap-2.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={a.selecionada}
-                        onChange={() => toggleArquivada(a.tempKey)}
-                        className="mt-1 h-4 w-4 accent-slate-700 cursor-pointer shrink-0"
-                      />
-                      <div className="flex-1 min-w-0 text-[11px]">
-                        <div className="font-bold text-slate-900">
-                          {a.razaoSocial}
-                          <span className="ml-2 font-mono text-[10px] text-slate-500 font-normal">
-                            código: {a.codigoOriginal} → <strong className="text-cyan-700">{a.codigoSintetico}</strong>
-                          </span>
-                        </div>
-                        <div className="text-slate-600 mt-0.5">
-                          Hoje o código <strong>{a.codigoOriginal}</strong> aponta para: <em>{a.nomeEmpresaAtualNoSistema || '(sem nome)'}</em> · similaridade {Math.round(a.similaridade * 100)}%
-                        </div>
-                        {a.tributacaoSugerida && (
-                          <div className="text-slate-700 mt-0.5">Tributação: <strong>{TRIBUTACAO_LABELS[a.tributacaoSugerida]}</strong></div>
-                        )}
-                      </div>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-              <p className="text-[10px] text-slate-500 mt-2">Desmarque as que não quiser importar.</p>
-            </div>
-          )}
+                {/* Empresas com código reciclado */}
+                {recicladas.length > 0 && (
+                  <div className="rounded-xl border border-slate-300 bg-slate-50 p-3">
+                    <div className="flex items-center gap-2 font-bold text-xs text-slate-800 mb-2">
+                      <Archive size={16} className="text-slate-600" />
+                      {recicladas.length} empresa(s) com código reciclado
+                    </div>
+                    <p className="text-[11px] text-slate-700 mb-3">
+                      Esses códigos hoje pertencem a outra empresa no sistema (provavelmente após exclusão e reaproveitamento). Cada uma será cadastrada como <strong>empresa nova com tag &quot;arquivada&quot;</strong>, com código sintético próprio.
+                    </p>
+                    <ul className="space-y-1.5 max-h-72 overflow-y-auto">
+                      {recicladas.map((a) => (
+                        <li
+                          key={a.tempKey}
+                          className={`rounded-lg border p-2.5 transition ${
+                            a.selecionada ? 'bg-white border-slate-300' : 'bg-slate-100 border-slate-200 opacity-60'
+                          }`}
+                        >
+                          <label className="flex items-start gap-2.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={a.selecionada}
+                              onChange={() => toggleArquivada(a.tempKey)}
+                              className="mt-1 h-4 w-4 accent-slate-700 cursor-pointer shrink-0"
+                            />
+                            <div className="flex-1 min-w-0 text-[11px]">
+                              <div className="font-bold text-slate-900">
+                                {a.razaoSocial}
+                                <span className="ml-2 font-mono text-[10px] text-slate-500 font-normal">
+                                  código: {a.codigoOriginal} → <strong className="text-cyan-700">{a.codigoSintetico}</strong>
+                                </span>
+                              </div>
+                              <div className="text-slate-600 mt-0.5">
+                                Hoje o código <strong>{a.codigoOriginal}</strong> aponta para: <em>{a.nomeEmpresaAtualNoSistema || '(sem nome)'}</em> · similaridade {Math.round(a.similaridade * 100)}%
+                              </div>
+                              {a.tributacaoSugerida && (
+                                <div className="text-slate-700 mt-0.5">Tributação: <strong>{TRIBUTACAO_LABELS[a.tributacaoSugerida]}</strong></div>
+                              )}
+                            </div>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
-          {/* Empresas não encontradas */}
-          {analisado.empresasNaoEncontradas.length > 0 && (
-            <Painel
-              titulo={`${analisado.empresasNaoEncontradas.length} empresa(s) não encontrada(s) — não serão importadas`}
-              cor="red"
-              icon={<XCircle size={16} className="text-red-600" />}
-            >
-              <ul className="space-y-1 max-h-48 overflow-y-auto text-xs">
-                {analisado.empresasNaoEncontradas.map((e, i) => (
-                  <li key={i} className="font-mono">
-                    <span className="font-bold text-red-700">{e.codigo}</span> — {e.nome}
-                  </li>
-                ))}
-              </ul>
-              <p className="text-[11px] text-gray-600 mt-2">Cadastre essas empresas no sistema (mesmo código) e reimporte.</p>
-            </Painel>
-          )}
+                {/* Empresas não encontradas → serão criadas como desligadas */}
+                {desligadasNovas.length > 0 && (
+                  <div className="rounded-xl border border-orange-300 bg-orange-50 p-3">
+                    <div className="flex items-center gap-2 font-bold text-xs text-orange-900 mb-2">
+                      <Archive size={16} className="text-orange-700" />
+                      {desligadasNovas.length} empresa(s) não encontrada(s) — serão criadas como desligadas
+                    </div>
+                    <p className="text-[11px] text-orange-900 mb-3">
+                      Esses códigos não existem no sistema. Cada uma será cadastrada com o <strong>código original</strong> e marcada como <strong>desligada (histórica)</strong> — aparecem em <em>Empresas Desligadas</em> sem data específica, pra não confundir com a data real de desligamento. Os bancos e marcações também são importados.
+                    </p>
+                    <ul className="space-y-1.5 max-h-72 overflow-y-auto">
+                      {desligadasNovas.map((a) => (
+                        <li
+                          key={a.tempKey}
+                          className={`rounded-lg border p-2.5 transition ${
+                            a.selecionada ? 'bg-white border-orange-300' : 'bg-orange-100 border-orange-200 opacity-60'
+                          }`}
+                        >
+                          <label className="flex items-start gap-2.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={a.selecionada}
+                              onChange={() => toggleArquivada(a.tempKey)}
+                              className="mt-1 h-4 w-4 accent-orange-600 cursor-pointer shrink-0"
+                            />
+                            <div className="flex-1 min-w-0 text-[11px]">
+                              <div className="font-bold text-orange-900">
+                                {a.razaoSocial}
+                                <span className="ml-2 font-mono text-[10px] text-orange-700 font-normal">
+                                  código: <strong>{a.codigoOriginal}</strong>
+                                </span>
+                              </div>
+                              {a.tributacaoSugerida && (
+                                <div className="text-orange-800 mt-0.5">Tributação sugerida: <strong>{TRIBUTACAO_LABELS[a.tributacaoSugerida]}</strong></div>
+                              )}
+                            </div>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-[10px] text-orange-700 mt-2">Desmarque as que não quiser importar.</p>
+                  </div>
+                )}
+              </>
+            );
+          })()}
 
           {/* Iniciais não reconhecidas */}
           {iniciaisDesconhecidas.length > 0 && (
@@ -650,13 +695,14 @@ export default function ImportarExtratosContabilPage() {
 
 // ─── Subcomponentes ────────────────────────────────────────
 
-function BlocoStat({ label, valor, cor }: { label: string; valor: number; cor: 'emerald' | 'cyan' | 'blue' | 'amber' | 'slate' }) {
+function BlocoStat({ label, valor, cor }: { label: string; valor: number; cor: 'emerald' | 'cyan' | 'blue' | 'amber' | 'slate' | 'orange' }) {
   const corClasses = {
     emerald: 'bg-emerald-50 border-emerald-200 text-emerald-700',
     cyan: 'bg-cyan-50 border-cyan-200 text-cyan-700',
     blue: 'bg-blue-50 border-blue-200 text-blue-700',
     amber: 'bg-amber-50 border-amber-200 text-amber-700',
     slate: 'bg-slate-100 border-slate-300 text-slate-700',
+    orange: 'bg-orange-50 border-orange-200 text-orange-700',
   }[cor];
   return (
     <div className={`rounded-xl border p-3 ${corClasses}`}>

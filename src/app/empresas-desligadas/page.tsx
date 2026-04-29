@@ -100,11 +100,15 @@ export default function EmpresasDesligadasPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono text-xs font-bold text-gray-500">{e.codigo}</span>
                     <span className="rounded-md bg-slate-200 text-slate-700 px-1.5 py-0.5 text-[10px] font-bold">DESLIGADA</span>
-                    {e.desligada_em && (
+                    {e.tags?.includes('desligada-historica') ? (
+                      <span className="rounded-md bg-amber-100 text-amber-700 px-1.5 py-0.5 text-[10px] font-bold inline-flex items-center gap-1">
+                        <PowerOff size={11} /> HISTÓRICA
+                      </span>
+                    ) : e.desligada_em ? (
                       <span className="text-[11px] text-slate-600 inline-flex items-center gap-1">
                         <PowerOff size={11} /> Desligada em {formatBR(e.desligada_em)}
                       </span>
-                    )}
+                    ) : null}
                   </div>
                   <div className="font-bold text-gray-900 mt-1 text-sm sm:text-base">
                     {e.razao_social || e.apelido || <span className="text-gray-400 italic">Sem nome</span>}

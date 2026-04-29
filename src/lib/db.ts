@@ -1872,11 +1872,26 @@ function toExtratoArquivo(row: ExtratoArquivoRow): ExtratoArquivo {
 // ── Bancos ──────────────────────────────────────────────────
 
 export async function fetchContasBancarias(opts?: { ativasApenas?: boolean }): Promise<ContaBancaria[]> {
-  let q = supabase.from('contas_bancarias').select('*').order('ordem', { ascending: true }).order('nome', { ascending: true });
-  if (opts?.ativasApenas) q = q.eq('ativo', true);
-  const { data, error } = await q;
-  if (error) throw error;
-  return (data ?? []).map((r) => toContaBancaria(r as ContaBancariaRow));
+  const PAGE = 1000;
+  const todas: ContaBancariaRow[] = [];
+  let offset = 0;
+  while (true) {
+    let q = supabase
+      .from('contas_bancarias')
+      .select('*')
+      .order('ordem', { ascending: true })
+      .order('nome', { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (opts?.ativasApenas) q = q.eq('ativo', true);
+    const { data, error } = await q;
+    if (error) throw error;
+    const lote = (data ?? []) as ContaBancariaRow[];
+    todas.push(...lote);
+    if (lote.length < PAGE) break;
+    offset += PAGE;
+    if (offset > 50_000) break;
+  }
+  return todas.map((r) => toContaBancaria(r));
 }
 
 export async function createContaBancaria(payload: {
@@ -1934,13 +1949,26 @@ export async function deleteContaBancaria(id: UUID): Promise<void> {
 export async function fetchControleContabilByAno(ano: number): Promise<ControleContabilExtrato[]> {
   const inicio = `${ano}-01`;
   const fim = `${ano}-12`;
-  const { data, error } = await supabase
-    .from('controle_contabil_extratos')
-    .select('*')
-    .gte('mes', inicio)
-    .lte('mes', fim);
-  if (error) throw error;
-  return (data ?? []).map((r) => toControleContabilExtrato(r as ControleContabilExtratoRow));
+  const PAGE = 1000; // limite default do Supabase por request
+  const todas: ControleContabilExtratoRow[] = [];
+  let offset = 0;
+  // Pagina até parar de vir gente (ano cheio com muitas empresas pode passar de 1000)
+  while (true) {
+    const { data, error } = await supabase
+      .from('controle_contabil_extratos')
+      .select('*')
+      .gte('mes', inicio)
+      .lte('mes', fim)
+      .order('mes', { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    const lote = (data ?? []) as ControleContabilExtratoRow[];
+    todas.push(...lote);
+    if (lote.length < PAGE) break;
+    offset += PAGE;
+    if (offset > 100_000) break; // hard cap defensivo
+  }
+  return todas.map((r) => toControleContabilExtrato(r));
 }
 
 export async function upsertControleContabilStatus(payload: {

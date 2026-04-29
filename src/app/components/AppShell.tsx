@@ -18,6 +18,7 @@ type NavItem = {
   icon: React.ComponentType<{ size?: number; className?: string }>;
   badge?: boolean;
   ghostOnly?: boolean;
+  emailOnly?: string;
   department?: DepartamentoSlug;
 };
 
@@ -43,7 +44,7 @@ const nav: NavItem[] = [
   { href: '/vencimentos-cadastro/controle', label: 'Controle Cadastro', icon: ListChecks, department: 'cadastro' },
   { href: '/calendario', label: 'Calendário', icon: CalendarDays },
   { href: '/dev', label: 'Controle', icon: Terminal, ghostOnly: true },
-  { href: '/obrigacoes', label: 'Obrigações', icon: FileStack, ghostOnly: true },
+  { href: '/obrigacoes', label: 'Obrigações', icon: FileStack, emailOnly: 'yasjean07@gmail.com' },
   { href: '/empresas', label: 'Empresas', icon: Building2 },
   { href: '/servicos', label: 'Serviços', icon: Briefcase },
   { href: '/tags', label: 'Tags', icon: Tag },
@@ -380,9 +381,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const userDepartamentoSlug = getDepartamentoSlugDoUsuario(currentUser, departamentos);
   const navItems = nav.filter((i) => {
+    if (i.emailOnly) return currentUser?.email?.toLowerCase() === i.emailOnly.toLowerCase();
     if (i.ghostOnly) return isGhost;
     if (i.href === '/usuarios' || i.href === '/backup' || i.href === '/historico') return canAdmin;
-    if (['/departamentos', '/servicos', '/tags', '/lixeira', '/empresas-desligadas'].includes(i.href)) return canManage;
+    if (['/departamentos', '/servicos', '/tags', '/lixeira'].includes(i.href)) return canManage;
     if (i.department) {
       if (canAdmin || isPrivileged) return true;
       return i.department === userDepartamentoSlug;

@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, Building2, Calendar, CheckCircle2, FileSpreadsheet,
-  FileText, Loader2, ShieldAlert, Sparkles, Trash2, Upload, XCircle,
+  FileText, Loader2, Mail, ShieldAlert, Sparkles, Trash2, Upload, XCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useSistema } from '@/app/context/SistemaContext';
+import { supabase } from '@/lib/supabase';
 import {
   fetchObrigacoes,
   uploadGuiaPdf,
@@ -45,6 +46,8 @@ export default function ProcessarGuiasClient() {
   const [carregandoObr, setCarregandoObr] = useState(false);
   const [itens, setItens] = useState<ItemProcessamento[]>([]);
   const [importando, setImportando] = useState(false);
+  const [autoEnviar, setAutoEnviar] = useState(true);
+  const autoTriggeredRef = useRef<Set<string>>(new Set());
 
   // Carrega obrigações ativas
   useEffect(() => {
@@ -149,13 +152,13 @@ export default function ProcessarGuiasClient() {
     [itens, empresas, obrigacoes]
   );
 
-  async function importar(item: ItemProcessamento) {
+  async function importar(item: ItemProcessamento): Promise<string | null> {
     const empresa = getEmpresaFinal(item);
     const obrigacao = getObrigacaoFinal(item);
     const competencia = getCompetenciaFinal(item);
     if (!empresa || !obrigacao || !competencia) {
       mostrarAlerta('Dados incompletos', 'Selecione empresa, obrigação e competência.', 'aviso');
-      return;
+      return null;
     }
     try {
       // 1. Upload da guia
@@ -176,10 +179,82 @@ export default function ProcessarGuiasClient() {
         competenciaDetectada: item.resultado?.dados.competencia ?? null,
         valorDetectado: item.resultado?.dados.valor ?? null,
       });
-      setItens((prev) => prev.map((it) => (it.id === item.id ? { ...it, status: 'importado' } : it)));
+      setItens((prev) => prev.map((it) => (it.id === item.id ? { ...it, status: 'importado', arquivoPath } : it)));
+      return arquivoPath;
     } catch (err) {
       console.error(err);
       mostrarAlerta('Erro', err instanceof Error ? err.message : 'Falha ao importar.', 'erro');
+      return null;
+    }
+  }
+
+  async function enviarEmail(item: ItemProcessamento) {
+    const empresa = getEmpresaFinal(item);
+    const obrigacao = getObrigacaoFinal(item);
+    const competencia = getCompetenciaFinal(item);
+    if (!empresa || !obrigacao || !competencia) {
+      mostrarAlerta('Dados incompletos', 'Selecione empresa, obrigação e competência.', 'aviso');
+      return;
+    }
+
+    let arquivoPath = item.arquivoPath;
+    // Se ainda não foi importado, importa antes de enviar
+    if (!arquivoPath) {
+      const novoPath = await importar(item);
+      if (!novoPath) return;
+      arquivoPath = novoPath;
+    }
+
+    setItens((prev) => prev.map((it) => (it.id === item.id ? { ...it, emailEnviando: true, emailErro: undefined } : it)));
+
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) {
+        mostrarAlerta('Sessão expirada', 'Faça login novamente.', 'aviso');
+        setItens((prev) => prev.map((it) => (it.id === item.id ? { ...it, emailEnviando: false } : it)));
+        return;
+      }
+
+      const res = await fetch('/api/obrigacoes/enviar-guia', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          empresaId: empresa.id,
+          obrigacaoId: obrigacao.id,
+          competencia,
+          arquivoPath,
+          vencimento: item.resultado?.dados.vencimento ?? null,
+          valor: item.resultado?.dados.valor ?? null,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        const erroMsg = json?.error || 'Falha ao enviar email.';
+        setItens((prev) => prev.map((it) => (it.id === item.id ? { ...it, emailEnviando: false, emailErro: erroMsg } : it)));
+        mostrarAlerta('Erro ao enviar', erroMsg, 'erro');
+        return;
+      }
+
+      const concluida = !!json?.concluida;
+      setItens((prev) => prev.map((it) => (it.id === item.id ? {
+        ...it,
+        emailEnviando: false,
+        emailEnviado: true,
+        emailErro: undefined,
+        tarefaConcluida: concluida,
+      } : it)));
+      const destinos = Array.isArray(json?.enviadoPara) ? json.enviadoPara.join(', ') : '';
+      mostrarAlerta(
+        concluida ? 'Enviado e concluído' : 'Email enviado',
+        destinos ? `Enviado para: ${destinos}` : 'Guia enviada com sucesso.',
+        'sucesso',
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro inesperado';
+      setItens((prev) => prev.map((it) => (it.id === item.id ? { ...it, emailEnviando: false, emailErro: message } : it)));
+      mostrarAlerta('Erro', message, 'erro');
     }
   }
 
@@ -194,6 +269,26 @@ export default function ProcessarGuiasClient() {
       setImportando(false);
     }
   }
+
+  // Mantém referência sempre atualizada para evitar closure velha no auto-trigger
+  const enviarEmailRef = useRef(enviarEmail);
+  enviarEmailRef.current = enviarEmail;
+
+  // Auto-fluxo: quando o PDF é processado e tudo bate (empresa, obrigação,
+  // competência), importa, envia e conclui sozinho — uma única vez por item.
+  useEffect(() => {
+    if (!autoEnviar) return;
+    for (const item of itens) {
+      if (autoTriggeredRef.current.has(item.id)) continue;
+      if (item.status !== 'pronto') continue;
+      const empresa = item.empresaIdManual ?? item.resultado?.empresa?.empresa.id;
+      const obrigacao = item.obrigacaoIdManual ?? item.resultado?.obrigacao?.obrigacao.id;
+      const competencia = item.competenciaManual ?? item.resultado?.dados.competencia;
+      if (!empresa || !obrigacao || !competencia) continue;
+      autoTriggeredRef.current.add(item.id);
+      void enviarEmailRef.current(item);
+    }
+  }, [itens, autoEnviar]);
 
   if (!authReady) return null;
   if (!currentUser || (!canManage && !isPrivileged)) {
@@ -281,6 +376,18 @@ export default function ProcessarGuiasClient() {
             Nenhuma obrigação ativa cadastrada. <Link href="/obrigacoes" className="underline font-bold">Cadastre uma obrigação</Link> antes de processar guias.
           </div>
         )}
+
+        <label className="mt-3 flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={autoEnviar}
+            onChange={(e) => setAutoEnviar(e.target.checked)}
+            className="rounded accent-violet-600"
+          />
+          <span>
+            <strong>Envio automático:</strong> ao reconhecer empresa, obrigação e competência, importa, envia o email e marca como concluída sem precisar clicar.
+          </span>
+        </label>
       </div>
 
       {/* Lista de itens processados */}
@@ -314,7 +421,8 @@ export default function ProcessarGuiasClient() {
                 onAlterarEmpresa={(id) => alterarEmpresa(item.id, id)}
                 onAlterarObrigacao={(id) => alterarObrigacao(item.id, id)}
                 onAlterarCompetencia={(c) => alterarCompetencia(item.id, c)}
-                onImportar={() => importar(item)}
+                onImportar={async () => { await importar(item); }}
+                onEnviarEmail={() => enviarEmail(item)}
                 empresaFinal={getEmpresaFinal(item)}
                 obrigacaoFinal={getObrigacaoFinal(item)}
                 competenciaFinal={getCompetenciaFinal(item)}
@@ -335,7 +443,7 @@ export default function ProcessarGuiasClient() {
 
 function ItemCard({
   item, empresas, obrigacoes,
-  onRemover, onAlterarEmpresa, onAlterarObrigacao, onAlterarCompetencia, onImportar,
+  onRemover, onAlterarEmpresa, onAlterarObrigacao, onAlterarCompetencia, onImportar, onEnviarEmail,
   empresaFinal, obrigacaoFinal, competenciaFinal,
 }: {
   item: ItemProcessamento;
@@ -346,6 +454,7 @@ function ItemCard({
   onAlterarObrigacao: (id: string | null) => void;
   onAlterarCompetencia: (c: string | null) => void;
   onImportar: () => Promise<void>;
+  onEnviarEmail: () => Promise<void>;
   empresaFinal: Empresa | null;
   obrigacaoFinal: Obrigacao | null;
   competenciaFinal: string | null;
@@ -354,7 +463,7 @@ function ItemCard({
 
   const sugEmp = item.resultado?.empresa;
   const sugObr = item.resultado?.obrigacao;
-  const podeImportar = item.status === 'pronto' && !!empresaFinal && !!obrigacaoFinal && !!competenciaFinal;
+  const podeImportar = (item.status === 'pronto' || item.status === 'importado') && !!empresaFinal && !!obrigacaoFinal && !!competenciaFinal;
 
   return (
     <li className={`rounded-xl border p-3 ${
@@ -449,7 +558,13 @@ function ItemCard({
               {empresaFinal && <span className="text-emerald-700">→ {empresaFinal.codigo} {empresaFinal.razao_social ?? ''}</span>}
               {obrigacaoFinal && <span className="text-emerald-700">→ {obrigacaoFinal.nome}</span>}
               {competenciaFinal && <span className="text-emerald-700">→ {formatComp(competenciaFinal)}</span>}
+              {item.emailEnviado && <span className="inline-flex items-center gap-1 text-cyan-700 font-bold"><Mail size={11} /> email enviado</span>}
+              {item.tarefaConcluida && <span className="inline-flex items-center gap-1 text-emerald-700 font-bold"><CheckCircle2 size={11} /> concluída</span>}
             </div>
+          )}
+
+          {item.emailErro && (
+            <div className="mt-1 text-xs text-red-700">⚠ Email: {item.emailErro}</div>
           )}
         </div>
 
@@ -462,6 +577,26 @@ function ItemCard({
               title={podeImportar ? 'Importar este' : 'Selecione empresa, obrigação e competência'}
             >
               {importando ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+            </button>
+          )}
+          {(item.status === 'pronto' || item.status === 'importado') && (
+            <button
+              onClick={onEnviarEmail}
+              disabled={!podeImportar || !!item.emailEnviando || !!item.emailEnviado}
+              className={`rounded-lg p-2 transition disabled:opacity-50 disabled:cursor-not-allowed ${
+                item.emailEnviado
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-cyan-500 hover:bg-cyan-600 text-white'
+              }`}
+              title={
+                item.emailEnviado
+                  ? 'Email já enviado'
+                  : podeImportar
+                    ? (item.status === 'importado' ? 'Enviar email para o cliente' : 'Importar e enviar email')
+                    : 'Selecione empresa, obrigação e competência'
+              }
+            >
+              {item.emailEnviando ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
             </button>
           )}
           {item.status !== 'importado' && (

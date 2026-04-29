@@ -311,7 +311,12 @@ export default function ControleContabilPage() {
   const hasFilters = !!search || !!filtroResp || apenasMinhas;
   const anosOpcoes = useMemo(() => {
     const atual = new Date().getFullYear();
-    return [atual - 2, atual - 1, atual, atual + 1];
+    // Vai de 2020 até o próximo ano. Cobre imports históricos (2023, 2024, 2025…)
+    // sem precisar buscar no banco quais anos têm dado.
+    const inicio = Math.min(atual - 2, 2020);
+    const arr: number[] = [];
+    for (let y = inicio; y <= atual + 1; y++) arr.push(y);
+    return arr;
   }, []);
 
   if (!authReady) return null;

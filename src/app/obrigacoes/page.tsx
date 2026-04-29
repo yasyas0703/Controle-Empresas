@@ -1,11 +1,30 @@
 'use client';
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import Link from 'next/link';
 import {
   FileStack, Plus, Pencil, Trash2, Search, XCircle, Shield,
   Building2, Calendar, Bell, Award, Target, Clock, Sparkles, Mail, AlertTriangle, CheckCircle, FileText, Tags, ListChecks,
-  FlaskConical, Wand2, Link2, Unlink,
+  FlaskConical, Wand2, Link2, Unlink, Upload,
 } from 'lucide-react';
+
+const OBRIGACOES_ALLOWED_EMAIL = 'yasjean07@gmail.com';
+
+function extrairMensagemErro(err: unknown): string {
+  if (!err) return 'Erro desconhecido.';
+  if (typeof err === 'string') return err;
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === 'object') {
+    const e = err as { message?: unknown; code?: unknown; details?: unknown; hint?: unknown };
+    const partes: string[] = [];
+    if (typeof e.message === 'string') partes.push(e.message);
+    if (typeof e.details === 'string' && e.details) partes.push(e.details);
+    if (typeof e.hint === 'string' && e.hint) partes.push(`Dica: ${e.hint}`);
+    if (typeof e.code === 'string' && e.code) partes.push(`(code ${e.code})`);
+    if (partes.length) return partes.join(' — ');
+  }
+  return 'Falha ao gravar no banco.';
+}
 import { useSistema } from '@/app/context/SistemaContext';
 import { supabase } from '@/lib/supabase';
 import {
@@ -29,7 +48,9 @@ import { isoNow } from '@/app/utils/date';
 import { reconhecerGuia, type ResultadoReconhecimento } from '@/app/utils/reconhecerGuia';
 
 function newId(): UUID {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  // Sempre prefixa com `temp_` para que upsertObrigacao detecte como nova e
+  // entre no caminho de INSERT. Sem o prefixo (UUID puro do crypto.randomUUID)
+  // o upsert acha que é update e tenta gravar num id inexistente → PGRST116.
   return `temp_${Math.random().toString(16).slice(2)}_${Date.now()}`;
 }
 
@@ -77,6 +98,24 @@ const ESFERA_BADGE: Record<ObrigacaoEsfera, string> = {
   interna: 'bg-slate-50 text-slate-700 border-slate-200',
 };
 
+const MESES_LABELS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+function rotuloOffset(offset: number): string {
+  if (offset === 0) return 'mesmo mês';
+  if (offset === -1) return 'mês anterior';
+  if (offset === 1) return 'próximo mês';
+  if (offset < 0) return `${Math.abs(offset)} meses atrás`;
+  return `${offset} meses à frente`;
+}
+
+function descreverOffset(offset: number): string {
+  const hoje = new Date();
+  const alvo = new Date(hoje.getFullYear(), hoje.getMonth() + offset, 1);
+  const exemplo = `${MESES_LABELS[alvo.getMonth()]}/${alvo.getFullYear()}`;
+  const base = `Competência = mês de geração ${offset >= 0 ? '+' : ''}${offset}.`;
+  return `${base} Gerando hoje, a competência seria ${exemplo}.`;
+}
+
 function obrigacaoVazia(): Obrigacao {
   const now = isoNow();
   return {
@@ -108,7 +147,8 @@ function obrigacaoVazia(): Obrigacao {
 }
 
 export default function ObrigacoesPage() {
-  const { isGhost, mostrarAlerta, empresas } = useSistema();
+  const { mostrarAlerta, empresas, currentUser } = useSistema();
+  const podeAcessar = currentUser?.email?.toLowerCase() === OBRIGACOES_ALLOWED_EMAIL;
   const [obrigacoes, setObrigacoes] = useState<Obrigacao[]>([]);
   const [carregando, setCarregando] = useState(true);
 
@@ -151,7 +191,7 @@ export default function ObrigacoesPage() {
     }
   }, []);
 
-  useEffect(() => { if (isGhost) carregarGmailStatus(); }, [isGhost, carregarGmailStatus]);
+  useEffect(() => { if (podeAcessar) carregarGmailStatus(); }, [podeAcessar, carregarGmailStatus]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -218,7 +258,7 @@ export default function ObrigacoesPage() {
     }
   }, [mostrarAlerta]);
 
-  if (!isGhost) {
+  if (!podeAcessar) {
     return (
       <div className="rounded-2xl bg-white p-6 sm:p-8 shadow-sm border border-gray-100 text-center">
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-500">
@@ -226,7 +266,7 @@ export default function ObrigacoesPage() {
         </div>
         <div className="text-lg font-bold text-gray-900">Acesso restrito</div>
         <div className="mt-1 text-sm text-gray-500">
-          Esta área está em testes e é visível somente para o usuário ghost.
+          Esta área está em testes e é visível somente para a conta autorizada.
         </div>
       </div>
     );
@@ -272,7 +312,7 @@ export default function ObrigacoesPage() {
       mostrarAlerta('Obrigação salva', 'Configuração salva com sucesso.', 'sucesso');
     } catch (err) {
       console.error(err);
-      mostrarAlerta('Erro ao salvar', err instanceof Error ? err.message : 'Falha ao gravar no banco.', 'erro');
+      mostrarAlerta('Erro ao salvar', extrairMensagemErro(err), 'erro');
     }
   };
 
@@ -284,7 +324,7 @@ export default function ObrigacoesPage() {
       mostrarAlerta('Obrigação removida', 'A obrigação foi excluída.', 'sucesso');
     } catch (err) {
       console.error(err);
-      mostrarAlerta('Erro', 'Não foi possível remover.', 'erro');
+      mostrarAlerta('Erro', extrairMensagemErro(err), 'erro');
     }
   };
 
@@ -454,6 +494,13 @@ export default function ObrigacoesPage() {
               <option value="ativo">Só ativas</option>
               <option value="inativo">Só inativas</option>
             </select>
+            <Link
+              href="/obrigacoes/processar"
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-white px-4 py-2.5 font-bold hover:from-violet-700 hover:to-purple-700 shadow-md text-sm"
+            >
+              <Upload size={16} />
+              Anexar guias
+            </Link>
             <button
               onClick={abrirNovo}
               className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 text-white px-4 py-2.5 font-bold hover:from-cyan-700 hover:to-teal-700 shadow-md text-sm"
@@ -553,6 +600,16 @@ export default function ObrigacoesPage() {
                   <div className="flex items-center gap-1.5 text-gray-600">
                     <Target size={12} className="text-gray-400" />
                     <span>Meta: dia <strong>{o.diaDataMeta}</strong></span>
+                  </div>
+                  <div
+                    className="flex items-center gap-1.5 text-gray-600"
+                    title={descreverOffset(o.competenciaOffset)}
+                  >
+                    <Calendar size={12} className="text-gray-400" />
+                    <span>
+                      Comp: <strong>{o.competenciaOffset > 0 ? `+${o.competenciaOffset}` : o.competenciaOffset}</strong>
+                      <span className="text-gray-400 ml-1">({rotuloOffset(o.competenciaOffset)})</span>
+                    </span>
                   </div>
                   <div className="flex items-center gap-1.5 text-gray-600">
                     <Award size={12} className="text-gray-400" />

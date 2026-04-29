@@ -19,6 +19,12 @@ export interface ItemProcessamento {
   empresaIdManual?: string | null;
   obrigacaoIdManual?: string | null;
   competenciaManual?: string | null;
+  // pós-importação
+  arquivoPath?: string;
+  emailEnviado?: boolean;
+  emailEnviando?: boolean;
+  emailErro?: string;
+  tarefaConcluida?: boolean;
 }
 
 export async function processarPdfArquivo(
