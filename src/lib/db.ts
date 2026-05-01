@@ -566,7 +566,12 @@ export async function deleteUsuario(id: UUID) {
     },
   });
   const json = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(json?.error ?? 'Falha ao remover usuário');
+  if (!resp.ok) {
+    const baseMsg = json?.error ?? 'Falha ao remover usuário';
+    const detail = json?.detail ? ` — ${json.detail}` : '';
+    const code = json?.code ? ` [${json.code}]` : '';
+    throw new Error(`${baseMsg}${detail}${code}`);
+  }
 }
 
 // ─── Serviços ───────────────────────────────────────────────

@@ -199,15 +199,28 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
     return NextResponse.json({ error: 'Não foi possível remover o usuário.' }, { status: 403 });
   }
 
-  // Tenta deletar do Auth (ignora erro se o user só existe na tabela e não no Auth)
-  const { error: authError } = await admin.auth.admin.deleteUser(id);
-  if (authError && !authError.message.toLowerCase().includes('not found')) {
-    return NextResponse.json({ error: 'Não foi possível remover o usuário.' }, { status: 400 });
+  // Remove o perfil da tabela usuarios primeiro — se falhar (ex: FK), o Auth permanece intacto
+  const { error: dbError } = await admin.from('usuarios').delete().eq('id', id);
+  if (dbError) {
+    console.error('[admin/users DELETE] Falha ao remover perfil:', {
+      id,
+      code: dbError.code,
+      message: dbError.message,
+      details: dbError.details,
+      hint: dbError.hint,
+    });
+    return NextResponse.json(
+      { error: 'Não foi possível remover o perfil.', detail: dbError.message, code: dbError.code },
+      { status: 400 }
+    );
   }
 
-  // Remove o perfil da tabela usuarios
-  const { error: dbError } = await admin.from('usuarios').delete().eq('id', id);
-  if (dbError) return NextResponse.json({ error: 'Não foi possível remover o perfil.' }, { status: 400 });
+  // Só depois remove do Auth (ignora erro se o user só existe na tabela e não no Auth)
+  const { error: authError } = await admin.auth.admin.deleteUser(id);
+  if (authError && !authError.message.toLowerCase().includes('not found')) {
+    console.error('[admin/users DELETE] Falha ao remover do Auth:', { id, message: authError.message });
+    return NextResponse.json({ error: 'Não foi possível remover o usuário.', detail: authError.message }, { status: 400 });
+  }
 
   // Audit log
   await admin.from('logs').insert({
