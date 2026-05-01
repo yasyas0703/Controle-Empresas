@@ -16,13 +16,26 @@ import {
 } from '@/lib/db';
 import type { ContaBancaria, UUID } from '@/app/types';
 import { TRIBUTACAO_LABELS } from '@/app/types';
-import { getIniciaisMapPorAno, TAG_ARQUIVADA, TAG_DESLIGADA_HISTORICA, type ParsedImportacao } from './parser';
+import { getIniciaisMapPorAno, TAG_DESLIGADA_HISTORICA, type ParsedImportacao } from './parser';
 import { parseXlsxImportacao } from './parserXlsx';
 import { inspecionarXlsx } from './debugXlsx';
 
+type EmpresaCriadaLog = {
+  codigoOriginal: string;
+  codigoSintetico: string;
+  nome: string;
+  motivo: 'codigo_reciclado' | 'nao_encontrada';
+  similaridade: number;
+  nomeEmpresaAtualNoSistema: string;
+};
+
 type EtapaResultado = {
   tributacoes: { sucesso: number; falhas: Array<{ codigo: string; erro: string }> };
-  arquivadasCriadas: { sucesso: number; falhas: Array<{ codigo: string; nome: string; erro: string }> };
+  arquivadasCriadas: {
+    sucesso: number;
+    falhas: Array<{ codigo: string; nome: string; erro: string }>;
+    criadas: EmpresaCriadaLog[];
+  };
   bancosCriados: { sucesso: number; falhas: Array<{ codigo: string; banco: string; erro: string }> };
   statuses: { sucesso: number; falhas: Array<{ codigo: string; banco: string; mes: string; erro: string }> };
 };
@@ -41,6 +54,14 @@ export default function ImportarExtratosContabilPage() {
   const [analisado, setAnalisado] = useState<ParsedImportacao | null>(null);
   const [importando, setImportando] = useState(false);
   const [resultado, setResultado] = useState<EtapaResultado | null>(null);
+  // Filtro do preview de "código reciclado": esconde matches com similaridade
+  // muito baixa (provavelmente empresas realmente diferentes) pra focar nas
+  // suspeitas — beirando o threshold de match (0.4).
+  const [minSimReciclada, setMinSimReciclada] = useState(0);
+  // Default: empresas novas viram DESLIGADAS HISTÓRICAS (são clientes
+  // antigos que precisam ficar no controle). Marca pra criar como ATIVAS
+  // se forem clientes novos do ano atual.
+  const [criarComoAtivas, setCriarComoAtivas] = useState(false);
 
   // Carrega contas atuais ao montar.
   // mostrarAlerta NÃO entra nas deps: ela não é memoizada no provider e
@@ -94,12 +115,17 @@ export default function ImportarExtratosContabilPage() {
     setResultado(null);
     setAnalisando(true);
     try {
+      // Refaz o fetch de contas existentes antes de parsear. Sem isso, se o
+      // user limpou contas_bancarias via SQL depois de abrir a página, o
+      // parser usa IDs já deletados → FK violation na hora do upsert do status.
+      const contasFresh = await fetchContasBancarias();
+      setContasExistentes(contasFresh);
       const parsed = await parseXlsxImportacao({
         arquivo: arquivoXlsx,
         ano,
         empresas,
         usuarios,
-        contasExistentes,
+        contasExistentes: contasFresh,
       });
       setAnalisado(parsed);
     } catch (err) {
@@ -119,7 +145,7 @@ export default function ImportarExtratosContabilPage() {
     setImportando(true);
     const out: EtapaResultado = {
       tributacoes: { sucesso: 0, falhas: [] },
-      arquivadasCriadas: { sucesso: 0, falhas: [] },
+      arquivadasCriadas: { sucesso: 0, falhas: [], criadas: [] },
       bancosCriados: { sucesso: 0, falhas: [] },
       statuses: { sucesso: 0, falhas: [] },
     };
@@ -138,26 +164,25 @@ export default function ImportarExtratosContabilPage() {
         }
       }
 
-      // 2) Empresas arquivadas / desligadas (selecionadas) — cadastra como nova empresa.
-      //    motivo=codigo_reciclado: tag arquivada + apelido [ARQ]
-      //    motivo=nao_encontrada:   desligada_em setado (aparece em "Empresas desligadas"),
-      //                             marcada com tag desligada-historica (UI esconde a data
-      //                             pra não confundir com data real de desligamento).
-      const hojeIso = new Date().toISOString().slice(0, 10);
+      // 2) Empresas que não bateram com nenhum cadastro existente.
+      //    Default: criadas como DESLIGADAS HISTÓRICAS (clientes antigos
+      //    que precisam ficar pro controle). Usa código sintético se o
+      //    original já está em uso. Toggle "criarComoAtivas" inverte isso
+      //    pra quando forem clientes novos do ano atual.
       const arqTempKeyParaId = new Map<string, UUID>();
       const arquivadasSelecionadas = analisado.empresasArquivadas.filter((a) => a.selecionada);
+      const hojeIso = new Date().toISOString().slice(0, 10);
       for (const arq of arquivadasSelecionadas) {
-        const ehDesligada = arq.motivo === 'nao_encontrada';
         try {
           const id = await insertEmpresa({
             cadastrada: false,
             codigo: arq.codigoSintetico,
             razao_social: arq.razaoSocial,
-            apelido: ehDesligada ? arq.razaoSocial : `[ARQ] ${arq.razaoSocial}`,
+            apelido: arq.razaoSocial,
             tipoEstabelecimento: '',
             tipoInscricao: '',
             servicos: [],
-            tags: ehDesligada ? [TAG_DESLIGADA_HISTORICA] : [TAG_ARQUIVADA],
+            tags: criarComoAtivas ? [] : [TAG_DESLIGADA_HISTORICA],
             possuiRet: false,
             rets: [],
             vencimentosFiscais: [],
@@ -165,10 +190,18 @@ export default function ImportarExtratosContabilPage() {
             documentos: [],
             observacoes: [],
             tributacao: arq.tributacaoSugerida ?? null,
-            desligada_em: ehDesligada ? hojeIso : null,
+            desligada_em: criarComoAtivas ? null : hojeIso,
           }, []);
           arqTempKeyParaId.set(arq.tempKey, id);
           out.arquivadasCriadas.sucesso++;
+          out.arquivadasCriadas.criadas.push({
+            codigoOriginal: arq.codigoOriginal,
+            codigoSintetico: arq.codigoSintetico,
+            nome: arq.razaoSocial,
+            motivo: arq.motivo,
+            similaridade: arq.similaridade,
+            nomeEmpresaAtualNoSistema: arq.nomeEmpresaAtualNoSistema,
+          });
         } catch (err) {
           out.arquivadasCriadas.falhas.push({
             codigo: arq.codigoSintetico,
@@ -265,6 +298,39 @@ export default function ImportarExtratosContabilPage() {
       // Loga quem ficou sem contexto (banco/empresa anterior falhou de criar)
       if (semContexto > 0) {
         console.warn(`[import] ${semContexto} marcações ignoradas — banco/empresa associada não foi criada.`);
+      }
+
+      // Audit trail no console: lista nominal das empresas que viraram
+      // arquivada/desligada, com a empresa "concorrente" do sistema. Útil
+      // pra revisar depois se algum match veio errado.
+      if (out.arquivadasCriadas.criadas.length > 0) {
+        const recicladas = out.arquivadasCriadas.criadas.filter((c) => c.motivo === 'codigo_reciclado');
+        const desligadas = out.arquivadasCriadas.criadas.filter((c) => c.motivo === 'nao_encontrada');
+        // eslint-disable-next-line no-console
+        console.groupCollapsed(`[import] ${out.arquivadasCriadas.criadas.length} empresa(s) criadas como arquivada/desligada`);
+        if (recicladas.length > 0) {
+          // eslint-disable-next-line no-console
+          console.log(`Código reciclado (criadas como [ARQ] com código sintético): ${recicladas.length}`);
+          // eslint-disable-next-line no-console
+          console.table(recicladas.map((c) => ({
+            'código planilha': c.codigoOriginal,
+            'código novo': c.codigoSintetico,
+            'nome planilha': c.nome,
+            'nome no sistema (mesmo código)': c.nomeEmpresaAtualNoSistema,
+            'similaridade %': Math.round(c.similaridade * 100),
+          })));
+        }
+        if (desligadas.length > 0) {
+          // eslint-disable-next-line no-console
+          console.log(`Não encontradas no sistema (criadas como desligadas históricas): ${desligadas.length}`);
+          // eslint-disable-next-line no-console
+          console.table(desligadas.map((c) => ({
+            'código': c.codigoOriginal,
+            'nome': c.nome,
+          })));
+        }
+        // eslint-disable-next-line no-console
+        console.groupEnd();
       }
 
       setResultado(out);
@@ -436,6 +502,21 @@ export default function ImportarExtratosContabilPage() {
           </div>
         </label>
 
+        <label className="inline-flex items-start gap-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 cursor-pointer hover:bg-orange-100 transition">
+          <input
+            type="checkbox"
+            checked={criarComoAtivas}
+            onChange={(e) => setCriarComoAtivas(e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-orange-600 cursor-pointer shrink-0"
+          />
+          <div className="text-xs">
+            <div className="font-bold text-orange-800">Criar empresas novas como ATIVAS</div>
+            <div className="text-orange-700 mt-0.5">
+              Por padrão, empresas que não existem no sistema são criadas como <strong>desligadas históricas</strong> (clientes antigos pra controle). Marque isso só se forem clientes novos do ano atual que ainda não foram cadastrados.
+            </div>
+          </div>
+        </label>
+
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleAnalisar}
@@ -497,25 +578,49 @@ export default function ImportarExtratosContabilPage() {
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
                   <BlocoStat label="Tributações" valor={analisado.tributacoes.length} cor="emerald" />
-                  <BlocoStat label="Recicladas" valor={recicladas.filter((a) => a.selecionada).length} cor="slate" />
-                  <BlocoStat label="Desligadas" valor={desligadasNovas.filter((a) => a.selecionada).length} cor="orange" />
+                  <BlocoStat label="Novas (cód. existente)" valor={recicladas.filter((a) => a.selecionada).length} cor="slate" />
+                  <BlocoStat label="Novas (cód. inédito)" valor={desligadasNovas.filter((a) => a.selecionada).length} cor="orange" />
                   <BlocoStat label="Bancos novos" valor={analisado.bancosNovos.length} cor="cyan" />
                   <BlocoStat label="Marcações" valor={analisado.statuses.length} cor="blue" />
                   <BlocoStat label="Avisos" valor={analisado.avisos.length} cor="amber" />
                 </div>
 
-                {/* Empresas com código reciclado */}
-                {recicladas.length > 0 && (
+                {/* Empresas a criar com código sintético (código original já está em uso) */}
+                {recicladas.length > 0 && (() => {
+                  const recicladasOrdenadas = [...recicladas].sort((a, b) => b.similaridade - a.similaridade);
+                  const recicladasVisiveis = recicladasOrdenadas.filter((a) => a.similaridade >= minSimReciclada);
+                  const ocultas = recicladasOrdenadas.length - recicladasVisiveis.length;
+                  return (
                   <div className="rounded-xl border border-slate-300 bg-slate-50 p-3">
                     <div className="flex items-center gap-2 font-bold text-xs text-slate-800 mb-2">
                       <Archive size={16} className="text-slate-600" />
-                      {recicladas.length} empresa(s) com código reciclado
+                      {recicladas.length} empresa(s) novas (código já em uso → será sintético)
                     </div>
                     <p className="text-[11px] text-slate-700 mb-3">
-                      Esses códigos hoje pertencem a outra empresa no sistema (provavelmente após exclusão e reaproveitamento). Cada uma será cadastrada como <strong>empresa nova com tag &quot;arquivada&quot;</strong>, com código sintético próprio.
+                      O código da planilha hoje pertence a outra empresa. Cada uma será cadastrada como <strong>{criarComoAtivas ? 'empresa ATIVA' : 'desligada histórica'}</strong> com código sintético próprio (tipo <code className="font-mono bg-slate-200 px-1 rounded">71-A</code>).
+                      <strong className="block mt-1 text-amber-700">⚠ Revise as do topo (similaridade alta) — podem ser a mesma empresa só com nome abreviado. Se for, desmarque e ajuste o cadastro existente depois.</strong>
                     </p>
+
+                    {/* Filtro de similaridade mínima */}
+                    <div className="flex items-center gap-2 mb-3 bg-white rounded-lg p-2 border border-slate-200">
+                      <span className="text-[10px] font-bold text-slate-700 whitespace-nowrap">Esconder matches &lt;</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={40}
+                        step={5}
+                        value={Math.round(minSimReciclada * 100)}
+                        onChange={(e) => setMinSimReciclada(Number(e.target.value) / 100)}
+                        className="flex-1 accent-slate-700"
+                      />
+                      <span className="text-[10px] font-mono font-bold text-slate-800 w-10 text-right">{Math.round(minSimReciclada * 100)}%</span>
+                      {ocultas > 0 && (
+                        <span className="text-[10px] text-slate-500 whitespace-nowrap">({ocultas} ocultas)</span>
+                      )}
+                    </div>
+
                     <ul className="space-y-1.5 max-h-72 overflow-y-auto">
-                      {recicladas.map((a) => (
+                      {recicladasVisiveis.map((a) => (
                         <li
                           key={a.tempKey}
                           className={`rounded-lg border p-2.5 transition ${
@@ -539,6 +644,13 @@ export default function ImportarExtratosContabilPage() {
                               <div className="text-slate-600 mt-0.5">
                                 Hoje o código <strong>{a.codigoOriginal}</strong> aponta para: <em>{a.nomeEmpresaAtualNoSistema || '(sem nome)'}</em> · similaridade {Math.round(a.similaridade * 100)}%
                               </div>
+                              {a.melhorPalpite && (
+                                <div className="text-amber-700 mt-1 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                                  🤔 Pode ser duplicata de: <strong>{a.melhorPalpite.codigo}</strong> {a.melhorPalpite.nome || a.melhorPalpite.apelido}
+                                  {a.melhorPalpite.apelido && a.melhorPalpite.nome && a.melhorPalpite.apelido !== a.melhorPalpite.nome && ` (${a.melhorPalpite.apelido})`}
+                                  <span className="ml-1 text-amber-600 font-bold">{Math.round(a.melhorPalpite.similaridade * 100)}%</span>
+                                </div>
+                              )}
                               {a.tributacaoSugerida && (
                                 <div className="text-slate-700 mt-0.5">Tributação: <strong>{TRIBUTACAO_LABELS[a.tributacaoSugerida]}</strong></div>
                               )}
@@ -548,17 +660,19 @@ export default function ImportarExtratosContabilPage() {
                       ))}
                     </ul>
                   </div>
-                )}
+                  );
+                })()}
 
-                {/* Empresas não encontradas → serão criadas como desligadas */}
+                {/* Empresas com código novo no sistema */}
                 {desligadasNovas.length > 0 && (
                   <div className="rounded-xl border border-orange-300 bg-orange-50 p-3">
                     <div className="flex items-center gap-2 font-bold text-xs text-orange-900 mb-2">
                       <Archive size={16} className="text-orange-700" />
-                      {desligadasNovas.length} empresa(s) não encontrada(s) — serão criadas como desligadas
+                      {desligadasNovas.length} empresa(s) novas — serão criadas como {criarComoAtivas ? 'ATIVAS' : 'DESLIGADAS HISTÓRICAS'}
                     </div>
                     <p className="text-[11px] text-orange-900 mb-3">
-                      Esses códigos não existem no sistema. Cada uma será cadastrada com o <strong>código original</strong> e marcada como <strong>desligada (histórica)</strong> — aparecem em <em>Empresas Desligadas</em> sem data específica, pra não confundir com a data real de desligamento. Os bancos e marcações também são importados.
+                      Esses códigos não existem no sistema e nenhum cadastro com nome similar foi encontrado. Cada uma será cadastrada como <strong>{criarComoAtivas ? 'empresa ATIVA' : 'desligada histórica'}</strong> com o código original. Bancos e marcações também são importados.
+                      {!criarComoAtivas && ' Aparecem em "Empresas Desligadas".'}
                     </p>
                     <ul className="space-y-1.5 max-h-72 overflow-y-auto">
                       {desligadasNovas.map((a) => (
@@ -582,6 +696,13 @@ export default function ImportarExtratosContabilPage() {
                                   código: <strong>{a.codigoOriginal}</strong>
                                 </span>
                               </div>
+                              {a.melhorPalpite && (
+                                <div className="text-amber-700 mt-1 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-[11px]">
+                                  🤔 Pode ser duplicata de: <strong>{a.melhorPalpite.codigo}</strong> {a.melhorPalpite.nome || a.melhorPalpite.apelido}
+                                  {a.melhorPalpite.apelido && a.melhorPalpite.nome && a.melhorPalpite.apelido !== a.melhorPalpite.nome && ` (${a.melhorPalpite.apelido})`}
+                                  <span className="ml-1 text-amber-600 font-bold">{Math.round(a.melhorPalpite.similaridade * 100)}%</span>
+                                </div>
+                              )}
                               {a.tributacaoSugerida && (
                                 <div className="text-orange-800 mt-0.5">Tributação sugerida: <strong>{TRIBUTACAO_LABELS[a.tributacaoSugerida]}</strong></div>
                               )}
@@ -691,6 +812,71 @@ export default function ImportarExtratosContabilPage() {
             <BlocoResultado titulo="Bancos criados" sucesso={resultado.bancosCriados.sucesso} falhas={resultado.bancosCriados.falhas.length} />
             <BlocoResultado titulo="Marcações" sucesso={resultado.statuses.sucesso} falhas={resultado.statuses.falhas.length} />
           </div>
+
+          {/* Lista nominal das arquivadas/desligadas criadas — pra você
+              revisar se algum match veio errado e arrumar manualmente. */}
+          {resultado.arquivadasCriadas.criadas.length > 0 && (() => {
+            const recicladas = resultado.arquivadasCriadas.criadas
+              .filter((c) => c.motivo === 'codigo_reciclado')
+              .sort((a, b) => b.similaridade - a.similaridade);
+            const desligadas = resultado.arquivadasCriadas.criadas
+              .filter((c) => c.motivo === 'nao_encontrada');
+            return (
+              <details className="rounded-xl bg-amber-50 border border-amber-200 p-3" open>
+                <summary className="cursor-pointer text-xs font-bold text-amber-900 flex items-center gap-2">
+                  <AlertTriangle size={14} className="text-amber-700" />
+                  Empresas novas criadas como ATIVAS — revisar ({resultado.arquivadasCriadas.criadas.length})
+                </summary>
+                <p className="text-[11px] text-amber-800 mt-2">
+                  Todas foram criadas como <strong>ATIVAS</strong> (sem tag arquivada/desligada). Se alguma já estiver desligada de fato, abra o cadastro e marque manualmente. Se for duplicata de empresa que já existe (similaridade alta), pode apagar a duplicata.
+                </p>
+
+                {recicladas.length > 0 && (
+                  <div className="mt-3">
+                    <div className="text-[11px] font-bold text-slate-800 mb-1">
+                      Código já em uso — criadas com código sintético ({recicladas.length})
+                    </div>
+                    <ul className="space-y-1 max-h-72 overflow-y-auto rounded-lg border border-amber-200 bg-white p-2">
+                      {recicladas.map((c, i) => (
+                        <li key={`r${i}`} className="text-[11px] font-mono">
+                          <span className="font-bold text-slate-900">{c.codigoOriginal}</span>
+                          <span className="text-slate-400"> → </span>
+                          <span className="text-cyan-700 font-bold">{c.codigoSintetico}</span>
+                          <span className="text-slate-400"> · </span>
+                          <span className="text-slate-900">{c.nome}</span>
+                          <span className="text-slate-500"> (vs sistema: <em>{c.nomeEmpresaAtualNoSistema || '—'}</em>)</span>
+                          <span className={`ml-1 font-bold ${c.similaridade >= 0.3 ? 'text-red-700' : 'text-slate-500'}`}>
+                            {Math.round(c.similaridade * 100)}%
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {desligadas.length > 0 && (
+                  <div className="mt-3">
+                    <div className="text-[11px] font-bold text-orange-900 mb-1">
+                      Código inédito — criadas como ATIVAS com código original ({desligadas.length})
+                    </div>
+                    <ul className="space-y-1 max-h-72 overflow-y-auto rounded-lg border border-orange-200 bg-white p-2">
+                      {desligadas.map((c, i) => (
+                        <li key={`d${i}`} className="text-[11px] font-mono">
+                          <span className="font-bold text-slate-900">{c.codigoOriginal}</span>
+                          <span className="text-slate-400"> · </span>
+                          <span className="text-slate-900">{c.nome}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <p className="text-[10px] text-amber-700 mt-2">
+                  💡 Tem o mesmo log no console do navegador (F12 → Console) com tabelas filtráveis.
+                </p>
+              </details>
+            );
+          })()}
           {(resultado.tributacoes.falhas.length + resultado.arquivadasCriadas.falhas.length + resultado.bancosCriados.falhas.length + resultado.statuses.falhas.length) > 0 && (
             <details className="rounded-xl bg-red-50 border border-red-200 p-3">
               <summary className="cursor-pointer text-xs font-bold text-red-800">Ver erros detalhados</summary>

@@ -1683,6 +1683,9 @@ type ChecklistFiscalRow = {
   concluido_por_nome: string | null;
   concluido_em: string | null;
   observacao: string | null;
+  arquivo_url: string | null;
+  arquivo_nome: string | null;
+  arquivo_historico: unknown;
   criado_em: string;
   atualizado_em: string;
 };
@@ -1698,6 +1701,11 @@ function toChecklistItem(row: ChecklistFiscalRow): ChecklistFiscalItem {
     concluidoPorNome: row.concluido_por_nome ?? undefined,
     concluidoEm: row.concluido_em ? toIso(row.concluido_em) : undefined,
     observacao: row.observacao ?? undefined,
+    arquivoUrl: row.arquivo_url ?? undefined,
+    arquivoNome: row.arquivo_nome ?? undefined,
+    arquivoHistorico: normalizarHistoricoVencimento(
+      Array.isArray(row.arquivo_historico) ? (row.arquivo_historico as HistoricoVencimentoItem[]) : []
+    ),
     criadoEm: toIso(row.criado_em),
     atualizadoEm: toIso(row.atualizado_em),
   };
@@ -1791,6 +1799,216 @@ export async function updateChecklistObservacao(
     .single();
   if (error) throw error;
   return toChecklistItem(data as ChecklistFiscalRow);
+}
+
+// ─── Anexo do checklist (guia/comprovante por mês) ──────────────
+const CHECKLIST_ARQUIVO_MAX_SIZE = 10 * 1024 * 1024;
+const CHECKLIST_ARQUIVO_EXT = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg', 'txt'];
+
+type AutorAcao = { autorId: UUID | null; autorNome?: string };
+
+/** Adiciona um evento ao histórico do anexo, no padrão dos outros históricos do sistema. */
+function novoEventoArquivo(
+  tipo: 'anexado' | 'substituido' | 'removido',
+  nomeArquivo: string | undefined,
+  autor: AutorAcao,
+): HistoricoVencimentoItem {
+  const titulos: Record<typeof tipo, string> = {
+    anexado: 'Arquivo anexado',
+    substituido: 'Arquivo substituído',
+    removido: 'Arquivo removido',
+  };
+  return {
+    id: newUUID(),
+    titulo: titulos[tipo],
+    descricao: nomeArquivo ? `Arquivo: ${nomeArquivo}` : undefined,
+    autorId: autor.autorId ?? null,
+    autorNome: autor.autorNome?.trim() || undefined,
+    criadoEm: new Date().toISOString(),
+  };
+}
+
+/**
+ * Lê o item atual (se existir) pra recuperar o histórico anterior antes do upsert.
+ * Sem isso, cada upsert apagaria os eventos antigos.
+ */
+async function lerChecklistAtual(
+  empresaId: UUID,
+  mes: string,
+  obrigacao: string,
+): Promise<ChecklistFiscalRow | null> {
+  const { data, error } = await supabase
+    .from('checklist_fiscal')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .eq('mes', mes)
+    .eq('obrigacao', obrigacao)
+    .maybeSingle();
+  if (error) throw error;
+  return (data ?? null) as ChecklistFiscalRow | null;
+}
+
+/**
+ * Detecta o erro "column 'arquivo_historico' does not exist" — acontece quando
+ * a migration `supabase-schema-checklist-fiscal-arquivo.sql` ainda não foi
+ * rodada no Supabase. Permite fazer fallback sem quebrar o fluxo.
+ */
+function isErroColunaHistoricoFaltando(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const msg = String((err as any).message ?? '').toLowerCase();
+  return msg.includes('arquivo_historico') || (msg.includes('column') && msg.includes('does not exist'));
+}
+
+export async function uploadChecklistArquivo(
+  empresaId: UUID,
+  mes: string,
+  obrigacao: string,
+  file: File,
+  autor: AutorAcao,
+): Promise<{ arquivoUrl: string; arquivoNome: string; item: ChecklistFiscalItem }> {
+  if (file.size > CHECKLIST_ARQUIVO_MAX_SIZE) {
+    throw new Error('O arquivo excede o limite de 10MB.');
+  }
+  const ext = (file.name.split('.').pop() ?? '').toLowerCase();
+  if (!CHECKLIST_ARQUIVO_EXT.includes(ext)) {
+    throw new Error(`Tipo de arquivo não permitido (.${ext}). Permitidos: ${CHECKLIST_ARQUIVO_EXT.join(', ')}`);
+  }
+
+  // Slug seguro pra obrigacao (sem barra, acento etc.)
+  const obrSlug = obrigacao.toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'obrigacao';
+
+  const path = `empresas/${empresaId}/checklist/${mes}/${obrSlug}-${newUUID()}.${ext}`;
+  const { error: upErr } = await supabase.storage.from('documentos').upload(path, file, { upsert: false });
+  if (upErr) {
+    if (upErr.message?.includes('Bucket not found')) {
+      throw new Error('Bucket "documentos" não existe no Supabase Storage.');
+    }
+    throw upErr;
+  }
+
+  // Busca histórico anterior + arquivo antigo (pra apagar do storage e marcar substituição)
+  const atual = await lerChecklistAtual(empresaId, mes, obrigacao);
+  const historicoAnterior = normalizarHistoricoVencimento(
+    Array.isArray(atual?.arquivo_historico) ? (atual!.arquivo_historico as HistoricoVencimentoItem[]) : []
+  );
+  const arquivoAntigo = atual?.arquivo_url ?? null;
+  const tipoEvento: 'anexado' | 'substituido' = arquivoAntigo ? 'substituido' : 'anexado';
+  const historicoNovo = [novoEventoArquivo(tipoEvento, file.name, autor), ...historicoAnterior];
+
+  const now = new Date().toISOString();
+  const payloadCompleto = {
+    empresa_id: empresaId,
+    mes,
+    obrigacao,
+    arquivo_url: path,
+    arquivo_nome: file.name,
+    arquivo_historico: historicoNovo,
+    atualizado_em: now,
+  };
+
+  let { data, error } = await supabase
+    .from('checklist_fiscal')
+    .upsert(payloadCompleto, { onConflict: 'empresa_id,mes,obrigacao' })
+    .select()
+    .single();
+
+  // Fallback: se a migration do `arquivo_historico` ainda não rodou, refaz
+  // o upsert sem a coluna pra usuária não ficar travada. Mostra warning.
+  if (error && isErroColunaHistoricoFaltando(error)) {
+    console.warn(
+      '[checklist] Coluna arquivo_historico não existe — rode a migration ' +
+      'supabase-schema-checklist-fiscal-arquivo.sql. Salvando sem histórico.'
+    );
+    const { arquivo_historico: _omit, ...semHistorico } = payloadCompleto;
+    void _omit;
+    const retry = await supabase
+      .from('checklist_fiscal')
+      .upsert(semHistorico, { onConflict: 'empresa_id,mes,obrigacao' })
+      .select()
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error) {
+    // Se falhar de salvar no banco, tenta limpar o arquivo pra não ficar orfão
+    await supabase.storage.from('documentos').remove([path]).catch(() => undefined);
+    throw error;
+  }
+
+  // Após upsert OK, apaga o arquivo antigo do storage (se houver)
+  if (arquivoAntigo) {
+    await supabase.storage.from('documentos').remove([arquivoAntigo]).catch(() => undefined);
+  }
+
+  return {
+    arquivoUrl: path,
+    arquivoNome: file.name,
+    item: toChecklistItem(data as ChecklistFiscalRow),
+  };
+}
+
+export async function removeChecklistArquivo(
+  empresaId: UUID,
+  mes: string,
+  obrigacao: string,
+  arquivoUrl: string,
+  autor: AutorAcao,
+): Promise<ChecklistFiscalItem> {
+  // Lê histórico atual e nome do arquivo (pra registrar no evento)
+  const atual = await lerChecklistAtual(empresaId, mes, obrigacao);
+  const historicoAnterior = normalizarHistoricoVencimento(
+    Array.isArray(atual?.arquivo_historico) ? (atual!.arquivo_historico as HistoricoVencimentoItem[]) : []
+  );
+  const nomeArquivo = atual?.arquivo_nome ?? undefined;
+  const historicoNovo = [novoEventoArquivo('removido', nomeArquivo, autor), ...historicoAnterior];
+
+  // Tenta apagar o arquivo do storage (sem falhar se não estiver lá)
+  await supabase.storage.from('documentos').remove([arquivoUrl]).catch(() => undefined);
+
+  const now = new Date().toISOString();
+  const payloadCompleto = {
+    empresa_id: empresaId,
+    mes,
+    obrigacao,
+    arquivo_url: null,
+    arquivo_nome: null,
+    arquivo_historico: historicoNovo,
+    atualizado_em: now,
+  };
+
+  let { data, error } = await supabase
+    .from('checklist_fiscal')
+    .upsert(payloadCompleto, { onConflict: 'empresa_id,mes,obrigacao' })
+    .select()
+    .single();
+
+  // Fallback: migration do arquivo_historico ainda não rodou
+  if (error && isErroColunaHistoricoFaltando(error)) {
+    console.warn(
+      '[checklist] Coluna arquivo_historico não existe — rode a migration ' +
+      'supabase-schema-checklist-fiscal-arquivo.sql. Removendo sem histórico.'
+    );
+    const { arquivo_historico: _omit, ...semHistorico } = payloadCompleto;
+    void _omit;
+    const retry = await supabase
+      .from('checklist_fiscal')
+      .upsert(semHistorico, { onConflict: 'empresa_id,mes,obrigacao' })
+      .select()
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error) throw error;
+  return toChecklistItem(data as ChecklistFiscalRow);
+}
+
+export async function getChecklistArquivoSignedUrl(arquivoUrl: string): Promise<string> {
+  return getDocumentoSignedUrl(arquivoUrl);
 }
 
 // ─── Controle Contábil — Extratos Bancários ─────────────────

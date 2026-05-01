@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ListChecks, Search, XCircle, Filter, Users, ChevronLeft, ChevronRight,
   Check, Calendar, AlertTriangle, TrendingUp, Award, Download, Clock,
-  MessageSquare, History, User as UserIcon, Sparkles,
+  MessageSquare, History, User as UserIcon, Sparkles, Paperclip, Upload, Trash2, Eye, Loader2,
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import type { ChecklistFiscalItem, Empresa, UUID, Usuario } from '@/app/types';
@@ -12,6 +12,7 @@ import { VENCIMENTOS_FISCAIS_NOMES } from '@/app/types';
 import * as db from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { sortByPtBr } from '@/lib/sort';
+import { obrigacaoAplicaParaEmpresa } from '@/app/utils/regrasVencimentosFiscais';
 import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
 
 type ChecklistKey = string; // `${empresaId}|${obrigacao}`
@@ -74,6 +75,12 @@ export default function ChecklistFiscalPage() {
   const [histTarget, setHistTarget] = useState<{ empresa: Empresa; obrigacao: string } | null>(null);
   const [histItems, setHistItems] = useState<ChecklistFiscalItem[]>([]);
   const [histLoading, setHistLoading] = useState(false);
+
+  const [arqTarget, setArqTarget] = useState<{ empresa: Empresa; obrigacao: string } | null>(null);
+  const [arqUploading, setArqUploading] = useState(false);
+  const [arqLoadingAcao, setArqLoadingAcao] = useState<'view' | 'download' | 'open' | null>(null);
+  const [arqPreview, setArqPreview] = useState<boolean>(false);
+  const [arqSignedUrl, setArqSignedUrl] = useState<string | null>(null);
 
   const fiscalDept = useMemo(
     () => departamentos.find((d) => d.nome.trim().toLowerCase() === 'fiscal')
@@ -257,6 +264,137 @@ export default function ChecklistFiscalPage() {
     }
   };
 
+  const abrirArquivoTarget = (empresa: Empresa, obrigacao: string) => {
+    setArqTarget({ empresa, obrigacao });
+    setArqPreview(false);
+    setArqSignedUrl(null);
+  };
+
+  const fazerUploadArquivo = async (file: File) => {
+    if (!arqTarget) return;
+    setArqUploading(true);
+    try {
+      const result = await db.uploadChecklistArquivo(
+        arqTarget.empresa.id,
+        mes,
+        arqTarget.obrigacao,
+        file,
+        { autorId: currentUserId, autorNome: currentUser?.nome },
+      );
+      const key = buildKey(arqTarget.empresa.id, arqTarget.obrigacao);
+      setItems((prev) => {
+        const next = new Map(prev);
+        next.set(key, result.item);
+        return next;
+      });
+      // Reseta preview/url do arquivo anterior
+      setArqPreview(false);
+      setArqSignedUrl(null);
+      mostrarAlerta('Arquivo anexado', `${result.arquivoNome} foi salvo neste checklist.`, 'sucesso');
+    } catch (err) {
+      console.error(err);
+      const msg = err instanceof Error ? err.message : 'Erro desconhecido';
+      mostrarAlerta('Erro ao anexar', msg, 'erro');
+    } finally {
+      setArqUploading(false);
+    }
+  };
+
+  // Resolve signed URL com cache no state (não reabre em cada clique)
+  const resolverSignedUrl = async (arquivoUrl: string): Promise<string | null> => {
+    if (arqSignedUrl) return arqSignedUrl;
+    try {
+      const url = await db.getChecklistArquivoSignedUrl(arquivoUrl);
+      setArqSignedUrl(url);
+      return url;
+    } catch {
+      // Fallback: tenta usar a URL direta (legado)
+      return arquivoUrl;
+    }
+  };
+
+  const togglePreviewArquivo = async (arquivoUrl: string) => {
+    if (arqPreview) {
+      setArqPreview(false);
+      return;
+    }
+    setArqLoadingAcao('view');
+    try {
+      const url = await resolverSignedUrl(arquivoUrl);
+      if (url) setArqPreview(true);
+    } finally {
+      setArqLoadingAcao(null);
+    }
+  };
+
+  const abrirArquivoNovaAba = async (arquivoUrl: string) => {
+    setArqLoadingAcao('open');
+    try {
+      const url = await resolverSignedUrl(arquivoUrl);
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      console.error(err);
+      mostrarAlerta('Erro', 'Não foi possível abrir o arquivo.', 'erro');
+    } finally {
+      setArqLoadingAcao(null);
+    }
+  };
+
+  const baixarArquivo = async (arquivoUrl: string, fileName: string) => {
+    setArqLoadingAcao('download');
+    try {
+      const url = await resolverSignedUrl(arquivoUrl);
+      if (!url) return;
+      try {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      } catch {
+        // Fallback CORS: abre em nova aba
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+    } finally {
+      setArqLoadingAcao(null);
+    }
+  };
+
+  const removerArquivoChecklist = async () => {
+    if (!arqTarget) return;
+    const key = buildKey(arqTarget.empresa.id, arqTarget.obrigacao);
+    const atual = items.get(key);
+    if (!atual?.arquivoUrl) return;
+    setArqUploading(true);
+    try {
+      const item = await db.removeChecklistArquivo(
+        arqTarget.empresa.id,
+        mes,
+        arqTarget.obrigacao,
+        atual.arquivoUrl,
+        { autorId: currentUserId, autorNome: currentUser?.nome },
+      );
+      setItems((prev) => {
+        const next = new Map(prev);
+        next.set(key, item);
+        return next;
+      });
+      setArqPreview(false);
+      setArqSignedUrl(null);
+      mostrarAlerta('Arquivo removido', 'O anexo foi excluído deste checklist.', 'sucesso');
+    } catch (err) {
+      console.error(err);
+      mostrarAlerta('Erro', 'Não foi possível remover o arquivo.', 'erro');
+    } finally {
+      setArqUploading(false);
+    }
+  };
+
   const abrirHistorico = async (empresa: Empresa, obrigacao: string) => {
     setHistTarget({ empresa, obrigacao });
     setHistItems([]);
@@ -299,12 +437,18 @@ export default function ChecklistFiscalPage() {
       .filter((e) => e.cadastrada !== false)
       .map((empresa) => {
         const respId = getResponsavelFiscal(empresa);
-        const cells: { obrigacao: string; item: ChecklistFiscalItem | undefined }[] = VENCIMENTOS_FISCAIS_NOMES.map((obrigacao) => ({
-          obrigacao,
-          item: items.get(buildKey(empresa.id, obrigacao)),
-        }));
-        const feitas = cells.filter((c) => c.item?.concluido).length;
-        const total = cells.length;
+        const cells: { obrigacao: string; item: ChecklistFiscalItem | undefined; aplica: boolean }[] =
+          VENCIMENTOS_FISCAIS_NOMES.map((obrigacao) => {
+            const aplica = obrigacaoAplicaParaEmpresa(obrigacao, empresa.estado, empresa.cidade);
+            return {
+              obrigacao,
+              aplica,
+              item: aplica ? items.get(buildKey(empresa.id, obrigacao)) : undefined,
+            };
+          });
+        const aplicaveis = cells.filter((c) => c.aplica);
+        const feitas = aplicaveis.filter((c) => c.item?.concluido).length;
+        const total = aplicaveis.length;
         const progresso = total === 0 ? 0 : (feitas / total) * 100;
         return { empresa, respId, cells, feitas, total, progresso };
       })
@@ -345,10 +489,11 @@ export default function ChecklistFiscalPage() {
     const empresasPendentes = linhas.filter((l) => l.feitas === 0).length;
     const empresasParciais = linhas.filter((l) => l.feitas > 0 && l.feitas < l.total).length;
     const progressoGeral = totalCells === 0 ? 0 : (feitasCells / totalCells) * 100;
-    // por obrigação
+    // por obrigação — total considera apenas empresas onde a obrigação se aplica
     const porObrigacao = VENCIMENTOS_FISCAIS_NOMES.map((obr) => {
-      const feitas = linhas.filter((l) => l.cells.find((c) => c.obrigacao === obr)?.item?.concluido).length;
-      const total = linhas.length;
+      const aplicaveis = linhas.filter((l) => l.cells.find((c) => c.obrigacao === obr)?.aplica);
+      const feitas = aplicaveis.filter((l) => l.cells.find((c) => c.obrigacao === obr)?.item?.concluido).length;
+      const total = aplicaveis.length;
       return { obrigacao: obr, feitas, total, pct: total === 0 ? 0 : (feitas / total) * 100 };
     });
     return { totalCells, feitasCells, empresasCompletas, empresasPendentes, empresasParciais, progressoGeral, porObrigacao };
@@ -375,7 +520,7 @@ export default function ChecklistFiscalPage() {
     const header = ['Código', 'Empresa', 'Responsável Fiscal', ...VENCIMENTOS_FISCAIS_NOMES, 'Progresso (%)', 'Feitas/Total'];
     const rows = linhas.map((l) => {
       const resp = l.respId ? (usuarios.find((u) => u.id === l.respId)?.nome ?? '') : '';
-      const cells = l.cells.map((c) => (c.item?.concluido ? 'OK' : ''));
+      const cells = l.cells.map((c) => (!c.aplica ? 'N/A' : c.item?.concluido ? 'OK' : ''));
       return [l.empresa.codigo, l.empresa.razao_social || l.empresa.apelido || '', resp, ...cells, Math.round(l.progresso), `${l.feitas}/${l.total}`];
     });
     const csv = [header, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n');
@@ -753,11 +898,24 @@ export default function ChecklistFiscalPage() {
                           </div>
                         </div>
                       </td>
-                      {l.cells.map(({ obrigacao, item }) => {
+                      {l.cells.map(({ obrigacao, item, aplica }) => {
+                        if (!aplica) {
+                          return (
+                            <td key={obrigacao} className="border-b border-gray-100 p-1 w-[90px] min-w-[90px] max-w-[90px]">
+                              <div
+                                className="rounded-lg border-2 border-dashed border-gray-200 bg-gray-50/60 p-1.5 flex items-center justify-center min-h-[64px]"
+                                title={`${obrigacao} não se aplica a esta empresa (sem regra para o estado/cidade dela).`}
+                              >
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">N/A</span>
+                              </div>
+                            </td>
+                          );
+                        }
                         const key = buildKey(l.empresa.id, obrigacao);
                         const saving = savingKeys.has(key);
                         const feito = !!item?.concluido;
                         const temObs = !!(item?.observacao && item.observacao.trim());
+                        const temArquivo = !!item?.arquivoUrl;
                         const canEdit = canManage || (!!currentUserId && l.respId === currentUserId);
 
                         return (
@@ -804,6 +962,14 @@ export default function ChecklistFiscalPage() {
                                 </button>
                                 <button
                                   type="button"
+                                  onClick={() => abrirArquivoTarget(l.empresa, obrigacao)}
+                                  className={`p-0.5 rounded hover:bg-white transition ${temArquivo ? 'text-amber-600' : 'text-gray-300 hover:text-amber-500'}`}
+                                  title={temArquivo ? `Anexo: ${item?.arquivoNome ?? 'arquivo'}` : 'Anexar guia/comprovante'}
+                                >
+                                  <Paperclip size={11} strokeWidth={temArquivo ? 2.5 : 2} />
+                                </button>
+                                <button
+                                  type="button"
                                   onClick={() => abrirHistorico(l.empresa, obrigacao)}
                                   className="p-0.5 rounded text-gray-300 hover:text-cyan-600 hover:bg-white transition"
                                   title="Ver histórico desta obrigação"
@@ -823,12 +989,20 @@ export default function ChecklistFiscalPage() {
           </div>
         )}
         {!loading && linhas.length > 0 && (
-          <div className="px-3 py-2 bg-gray-50 border-t border-gray-100 text-[11px] text-gray-500 flex items-center justify-between flex-wrap gap-2">
-            <span>Exibindo {linhas.length} empresa(s) • {stats.feitasCells} de {stats.totalCells} marcadas</span>
-            <div className="flex items-center gap-3">
+          <div className="px-3 py-2 bg-gray-50 border-t border-gray-100 text-[11px] text-gray-500 flex items-center justify-between flex-wrap gap-x-3 gap-y-1.5 min-w-0">
+            <div className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0">
+              <span className="whitespace-nowrap">Exibindo {linhas.length} empresa(s)</span>
+              <span className="text-gray-300">•</span>
+              <span className="whitespace-nowrap font-bold text-emerald-700">{stats.feitasCells} de {stats.totalCells} marcadas</span>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
               <span className="inline-flex items-center gap-1">
                 <MessageSquare size={11} className="text-violet-500" />
                 <span>observação</span>
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <Paperclip size={11} className="text-amber-500" />
+                <span>anexo</span>
               </span>
               <span className="inline-flex items-center gap-1">
                 <History size={11} className="text-cyan-500" />
@@ -893,6 +1067,239 @@ export default function ChecklistFiscalPage() {
           </div>
         </div>
       )}
+
+      {/* Modal: Anexar arquivo (guia/comprovante) */}
+      {arqTarget && (() => {
+        const itemAtual = items.get(buildKey(arqTarget.empresa.id, arqTarget.obrigacao));
+        const arquivoUrl = itemAtual?.arquivoUrl;
+        const arquivoNome = itemAtual?.arquivoNome ?? 'arquivo';
+        const temArq = !!arquivoUrl;
+        const arquivoHistorico = itemAtual?.arquivoHistorico ?? [];
+        const temHistArquivo = arquivoHistorico.length > 0;
+        const podeEditar = canManage || (!!currentUserId && (() => {
+          const respId = arqTarget.empresa.responsaveis?.[fiscalDept?.id ?? ''];
+          return respId === currentUserId;
+        })());
+        const fechar = () => {
+          if (arqUploading) return;
+          setArqTarget(null);
+          setArqPreview(false);
+          setArqSignedUrl(null);
+        };
+        return (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+            onMouseDown={(e) => e.currentTarget === e.target && fechar()}
+          >
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+            <div className={`relative w-full ${arqPreview ? 'max-w-4xl' : 'max-w-md'} rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all`}>
+              <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-4 flex items-center justify-between shrink-0">
+                <div className="text-white min-w-0">
+                  <div className="text-[10px] font-bold uppercase tracking-wider opacity-90">Anexo • {monthLabel(mes)}</div>
+                  <div className="text-sm font-bold truncate">{arqTarget.empresa.codigo} — {arqTarget.obrigacao}</div>
+                </div>
+                <button
+                  onClick={fechar}
+                  className="rounded-lg p-2 bg-white/20 hover:bg-white/30 text-white transition shrink-0"
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-3 overflow-y-auto">
+                {temArq && arquivoUrl ? (
+                  <>
+                    {/* Card com info + botões de ação (padrão dos outros modais) */}
+                    <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-3">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="h-10 w-10 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0">
+                          <Paperclip size={18} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-bold text-amber-900 truncate" title={arquivoNome}>
+                            {arquivoNome}
+                          </div>
+                          <div className="text-[10px] text-amber-700">Anexado neste checklist mensal</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          onClick={() => void togglePreviewArquivo(arquivoUrl)}
+                          disabled={arqLoadingAcao !== null}
+                          className={`rounded-xl border p-2 hover:bg-orange-100 transition ${arqPreview ? 'bg-orange-200 border-orange-400' : 'bg-white border-orange-200'}`}
+                          title={arqPreview ? 'Fechar visualização' : 'Visualizar arquivo'}
+                        >
+                          {arqLoadingAcao === 'view' ? (
+                            <Loader2 className="text-orange-600 animate-spin" size={16} />
+                          ) : (
+                            <Eye className="text-orange-600" size={16} />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => void abrirArquivoNovaAba(arquivoUrl)}
+                          disabled={arqLoadingAcao !== null}
+                          className="rounded-xl border border-orange-200 bg-white p-2 hover:bg-orange-100 transition"
+                          title="Abrir em nova aba"
+                        >
+                          {arqLoadingAcao === 'open' ? (
+                            <Loader2 className="text-orange-600 animate-spin" size={16} />
+                          ) : (
+                            <Paperclip className="text-orange-600" size={16} />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => void baixarArquivo(arquivoUrl, arquivoNome)}
+                          disabled={arqLoadingAcao !== null}
+                          className="rounded-xl border border-blue-200 bg-white p-2 hover:bg-blue-50 transition"
+                          title="Baixar arquivo"
+                        >
+                          {arqLoadingAcao === 'download' ? (
+                            <Loader2 className="text-blue-600 animate-spin" size={16} />
+                          ) : (
+                            <Download className="text-blue-600" size={16} />
+                          )}
+                        </button>
+                        {podeEditar && (
+                          <button
+                            onClick={removerArquivoChecklist}
+                            disabled={arqUploading}
+                            className="rounded-xl border border-red-200 bg-white p-2 hover:bg-red-50 transition"
+                            title="Excluir anexo"
+                          >
+                            {arqUploading ? (
+                              <Loader2 className="text-red-500 animate-spin" size={16} />
+                            ) : (
+                              <Trash2 className="text-red-500" size={16} />
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Preview iframe inline (segue o padrão do ModalDetalhesEmpresa) */}
+                    {arqPreview && arqSignedUrl && (
+                      <div className="rounded-xl border border-orange-200 bg-orange-50/50 overflow-hidden" style={{ height: 480 }}>
+                        <iframe
+                          src={arqSignedUrl}
+                          className="w-full h-full border-0"
+                          title={`Preview: ${arquivoNome}`}
+                        />
+                      </div>
+                    )}
+
+                    {/* Substituir arquivo */}
+                    {podeEditar && (
+                      <label className="block">
+                        <input
+                          type="file"
+                          accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
+                          className="hidden"
+                          disabled={arqUploading}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) void fazerUploadArquivo(f);
+                            e.target.value = '';
+                          }}
+                        />
+                        <div className={`rounded-xl border-2 border-dashed border-amber-300 bg-amber-50/50 px-4 py-3 text-center text-xs font-bold cursor-pointer transition ${arqUploading ? 'opacity-50 cursor-wait' : 'hover:bg-amber-100'} text-amber-700`}>
+                          {arqUploading ? 'Enviando...' : 'Substituir arquivo'}
+                        </div>
+                      </label>
+                    )}
+                  </>
+                ) : podeEditar ? (
+                  <label className="block cursor-pointer">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
+                      className="hidden"
+                      disabled={arqUploading}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void fazerUploadArquivo(f);
+                        e.target.value = '';
+                      }}
+                    />
+                    <div className={`rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/50 p-8 text-center transition ${arqUploading ? 'opacity-50 cursor-wait' : 'hover:bg-amber-100'}`}>
+                      {arqUploading ? (
+                        <Loader2 size={32} className="mx-auto mb-2 text-amber-500 animate-spin" />
+                      ) : (
+                        <Upload size={32} className="mx-auto mb-2 text-amber-500" />
+                      )}
+                      <div className="text-sm font-bold text-amber-800">
+                        {arqUploading ? 'Enviando arquivo...' : 'Clique para anexar guia/comprovante'}
+                      </div>
+                      <div className="text-[11px] text-amber-700 mt-1">
+                        PDF, DOC, XLS, PNG, JPG · até 10MB
+                      </div>
+                    </div>
+                  </label>
+                ) : (
+                  <div className="rounded-xl bg-gray-50 border border-gray-200 p-6 text-center text-sm text-gray-500">
+                    Nenhum arquivo anexado.<br />
+                    <span className="text-[11px]">Apenas o responsável fiscal ou gerente pode anexar.</span>
+                  </div>
+                )}
+
+                {/* Histórico de anexos (anexar / substituir / remover) */}
+                {temHistArquivo && (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-3">
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-2">
+                      <History size={12} className="text-gray-500" />
+                      Histórico do anexo
+                      <span className="ml-auto rounded-full bg-gray-200 px-1.5 py-0.5 text-[9px] font-black text-gray-700">
+                        {arquivoHistorico.length}
+                      </span>
+                    </div>
+                    <ol className="space-y-1.5">
+                      {arquivoHistorico.map((ev) => {
+                        const isAnexado = ev.titulo === 'Arquivo anexado';
+                        const isSubstituido = ev.titulo === 'Arquivo substituído';
+                        const isRemovido = ev.titulo === 'Arquivo removido';
+                        const cor = isRemovido
+                          ? { bg: 'bg-red-50', border: 'border-red-200', txt: 'text-red-700', dot: 'bg-red-500' }
+                          : isSubstituido
+                            ? { bg: 'bg-blue-50', border: 'border-blue-200', txt: 'text-blue-700', dot: 'bg-blue-500' }
+                            : { bg: 'bg-emerald-50', border: 'border-emerald-200', txt: 'text-emerald-700', dot: 'bg-emerald-500' };
+                        const dataFmt = ev.criadoEm
+                          ? new Date(ev.criadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                          : '';
+                        return (
+                          <li key={ev.id} className={`rounded-lg border ${cor.border} ${cor.bg} px-2.5 py-1.5`}>
+                            <div className="flex items-start gap-2">
+                              <span className={`mt-1 h-2 w-2 rounded-full shrink-0 ${cor.dot}`} />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                  <span className={`text-[11px] font-bold ${cor.txt}`}>
+                                    {isAnexado && '+ Arquivo anexado'}
+                                    {isSubstituido && '↻ Arquivo substituído'}
+                                    {isRemovido && '× Arquivo removido'}
+                                  </span>
+                                  <span className="text-[10px] text-gray-500 whitespace-nowrap">{dataFmt}</span>
+                                </div>
+                                {ev.autorNome && (
+                                  <div className="text-[10px] text-gray-600">
+                                    por <span className="font-semibold">{ev.autorNome}</span>
+                                  </div>
+                                )}
+                                {ev.descricao && (
+                                  <div className="text-[10px] text-gray-500 truncate" title={ev.descricao}>
+                                    {ev.descricao}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal: Histórico */}
       {histTarget && (

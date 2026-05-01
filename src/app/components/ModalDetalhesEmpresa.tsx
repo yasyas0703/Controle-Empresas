@@ -623,7 +623,7 @@ export default function ModalDetalhesEmpresa({
             {podeVerVencimentosDe('fiscal') && (
             <Section title="Vencimentos Fiscais" tone="red">
               {(() => {
-                const fiscais = garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado);
+                const fiscais = garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado, empresa.cidade);
                 return (
                   <>
                     <div className="mb-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">

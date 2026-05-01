@@ -781,7 +781,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     if (!state.currentUserId || !canManage) return;
 
     const pendentes = state.empresas.flatMap((empresa) =>
-      garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado).flatMap((fiscal) => {
+      garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado, empresa.cidade).flatMap((fiscal) => {
         const alerta = buildFiscalAlertNotification(empresa, fiscal);
         if (!alerta) return [];
 

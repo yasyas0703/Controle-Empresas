@@ -90,12 +90,15 @@ export const VENCIMENTOS_FISCAIS_NOMES = [
   'GIA-ST/DIFAL',
   'ICMS-ST/DIFAL',
   'ISS - PRESTAÇÃO DE SERVIÇOS',
+  'ISS - SERVIÇOS TOMADOS',
   'REINF',
   'DARF-SERVIÇOS TOMADOS',
   'PIS/COFINS',
   'SPED CONTRIBUIÇÕES',
   'CSLL/IRPJ',
   'DIFERENCIAL DE ALIQUOTA',
+  'DAPI',
+  'DIME',
 ] as const;
 
 export type VencimentoFiscalNome = (typeof VENCIMENTOS_FISCAIS_NOMES)[number];
@@ -110,6 +113,9 @@ export interface ChecklistFiscalItem {
   concluidoPorNome?: string;
   concluidoEm?: string; // ISO
   observacao?: string;
+  arquivoUrl?: string;   // caminho no Storage (bucket "documentos")
+  arquivoNome?: string;  // nome original do arquivo
+  arquivoHistorico?: HistoricoVencimentoItem[]; // eventos: anexar / substituir / remover
   criadoEm: string;
   atualizadoEm: string;
 }

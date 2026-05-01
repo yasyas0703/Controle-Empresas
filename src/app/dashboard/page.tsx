@@ -176,7 +176,7 @@ export default function DashboardPage() {
           mostrarAlerta('Empresa nao encontrada', 'Nao foi possivel localizar a empresa desse vencimento fiscal.', 'erro');
           return;
         }
-        const fiscaisAtuais = garantirVencimentosFiscaisComRegras(emp.vencimentosFiscais, emp.estado);
+        const fiscaisAtuais = garantirVencimentosFiscaisComRegras(emp.vencimentosFiscais, emp.estado, emp.cidade);
         const vencimentosFiscais = fiscaisAtuais.map((f) =>
           f.id === historicoModal.itemId
             ? { ...f, tagVencimento: payload.tagVencimento, historicoVencimento: payload.historicoVencimento }

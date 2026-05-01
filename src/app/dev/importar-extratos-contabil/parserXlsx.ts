@@ -13,9 +13,11 @@ import {
   TOKEN_SEM_MOVIMENTO,
   TOKEN_VAZIO,
   bancoIgnorar,
+  ehEmpresaFilial,
   extrairInicial,
   findContaExistente,
   findEmpresaPorCodigo,
+  findEmpresaPorNome,
   findUsuarioPorNome,
   gerarCodigoSinteticoArquivada,
   getIniciaisMapPorAno,
@@ -294,6 +296,12 @@ export async function parseXlsxImportacao(input: ParserXlsxInput): Promise<Parse
   let bancoAtualNome: string | null = null;
   let tributacaoPendente: Tributacao | null = null;
   let empresaAtualTemBancoReal = false;
+  // Planilha do user repete código+nome em cada linha de banco (não usa
+  // merge). Sem dedupe, cada linha é tratada como "nova empresa", o que
+  // duplica empresas arquivadas/desligadas (uma cópia por banco). Guardamos
+  // a última (codigo, nome) processada pra detectar continuação.
+  let ultimoCodigoRaw: string | null = null;
+  let ultimoNomeRaw: string | null = null;
 
   const commitTributacaoPendente = () => {
     if (empresaAtual && tributacaoPendente && empresaAtualTemBancoReal && !tributacoesAplicadas.has(empresaAtual.id)) {
@@ -340,34 +348,130 @@ export async function parseXlsxImportacao(input: ParserXlsxInput): Promise<Parse
     // Linha vazia
     if (!codigoRaw && !nomeEmpresaRaw && !bancoRaw) continue;
 
-    // Nova empresa (tem código + nome)
-    if (codigoRaw && nomeEmpresaRaw) {
+    // Nova empresa (tem código + nome) — mas só se for diferente da última
+    // linha. A planilha repete (codigo, nome) em cada linha de banco, então
+    // sem essa checagem o parser duplica a empresa N vezes.
+    const ehMesmaEmpresaDaLinhaAnterior =
+      codigoRaw && nomeEmpresaRaw &&
+      codigoRaw === ultimoCodigoRaw &&
+      nomeEmpresaRaw === ultimoNomeRaw;
+    if (codigoRaw && nomeEmpresaRaw && !ehMesmaEmpresaDaLinhaAnterior) {
       commitTributacaoPendente();
+      ultimoCodigoRaw = codigoRaw;
+      ultimoNomeRaw = nomeEmpresaRaw;
 
-      const e = findEmpresaPorCodigo(empresas, codigoRaw);
+      // 0) FILIAL — escritório não faz controle de filiais, pula tudo
+      //    (banco, status). Continuação na mesma empresa também é pulada
+      //    pois empresaAtual fica null e ctx vira null.
+      if (ehEmpresaFilial(nomeEmpresaRaw)) {
+        avisos.push({
+          tipo: 'duplicata_secao',
+          mensagem: `Linha ${r}: empresa ${codigoRaw} "${nomeEmpresaRaw}" ignorada (filial — não controlada).`,
+        });
+        empresaAtual = null;
+        empresaArquivadaAtualTempKey = null;
+        bancoAtualExistenteId = null;
+        bancoAtualTempKey = null;
+        bancoAtualNome = null;
+        tributacaoPendente = null;
+        empresaAtualTemBancoReal = false;
+        continue;
+      }
+
+      // 1) Tenta achar pelo CÓDIGO
+      let e = findEmpresaPorCodigo(empresas, codigoRaw);
+      let empresaDoMesmoCodigo: Empresa | null = e;
+      let nomeSistemaDoCodigo = '';
+      let simComCodigo = 0;
+
+      if (e) {
+        nomeSistemaDoCodigo = e.razao_social ?? e.apelido ?? '';
+        simComCodigo = similaridadeNomes(nomeEmpresaRaw, nomeSistemaDoCodigo);
+        if (simComCodigo < SIMILARIDADE_MIN_MATCH) {
+          // Código bate mas nome muito diferente: pode ser código reciclado.
+          // Antes de assumir, vamos tentar achar pelo NOME entre as ativas.
+          e = null;
+        }
+      }
+
+      // 2) Fallback por NOME entre empresas ATIVAS (não arquivadas/desligadas).
+      //    Resolve o caso "empresa tá no sistema, mas com outro código".
       if (!e) {
-        // Não está no sistema → cria como empresa desligada usando o próprio
-        // código original. Continua o processamento (bancos, status) tratando
-        // como se fosse arquivada.
-        const tempKey = `arq_${empresasArquivadas.length}`;
-        empresasNaoEncontradas.push({ codigo: codigoRaw, nome: nomeEmpresaRaw });
-        empresasArquivadas.push({
-          tempKey,
-          motivo: 'nao_encontrada',
-          codigoOriginal: codigoRaw,
-          codigoSintetico: codigoRaw,
-          razaoSocial: nomeEmpresaRaw,
-          tributacaoSugerida: secao,
-          similaridade: 0,
-          nomeEmpresaAtualNoSistema: '',
-          selecionada: true,
-          // Sem data específica — fica null pra não confundir com a data real
-          // de desligamento. A flag de "desligada" é a tag desligada-historica
-          // aplicada na hora da importação.
-          desligadaEm: null,
+        const ignorar = new Set<UUID>();
+        if (empresaDoMesmoCodigo) ignorar.add(empresaDoMesmoCodigo.id);
+        const matchNome = findEmpresaPorNome(empresas, nomeEmpresaRaw, {
+          ignorarIds: ignorar,
+          minSimilaridade: 0.6,
         });
-        empresaAtual = null;
-        empresaArquivadaAtualTempKey = tempKey;
+        if (matchNome) {
+          e = matchNome.empresa;
+          avisos.push({
+            tipo: 'duplicata_secao',
+            mensagem: `Linha ${r}: empresa "${nomeEmpresaRaw}" (código planilha ${codigoRaw}) casada por NOME com cadastro ativo "${matchNome.empresa.razao_social ?? matchNome.empresa.apelido}" (código sistema ${matchNome.empresa.codigo}, similaridade ${Math.round(matchNome.similaridade * 100)}%).`,
+          });
+        }
+      }
+
+      // 3) Não achou nem por código nem por nome → cria como nova empresa.
+      //    Antes, computa o "melhor palpite" — empresa existente com sim
+      //    entre 0.2 e 0.59 (faixa duvidosa, abaixo do threshold). O user
+      //    revisa na preview se é mesmo duplicata.
+      if (!e) {
+        // Palpite só aparece se sim > 0.5 — abaixo disso é quase sempre
+        // falso positivo (palavra genérica em comum tipo "comercio",
+        // "transporte", "exportação"), polui a UI sem ajudar.
+        const ignorarPalpite = new Set<UUID>();
+        if (empresaDoMesmoCodigo) ignorarPalpite.add(empresaDoMesmoCodigo.id);
+        const palpite = findEmpresaPorNome(empresas, nomeEmpresaRaw, {
+          ignorarIds: ignorarPalpite,
+          minSimilaridade: 0.51,
+        });
+        const melhorPalpite = palpite && palpite.similaridade < 0.6
+          ? {
+              codigo: palpite.empresa.codigo ?? '',
+              nome: palpite.empresa.razao_social ?? '',
+              apelido: palpite.empresa.apelido ?? '',
+              similaridade: palpite.similaridade,
+            }
+          : null;
+
+        if (empresaDoMesmoCodigo) {
+          const codigoSintetico = gerarCodigoSinteticoArquivada(codigoRaw, empresas, empresasArquivadas);
+          const tempKey = `arq_${empresasArquivadas.length}`;
+          empresasArquivadas.push({
+            tempKey,
+            motivo: 'codigo_reciclado',
+            codigoOriginal: codigoRaw,
+            codigoSintetico,
+            razaoSocial: nomeEmpresaRaw,
+            tributacaoSugerida: secao,
+            similaridade: simComCodigo,
+            nomeEmpresaAtualNoSistema: nomeSistemaDoCodigo,
+            selecionada: true,
+            desligadaEm: null,
+            melhorPalpite,
+          });
+          empresaAtual = null;
+          empresaArquivadaAtualTempKey = tempKey;
+        } else {
+          const tempKey = `arq_${empresasArquivadas.length}`;
+          empresasNaoEncontradas.push({ codigo: codigoRaw, nome: nomeEmpresaRaw });
+          empresasArquivadas.push({
+            tempKey,
+            motivo: 'nao_encontrada',
+            codigoOriginal: codigoRaw,
+            codigoSintetico: codigoRaw,
+            razaoSocial: nomeEmpresaRaw,
+            tributacaoSugerida: secao,
+            similaridade: 0,
+            nomeEmpresaAtualNoSistema: '',
+            selecionada: true,
+            desligadaEm: null,
+            melhorPalpite,
+          });
+          empresaAtual = null;
+          empresaArquivadaAtualTempKey = tempKey;
+        }
         bancoAtualExistenteId = null;
         bancoAtualTempKey = null;
         bancoAtualNome = null;
@@ -376,33 +480,7 @@ export async function parseXlsxImportacao(input: ParserXlsxInput): Promise<Parse
         continue;
       }
 
-      const nomeSistema = e.razao_social ?? e.apelido ?? '';
-      const sim = similaridadeNomes(nomeEmpresaRaw, nomeSistema);
-      if (sim < SIMILARIDADE_MIN_MATCH) {
-        const codigoSintetico = gerarCodigoSinteticoArquivada(codigoRaw, empresas, empresasArquivadas);
-        const tempKey = `arq_${empresasArquivadas.length}`;
-        empresasArquivadas.push({
-          tempKey,
-          motivo: 'codigo_reciclado',
-          codigoOriginal: codigoRaw,
-          codigoSintetico,
-          razaoSocial: nomeEmpresaRaw,
-          tributacaoSugerida: secao,
-          similaridade: sim,
-          nomeEmpresaAtualNoSistema: nomeSistema,
-          selecionada: true,
-          desligadaEm: null,
-        });
-        empresaAtual = null;
-        empresaArquivadaAtualTempKey = tempKey;
-        bancoAtualExistenteId = null;
-        bancoAtualTempKey = null;
-        bancoAtualNome = null;
-        tributacaoPendente = null;
-        empresaAtualTemBancoReal = false;
-        continue;
-      }
-
+      // 4) Caminho feliz — empresa real (achada por código ou por nome)
       empresaAtual = e;
       empresaArquivadaAtualTempKey = null;
       bancoAtualExistenteId = null;

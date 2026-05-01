@@ -1,19 +1,26 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Shield, Search, Download, ChevronDown, ChevronUp,
-  FileText, CalendarClock, Filter, XCircle, Eye, User, Settings
+  Shield, Search, Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
+  FileText, CalendarClock, Filter, XCircle, Eye, User, Settings, CheckCircle2,
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
-import type { HistoricoVencimentoItem, UUID, Limiares } from '@/app/types';
+import type { ChecklistFiscalItem, HistoricoVencimentoItem, UUID, Limiares } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import ModalLimiares from '@/app/components/ModalLimiares';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
 import { garantirVencimentosFiscaisComRegras } from '@/app/utils/vencimentos';
+import { fetchChecklistFiscalByMes } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
+
+function mesAtualKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 
 type StatusVenc = 'vencido' | 'critico' | 'atencao' | 'proximo' | 'ok' | 'renovado';
 
@@ -80,6 +87,47 @@ export default function VencimentosPage() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [historicoItem, setHistoricoItem] = useState<VencimentoItem | null>(null);
   const [savingHistorico, setSavingHistorico] = useState(false);
+
+  // Paginação da lista por empresa (50 por página, configurável)
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useLocalStorageState<number>('triar-vencimentos-per-page', 50);
+
+  // Checklist fiscal do mês corrente — usado pra marcar com ✓ as obrigações
+  // que a usuária já marcou como feitas no checklist.
+  const [checklistFeitas, setChecklistFeitas] = useState<Set<string>>(new Set());
+  const mesCorrente = mesAtualKey();
+  useEffect(() => {
+    let cancelado = false;
+    fetchChecklistFiscalByMes(mesCorrente)
+      .then((lista: ChecklistFiscalItem[]) => {
+        if (cancelado) return;
+        const feitas = new Set<string>();
+        for (const it of lista) if (it.concluido) feitas.add(`${it.empresaId}|${it.obrigacao}`);
+        setChecklistFeitas(feitas);
+      })
+      .catch(() => undefined);
+    return () => { cancelado = true; };
+  }, [mesCorrente]);
+
+  // Realtime: atualiza ✓ verde na hora quando alguém marca/desmarca
+  useEffect(() => {
+    const channel = supabase
+      .channel(`vencimentos-page-checklist-${mesCorrente}`)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'checklist_fiscal', filter: `mes=eq.${mesCorrente}` }, (payload: any) => {
+        const row = payload.new ?? payload.old;
+        if (!row) return;
+        const chave = `${row.empresa_id}|${row.obrigacao}`;
+        setChecklistFeitas((prev) => {
+          const next = new Set(prev);
+          if (payload.eventType === 'DELETE' || !row.concluido) next.delete(chave);
+          else next.add(chave);
+          return next;
+        });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [mesCorrente]);
 
   const getDepName = (dId: string) => departamentos.find((d) => d.id === dId)?.nome ?? '';
   const getDepIndex = (dId: string) => departamentos.findIndex((d) => d.id === dId);
@@ -238,6 +286,85 @@ export default function VencimentosPage() {
     return c;
   }, [allItems]);
 
+  // Agrupamento por empresa: em vez de mostrar "yasmin · ICMS", "yasmin · DAPI"
+  // como linhas separadas, junta tudo numa linha só por empresa, com chips
+  // pra cada obrigação (e ✓ verde nas que já estão marcadas no checklist fiscal).
+  type EmpresaGrupo = {
+    empresaId: UUID;
+    empresaCodigo: string;
+    empresaNome: string;
+    items: VencimentoItem[];
+    obrigacoesFeitasNoChecklist: string[];
+    diasMaisUrgente: number;
+    piorStatus: StatusVenc;
+    responsaveis: Record<string, string | null>;
+  };
+  const STATUS_RANK: Record<StatusVenc, number> = { vencido: 0, critico: 1, atencao: 2, proximo: 3, ok: 4, renovado: 5 };
+  const empresasAgrupadas: EmpresaGrupo[] = useMemo(() => {
+    const mapa = new Map<UUID, EmpresaGrupo>();
+    for (const item of filtered) {
+      let g = mapa.get(item.empresaId);
+      if (!g) {
+        g = {
+          empresaId: item.empresaId,
+          empresaCodigo: item.empresaCodigo,
+          empresaNome: item.empresaNome,
+          items: [],
+          obrigacoesFeitasNoChecklist: [],
+          diasMaisUrgente: Number.POSITIVE_INFINITY,
+          piorStatus: 'ok',
+          responsaveis: item.responsaveis,
+        };
+        mapa.set(item.empresaId, g);
+      }
+      g.items.push(item);
+      if (item.dias < g.diasMaisUrgente) g.diasMaisUrgente = item.dias;
+      if (STATUS_RANK[item.status] < STATUS_RANK[g.piorStatus]) g.piorStatus = item.status;
+    }
+
+    // Adiciona ✓ pras obrigações fiscais marcadas no checklist (mesmo que NÃO
+    // estejam no `filtered` — pode ter sido filtrada como "em dia").
+    for (const empresa of empresas) {
+      const fiscaisDaEmpresa = (empresa.vencimentosFiscais ?? [])
+        .filter((f) => checklistFeitas.has(`${empresa.id}|${f.nome}`))
+        .map((f) => f.nome);
+      if (fiscaisDaEmpresa.length === 0) continue;
+      const g = mapa.get(empresa.id);
+      if (g) g.obrigacoesFeitasNoChecklist = fiscaisDaEmpresa;
+    }
+
+    // Ordena items dentro de cada grupo pela mesma regra global de orderBy/orderDir
+    for (const g of mapa.values()) {
+      g.items.sort((a, b) => {
+        let cmp = 0;
+        if (orderBy === 'dias') cmp = a.dias - b.dias;
+        else if (orderBy === 'empresa') cmp = a.empresaCodigo.localeCompare(b.empresaCodigo);
+        else if (orderBy === 'tipo') cmp = a.tipo.localeCompare(b.tipo);
+        return orderDir === 'desc' ? -cmp : cmp;
+      });
+    }
+
+    // Ordena empresas: mais urgente primeiro; em empate, código
+    return Array.from(mapa.values()).sort((a, b) => {
+      const sa = STATUS_RANK[a.piorStatus];
+      const sb = STATUS_RANK[b.piorStatus];
+      if (sa !== sb) return sa - sb;
+      if (a.diasMaisUrgente !== b.diasMaisUrgente) return a.diasMaisUrgente - b.diasMaisUrgente;
+      return a.empresaCodigo.localeCompare(b.empresaCodigo);
+    });
+  }, [filtered, empresas, checklistFeitas, orderBy, orderDir]);
+
+  // Reseta pra página 1 quando filtros/ordem/perPage mudam
+  useEffect(() => {
+    setPage(1);
+  }, [search, filtroStatus, filtroDep, filtroResp, filtroTipo, filtroTag, meusVencimentos, orderBy, orderDir, perPage]);
+
+  const totalPages = Math.max(1, Math.ceil(empresasAgrupadas.length / perPage));
+  const pageClamped = Math.min(page, totalPages);
+  const sliceInicio = (pageClamped - 1) * perPage;
+  const sliceFim = sliceInicio + perPage;
+  const empresasVisiveis = empresasAgrupadas.slice(sliceInicio, sliceFim);
+
   const sortedDepartamentos = useMemo(() => sortByPtBr(departamentos, (d) => d.nome), [departamentos]);
 
   // Responsáveis options based on department filter
@@ -290,7 +417,7 @@ export default function VencimentosPage() {
           mostrarAlerta('Empresa não encontrada', 'Não foi possível localizar a empresa desse vencimento fiscal.', 'erro');
           return;
         }
-        const fiscaisAtuais = garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado);
+        const fiscaisAtuais = garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado, empresa.cidade);
         const vencimentosFiscais = fiscaisAtuais.map((f) =>
           f.id === historicoItem.itemId
             ? { ...f, tagVencimento: payload.tagVencimento, historicoVencimento: payload.historicoVencimento }
@@ -612,261 +739,200 @@ export default function VencimentosPage() {
         </div>
       </div>
 
-      {/* Tabela Desktop / Cards Mobile */}
+      {/* Lista agrupada por empresa */}
       <div className="rounded-2xl bg-white shadow-sm border border-gray-100">
-        {/* Desktop table */}
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-200 text-gray-800">
-                <th className="text-left px-5 py-4 font-semibold text-xs uppercase tracking-wider">Status</th>
-                <th className="text-left px-5 py-4 font-semibold text-xs uppercase tracking-wider cursor-pointer select-none" onClick={() => toggleSort('dias')}>
-                  <span className="inline-flex items-center gap-1">Dias <SortIcon col="dias" /></span>
-                </th>
-                <th className="text-left px-5 py-4 font-semibold text-xs uppercase tracking-wider cursor-pointer select-none" onClick={() => toggleSort('empresa')}>
-                  <span className="inline-flex items-center gap-1">Empresa <SortIcon col="empresa" /></span>
-                </th>
-                <th className="text-left px-5 py-4 font-semibold text-xs uppercase tracking-wider cursor-pointer select-none" onClick={() => toggleSort('tipo')}>
-                  <span className="inline-flex items-center gap-1">Tipo <SortIcon col="tipo" /></span>
-                </th>
-                <th className="text-left px-5 py-4 font-semibold text-xs uppercase tracking-wider">Nome</th>
-                <th className="text-left px-5 py-4 font-semibold text-xs uppercase tracking-wider">Vencimento</th>
-                <th className="text-left px-5 py-4 font-semibold text-xs uppercase tracking-wider">Historico</th>
-                <th className="text-left px-5 py-4 font-semibold text-xs uppercase tracking-wider">Responsável</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filtered.slice(0, 200).map((item, idx) => {
-                const sc = statusConfig[item.status];
-                const responsaveis = sortResponsaveisByNome(
-                  Object.entries(item.responsaveis)
-                    .filter(([, uid]) => uid)
-                    .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid), depIdx: getDepIndex(dId) }))
-                    .filter((r) => r.dep && r.user)
-                );
-                const rowKey = `${item.empresaId}-${item.nome}-${idx}`;
-                const isExpanded = expandedRows.has(rowKey);
-                const mainResp = responsaveis[0];
-                const moreCount = responsaveis.length - 1;
-
-                return (
-                  <tr
-                    key={rowKey}
-                    className={`transition-colors ${
-                      item.status === 'vencido' ? 'animate-alert-blink' :
-                      item.status === 'critico' ? 'animate-alert-blink' :
-                      item.status === 'atencao' ? 'bg-amber-50/40 hover:bg-amber-100/30' :
-                      item.status === 'proximo' ? 'bg-green-50/40 hover:bg-green-100/30' :
-                      item.status === 'renovado' ? 'bg-blue-50/40 hover:bg-blue-100/30' :
-                      'hover:bg-gray-50'
-                    }`}
-                  >
-                    <td className="px-5 py-4">
-                      <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold border ${sc.bg} ${sc.text} ${sc.border}`}>
-                        <span className={`h-2 w-2 rounded-full ${sc.dot} ${item.status === 'vencido' ? 'animate-pulse' : ''}`} />
-                        {sc.label}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className={`font-black text-lg tabular-nums ${
-                        item.status === 'vencido' ? 'text-red-700' :
-                        item.status === 'critico' ? 'text-orange-700' :
-                        item.status === 'atencao' ? 'text-amber-600' :
-                        item.status === 'proximo' ? 'text-green-600' :
-                        'text-emerald-600'
-                      }`}>
-                        {item.dias < 0 ? `${Math.abs(item.dias)}d` : `${item.dias}d`}
-                      </span>
-                      {item.dias < 0 && <div className="text-[10px] text-red-500 font-semibold">atrás</div>}
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="font-bold text-gray-900">{item.empresaCodigo}</div>
-                      <div className="text-xs text-gray-500 truncate max-w-[180px]" title={item.empresaNome}>{item.empresaNome}</div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold ${
-                        item.tipo === 'Documento'
-                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                          : item.tipo === 'Fiscal'
-                            ? 'bg-red-50 text-red-700 border border-red-200'
-                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                      }`}>
-                        {item.tipo === 'Documento' ? <FileText size={13} /> : <CalendarClock size={13} />}
-                        {item.tipo === 'Documento' ? 'DOC' : item.tipo === 'Fiscal' ? 'FISCAL' : 'RET'}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4" style={{ overflow: 'visible', textOverflow: 'clip' }}>
-                      <div className="font-semibold text-gray-800" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflow: 'visible', textOverflow: 'clip' }}>{item.nome}</div>
-                      {(item.tagVencimento || (item.historicoVencimento?.length ?? 0) > 0) && (
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {item.tagVencimento && (
-                            <span className="inline-flex items-center rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
-                              {item.tagVencimento}
-                            </span>
-                          )}
-                          {(item.historicoVencimento?.length ?? 0) > 0 && (
-                            <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                              {item.historicoVencimento?.length} registro(s)
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-5 py-4 text-gray-700 whitespace-nowrap font-medium">{formatBR(item.vencimento)}</td>
-                    <td className="px-5 py-4">
-                      <button
-                        type="button"
-                        onClick={() => setHistoricoItem(item)}
-                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
-                      >
-                        <Eye size={14} />
-                        Histórico
-                      </button>
-                    </td>
-                    <td className="px-5 py-4">
-                      {responsaveis.length === 0 ? (
-                        <span className="text-xs text-gray-400 italic">Sem responsável</span>
-                      ) : (
-                        <div>
-                          {/* Primeiro responsável sempre visível */}
-                          {mainResp && (
-                            <div className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold border ${DEPT_COLORS[mainResp.depIdx % 8].bg} ${DEPT_COLORS[mainResp.depIdx % 8].text} ${DEPT_COLORS[mainResp.depIdx % 8].border}`}>
-                              <span className="font-bold">{mainResp.dep}:</span> {mainResp.user}
-                            </div>
-                          )}
-                          {/* Botão expandir */}
-                          {moreCount > 0 && (
-                            <button
-                              onClick={(ev) => { ev.stopPropagation(); toggleRow(rowKey); }}
-                              className="ml-1.5 inline-flex items-center gap-0.5 text-[11px] text-cyan-600 hover:text-cyan-800 font-bold transition"
-                            >
-                              {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                              {isExpanded ? 'menos' : `+${moreCount}`}
-                            </button>
-                          )}
-                          {/* Demais responsáveis expandidos */}
-                          {isExpanded && (
-                            <div className="mt-1.5 space-y-1">
-                              {responsaveis.slice(1).map((r) => (
-                                <div
-                                  key={r.dep}
-                                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold border ${DEPT_COLORS[r.depIdx % 8].bg} ${DEPT_COLORS[r.depIdx % 8].text} ${DEPT_COLORS[r.depIdx % 8].border}`}
-                                >
-                                  <span className="font-bold">{r.dep}:</span> {r.user}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-5 py-16 text-center">
-                    <div className="text-gray-400">
-                      <Shield className="mx-auto mb-3 text-gray-300" size={40} />
-                      <div className="font-semibold text-gray-500">Nenhum item encontrado</div>
-                      <div className="text-sm">{allItems.length === 0 ? 'Nenhum documento ou RET com data de vencimento cadastrado.' : 'Tente ajustar os filtros.'}</div>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="px-3 sm:px-5 pt-3 pb-1 flex items-center justify-between gap-2 flex-wrap text-xs text-gray-500">
+          <div className="flex items-center gap-2">
+            <span className="font-bold uppercase tracking-wider text-[10px] text-gray-400">Ordem:</span>
+            <button onClick={() => toggleSort('dias')} className={`px-2 py-1 rounded-md border text-[11px] font-bold transition ${orderBy === 'dias' ? 'border-cyan-300 bg-cyan-50 text-cyan-700' : 'border-gray-200 hover:bg-gray-50'}`}>
+              Dias <SortIcon col="dias" />
+            </button>
+            <button onClick={() => toggleSort('empresa')} className={`px-2 py-1 rounded-md border text-[11px] font-bold transition ${orderBy === 'empresa' ? 'border-cyan-300 bg-cyan-50 text-cyan-700' : 'border-gray-200 hover:bg-gray-50'}`}>
+              Empresa <SortIcon col="empresa" />
+            </button>
+            <button onClick={() => toggleSort('tipo')} className={`px-2 py-1 rounded-md border text-[11px] font-bold transition ${orderBy === 'tipo' ? 'border-cyan-300 bg-cyan-50 text-cyan-700' : 'border-gray-200 hover:bg-gray-50'}`}>
+              Tipo <SortIcon col="tipo" />
+            </button>
+          </div>
+          <span className="text-[11px] font-bold text-gray-400">{empresasAgrupadas.length} empresa(s) · {filtered.length} item(ns)</span>
         </div>
 
-        {/* Mobile cards */}
-        <div className="md:hidden divide-y divide-gray-100">
-          {filtered.slice(0, 200).map((item, idx) => {
-            const sc = statusConfig[item.status];
+        <ul className="divide-y divide-gray-100">
+          {empresasVisiveis.map((g) => {
+            const sc = statusConfig[g.piorStatus];
             const responsaveis = sortResponsaveisByNome(
-              Object.entries(item.responsaveis)
+              Object.entries(g.responsaveis)
                 .filter(([, uid]) => uid)
                 .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid), depIdx: getDepIndex(dId) }))
                 .filter((r) => r.dep && r.user)
             );
+            const dias = g.diasMaisUrgente;
+            const corDias = dias < 0 ? 'text-red-700' : dias === 0 ? 'text-orange-700' : dias <= 3 ? 'text-amber-700' : dias <= 7 ? 'text-yellow-700' : dias <= 30 ? 'text-green-700' : 'text-emerald-700';
             return (
-              <div key={`mobile-${item.empresaId}-${item.nome}-${idx}`} className={`p-4 ${item.status === 'vencido' || item.status === 'critico' ? 'animate-alert-blink' : item.status === 'atencao' ? 'bg-amber-50/40' : item.status === 'proximo' ? 'bg-green-50/40' : item.status === 'renovado' ? 'bg-blue-50/40' : ''}`}>
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold border ${sc.bg} ${sc.text} ${sc.border}`}>
-                    <span className={`h-2 w-2 rounded-full ${sc.dot} ${item.status === 'vencido' ? 'animate-pulse' : ''}`} />
-                    {sc.label}
-                  </span>
-                  <span className={`font-black text-lg tabular-nums ${item.status === 'vencido' ? 'text-red-700' : item.status === 'critico' ? 'text-orange-700' : item.status === 'atencao' ? 'text-amber-600' : item.status === 'proximo' ? 'text-green-600' : 'text-emerald-600'}`}>
-                    {item.dias < 0 ? `${Math.abs(item.dias)}d atrás` : `${item.dias}d`}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-bold text-gray-900">{item.empresaCodigo}</span>
-                  <span className="text-xs text-gray-500 truncate">{item.empresaNome}</span>
-                </div>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-bold ${item.tipo === 'Documento' ? 'bg-blue-50 text-blue-700' : item.tipo === 'Fiscal' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                    {item.tipo === 'Documento' ? <FileText size={12} /> : <CalendarClock size={12} />}
-                    {item.tipo === 'Documento' ? 'DOC' : item.tipo === 'Fiscal' ? 'FISCAL' : 'RET'}
-                  </span>
-                  <span className="text-sm font-semibold text-gray-800 break-words">{item.nome}</span>
-                  <span className="text-xs text-gray-500 ml-auto whitespace-nowrap">{formatBR(item.vencimento)}</span>
-                </div>
-                {(item.tagVencimento || (item.historicoVencimento?.length ?? 0) > 0) && (
-                  <div className="flex flex-wrap gap-1 mb-2">
-                    {item.tagVencimento && (
-                      <span className="rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
-                        {item.tagVencimento}
+              <li key={g.empresaId} className="px-3 sm:px-5 py-3.5 hover:bg-gray-50/60 transition">
+                {/* Linha principal: empresa + responsáveis + dias mais urgente */}
+                <div className="flex items-start justify-between gap-3 mb-2 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-[10px] font-bold border ${sc.bg} ${sc.text} ${sc.border}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${sc.dot} ${g.piorStatus === 'vencido' ? 'animate-pulse' : ''}`} />
+                        {sc.label}
                       </span>
-                    )}
-                    {(item.historicoVencimento?.length ?? 0) > 0 && (
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                        {item.historicoVencimento?.length} registro(s)
-                      </span>
+                      <span className="font-mono text-[10px] font-bold text-gray-500">{g.empresaCodigo}</span>
+                      <span className="font-bold text-gray-900 truncate">{g.empresaNome}</span>
+                    </div>
+                    {responsaveis.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {responsaveis.map((r) => {
+                          const c = DEPT_COLORS[r.depIdx % 8];
+                          return (
+                            <span key={r.dep} className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold border ${c.bg} ${c.text} ${c.border}`}>
+                              <span className="font-bold">{r.dep}:</span> {r.user}
+                            </span>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
-                )}
-                {responsaveis.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {responsaveis.map((r) => {
-                      const c = DEPT_COLORS[r.depIdx % 8];
-                      return (
-                        <span key={r.dep} className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-semibold border ${c.bg} ${c.text} ${c.border}`}>
-                          <span className="font-bold">{r.dep}:</span> {r.user}
+                  <div className={`shrink-0 text-right ${corDias}`}>
+                    <div className="font-black text-xl tabular-nums leading-none">
+                      {dias < 0 ? `${Math.abs(dias)}d` : dias === 0 ? 'HOJE' : `${dias}d`}
+                    </div>
+                    <div className="text-[10px] font-semibold opacity-80 mt-0.5">
+                      {dias < 0 ? 'em atraso' : dias === 0 ? 'vence hoje' : 'mais urgente'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Lista de itens da empresa em chips */}
+                <div className="flex flex-wrap gap-1.5">
+                  {g.items.map((item) => {
+                    const tipoCor = item.tipo === 'Documento'
+                      ? 'border-blue-300 bg-blue-50 text-blue-800'
+                      : item.tipo === 'Fiscal'
+                        ? 'border-red-300 bg-red-50 text-red-800'
+                        : 'border-emerald-300 bg-emerald-50 text-emerald-800';
+                    const corUrg = item.dias < 0
+                      ? 'ring-2 ring-red-400'
+                      : item.dias === 0
+                        ? 'ring-2 ring-orange-400'
+                        : item.dias <= 3
+                          ? 'ring-2 ring-amber-400'
+                          : '';
+                    return (
+                      <button
+                        key={`${item.tipo}-${item.itemId}`}
+                        type="button"
+                        onClick={() => setHistoricoItem(item)}
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-semibold transition hover:shadow-sm ${tipoCor} ${corUrg}`}
+                        title={`${item.tipo} · ${item.nome} · ${formatBR(item.vencimento)} · ${item.dias < 0 ? `${Math.abs(item.dias)}d em atraso` : item.dias === 0 ? 'vence hoje' : `vence em ${item.dias}d`}`}
+                      >
+                        {item.tipo === 'Documento' ? <FileText size={11} /> : <CalendarClock size={11} />}
+                        <span className="truncate max-w-[180px]">{item.nome}</span>
+                        <span className="opacity-70 font-mono text-[10px]">
+                          {item.dias < 0 ? `${Math.abs(item.dias)}d⬇` : item.dias === 0 ? 'hoje' : `${item.dias}d`}
                         </span>
-                      );
-                    })}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setHistoricoItem(item)}
-                  className="mt-3 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
-                >
-                  <Eye size={14} />
-                  Histórico
-                </button>
-              </div>
+                      </button>
+                    );
+                  })}
+                  {/* ✓ Verde: obrigações fiscais já marcadas no checklist do mês */}
+                  {g.obrigacoesFeitasNoChecklist.map((nome) => (
+                    <span
+                      key={`feito-${nome}`}
+                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-700"
+                      title={`${nome} já marcado como feito no checklist fiscal deste mês`}
+                    >
+                      <CheckCircle2 size={11} strokeWidth={3} />
+                      {nome}
+                    </span>
+                  ))}
+                </div>
+              </li>
             );
           })}
-          {filtered.length === 0 && (
-            <div className="px-5 py-16 text-center">
+
+          {empresasAgrupadas.length === 0 && (
+            <li className="px-5 py-16 text-center">
               <div className="text-gray-400">
                 <Shield className="mx-auto mb-3 text-gray-300" size={40} />
                 <div className="font-semibold text-gray-500">Nenhum item encontrado</div>
                 <div className="text-sm">{allItems.length === 0 ? 'Nenhum documento ou RET com data de vencimento cadastrado.' : 'Tente ajustar os filtros.'}</div>
               </div>
-            </div>
+            </li>
           )}
-        </div>
+        </ul>
 
-        {filtered.length > 0 && (
-          <div className="px-3 sm:px-5 py-3 sm:py-3.5 bg-gray-50 border-t border-gray-100 text-xs text-gray-500 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-            <span>Exibindo {Math.min(filtered.length, 200)} de {filtered.length} itens</span>
-            <div className="flex items-center gap-3 font-bold flex-wrap">
+        {empresasAgrupadas.length > 0 && (
+          <div className="px-3 sm:px-5 py-3 bg-gray-50 border-t border-gray-100 text-xs text-gray-500 flex flex-col gap-2">
+            {/* Totais por status */}
+            <div className="flex items-center gap-3 font-bold flex-wrap justify-center sm:justify-start">
+              <span className="text-gray-600">Total:</span>
               <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" /> {filtered.filter((i) => i.status === 'vencido').length} vencido(s)</span>
               <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-orange-500" /> {filtered.filter((i) => i.status === 'critico').length} crítico(s)</span>
               <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400" /> {filtered.filter((i) => i.status === 'atencao').length} atenção</span>
               <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-green-500" /> {filtered.filter((i) => i.status === 'proximo').length} próximo(s)</span>
+            </div>
+
+            {/* Paginação */}
+            <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-gray-200">
+              <span className="text-gray-600">
+                Mostrando <span className="font-bold text-gray-800">{sliceInicio + 1}–{Math.min(sliceFim, empresasAgrupadas.length)}</span> de <span className="font-bold text-gray-800">{empresasAgrupadas.length}</span> empresa(s)
+              </span>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="hidden sm:inline-flex items-center gap-1.5 text-[11px]">
+                  <span className="text-gray-500">por pagina:</span>
+                  <select
+                    value={perPage}
+                    onChange={(e) => setPerPage(Number(e.target.value))}
+                    className="rounded-lg bg-white border border-gray-200 px-2 py-1 text-[11px] font-bold focus:ring-2 focus:ring-cyan-400"
+                  >
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={200}>200</option>
+                  </select>
+                </label>
+
+                <span className="rounded-lg bg-white border border-gray-200 px-2.5 py-1 font-bold text-gray-800 tabular-nums text-[11px]">
+                  Página {pageClamped} <span className="text-gray-400">/ {totalPages}</span>
+                </span>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setPage(1)}
+                    disabled={pageClamped <= 1}
+                    className="rounded-lg px-2 py-1.5 text-xs font-bold bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                    title="Primeira página"
+                  >
+                    «
+                  </button>
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={pageClamped <= 1}
+                    className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  >
+                    <ChevronLeft size={14} />
+                    <span className="hidden sm:inline">Anterior</span>
+                  </button>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={pageClamped >= totalPages}
+                    className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold bg-gradient-to-r from-cyan-600 to-teal-500 text-white hover:from-cyan-700 hover:to-teal-600 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition"
+                  >
+                    <span className="hidden sm:inline">Próxima</span>
+                    <ChevronRight size={14} />
+                  </button>
+                  <button
+                    onClick={() => setPage(totalPages)}
+                    disabled={pageClamped >= totalPages}
+                    className="rounded-lg px-2 py-1.5 text-xs font-bold bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                    title="Última página"
+                  >
+                    »
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

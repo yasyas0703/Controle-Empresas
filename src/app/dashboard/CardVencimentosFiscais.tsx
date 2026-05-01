@@ -11,6 +11,7 @@ import { normalizarNomeDepartamento } from '@/app/utils/departamento';
 import { ehEmpresaHistorica } from '@/app/utils/empresaHistorica';
 import { vencimentoDoMes } from '@/app/utils/regrasVencimentosFiscais';
 import { fetchChecklistFiscalByMes } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { VENCIMENTOS_FISCAIS_NOMES } from '@/app/types';
 import type { ChecklistFiscalItem, UUID } from '@/app/types';
 
@@ -23,15 +24,18 @@ type Pendencia = {
   dias: number;
 };
 
+type EmpresaAgrupada = {
+  empresaId: UUID;
+  empresaCodigo: string;
+  empresaNome: string;
+  obrigacoesPendentes: { obrigacao: string; vencimento: string; dias: number }[];
+  obrigacoesFeitas: string[];
+  diasMaisUrgente: number;
+};
+
 function mesAtualKey(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function formatBR(iso: string): string {
-  const [y, m, d] = iso.split('-');
-  if (!y || !m || !d) return iso;
-  return `${d}/${m}`;
 }
 
 /**
@@ -85,6 +89,45 @@ export default function CardVencimentosFiscais() {
     return () => { cancelado = true; };
   }, [mes, podeVer]);
 
+  // Realtime: atualiza contadores automaticamente quando marca/desmarca em
+  // outra aba/usuário, sem precisar F5.
+  useEffect(() => {
+    if (!podeVer) return;
+    const channel = supabase
+      .channel(`dashboard-fiscal-checklist-${mes}`)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'checklist_fiscal', filter: `mes=eq.${mes}` }, (payload: any) => {
+        const row = payload.new ?? payload.old;
+        if (!row) return;
+        const chave = `${row.empresa_id}|${row.obrigacao}`;
+        setChecklistMap((prev) => {
+          const next = new Map(prev);
+          if (payload.eventType === 'DELETE') {
+            next.delete(chave);
+          } else {
+            next.set(chave, {
+              id: row.id,
+              empresaId: row.empresa_id,
+              mes: row.mes,
+              obrigacao: row.obrigacao,
+              concluido: !!row.concluido,
+              concluidoPorId: row.concluido_por_id,
+              concluidoPorNome: row.concluido_por_nome ?? undefined,
+              concluidoEm: row.concluido_em ?? undefined,
+              observacao: row.observacao ?? undefined,
+              criadoEm: row.criado_em ?? '',
+              atualizadoEm: row.atualizado_em ?? '',
+            });
+          }
+          return next;
+        });
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [mes, podeVer]);
+
   // Filtra empresas: admin/gerente vê tudo; usuário do fiscal vê só onde é responsável.
   // Empresas históricas (arquivadas/desligadas/código reciclado) ficam fora —
   // ver `ehEmpresaHistorica` pra todos os critérios de detecção.
@@ -102,8 +145,10 @@ export default function CardVencimentosFiscais() {
   //    também, pra que o "X/Y" reflita o trabalho que ainda existe.
   //  - Vencimentos manuais (preenchidos no cadastro da empresa) têm prioridade
   //    sobre a regra automática por UF.
-  const { pendencias, concluidos, totalImpostosMes } = useMemo(() => {
+  const { pendencias, empresasAgrupadas, concluidos, totalImpostosMes } = useMemo(() => {
     const pendencias: Pendencia[] = [];
+    // empresaId → grupo (acumula obrigações pendentes e feitas da mesma empresa)
+    const grupoPorEmpresa = new Map<UUID, EmpresaAgrupada>();
     let concluidos = 0;
     let totalImpostosMes = 0;
     const anoMesAtual = mes;
@@ -116,7 +161,7 @@ export default function CardVencimentosFiscais() {
 
       for (const nomeObrigacao of VENCIMENTOS_FISCAIS_NOMES) {
         const dataManual = manuaisPorNome.get(nomeObrigacao);
-        const data = dataManual ?? vencimentoDoMes(nomeObrigacao, empresa.estado, anoMesAtual);
+        const data = dataManual ?? vencimentoDoMes(nomeObrigacao, empresa.estado, anoMesAtual, empresa.cidade);
         if (!data) continue;
         if (!data.startsWith(`${anoMesAtual}-`)) continue;
 
@@ -127,30 +172,65 @@ export default function CardVencimentosFiscais() {
         totalImpostosMes++;
 
         const item = checklistMap.get(`${empresa.id}|${nomeObrigacao}`);
-        if (item?.concluido) {
-          concluidos++;
-          continue;
+        const feito = !!item?.concluido;
+        if (feito) concluidos++;
+
+        // Garante o grupo da empresa
+        let g = grupoPorEmpresa.get(empresa.id);
+        if (!g) {
+          g = {
+            empresaId: empresa.id,
+            empresaCodigo: empresa.codigo,
+            empresaNome: empresa.razao_social || empresa.apelido || empresa.codigo,
+            obrigacoesPendentes: [],
+            obrigacoesFeitas: [],
+            diasMaisUrgente: Number.POSITIVE_INFINITY,
+          };
+          grupoPorEmpresa.set(empresa.id, g);
         }
 
-        pendencias.push({
-          empresaId: empresa.id,
-          empresaCodigo: empresa.codigo,
-          empresaNome: empresa.razao_social || empresa.apelido || empresa.codigo,
-          obrigacao: nomeObrigacao,
-          vencimento: data,
-          dias,
-        });
+        if (feito) {
+          g.obrigacoesFeitas.push(nomeObrigacao);
+        } else {
+          g.obrigacoesPendentes.push({ obrigacao: nomeObrigacao, vencimento: data, dias });
+          if (dias < g.diasMaisUrgente) g.diasMaisUrgente = dias;
+
+          pendencias.push({
+            empresaId: empresa.id,
+            empresaCodigo: empresa.codigo,
+            empresaNome: g.empresaNome,
+            obrigacao: nomeObrigacao,
+            vencimento: data,
+            dias,
+          });
+        }
       }
     }
 
     pendencias.sort((a, b) => a.dias - b.dias);
-    return { pendencias, concluidos, totalImpostosMes };
+
+    // Só mostra empresas com pelo menos 1 obrigação pendente.
+    // Ordena: mais urgente primeiro; em empate, código da empresa.
+    const empresasAgrupadas: EmpresaAgrupada[] = Array.from(grupoPorEmpresa.values())
+      .filter((g) => g.obrigacoesPendentes.length > 0)
+      .map((g) => {
+        // Pendentes ordenadas por dias (mais urgente primeiro)
+        g.obrigacoesPendentes.sort((a, b) => a.dias - b.dias);
+        g.obrigacoesFeitas.sort((a, b) => a.localeCompare(b, 'pt-BR'));
+        return g;
+      })
+      .sort((a, b) => {
+        if (a.diasMaisUrgente !== b.diasMaisUrgente) return a.diasMaisUrgente - b.diasMaisUrgente;
+        return a.empresaCodigo.localeCompare(b.empresaCodigo);
+      });
+
+    return { pendencias, empresasAgrupadas, concluidos, totalImpostosMes };
   }, [empresasFiltradas, checklistMap, mes]);
 
   const hoje = pendencias.filter((p) => p.dias === 0).length;
   const tresDias = pendencias.filter((p) => p.dias > 0 && p.dias <= 3).length;
   const seteDias = pendencias.filter((p) => p.dias > 3 && p.dias <= 7).length;
-  const top5 = pendencias.slice(0, 5);
+  const top5Empresas = empresasAgrupadas.slice(0, 5);
 
   if (!podeVer) return null;
 
@@ -204,35 +284,35 @@ export default function CardVencimentosFiscais() {
           </div>
         )}
 
-        {!carregando && !erro && pendencias.length > 0 && (
+        {!carregando && !erro && empresasAgrupadas.length > 0 && (
           <div>
             {expandido ? (
-              <ListaPendenciasAgrupadas pendencias={pendencias} />
+              <ListaEmpresasAgrupadas empresas={empresasAgrupadas} />
             ) : (
               <>
                 <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">
-                  Mais urgentes
+                  Empresas com pendências (mais urgentes)
                 </div>
-                <ul className="space-y-1">
-                  {top5.map((p) => (
-                    <PendenciaLinha key={`${p.empresaId}|${p.obrigacao}`} p={p} />
+                <ul className="space-y-1.5">
+                  {top5Empresas.map((g) => (
+                    <EmpresaAgrupadaLinha key={g.empresaId} g={g} />
                   ))}
                 </ul>
               </>
             )}
 
-            {pendencias.length > 5 && (
+            {empresasAgrupadas.length > 5 && (
               <button
                 onClick={() => setExpandido((v) => !v)}
                 className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700 transition"
               >
                 {expandido ? (
                   <>
-                    <ChevronUp size={14} /> 
+                    <ChevronUp size={14} /> Ver menos
                   </>
                 ) : (
                   <>
-                    <ChevronDown size={14} /> Ver todos os {pendencias.length} pendentes
+                    <ChevronDown size={14} /> Ver todas as {empresasAgrupadas.length} empresas com pendências
                   </>
                 )}
               </button>
@@ -272,68 +352,111 @@ function ContadorBox({ cor, valor, label }: { cor: 'red' | 'orange' | 'amber' | 
   );
 }
 
-const PendenciaLinha = React.memo(function PendenciaLinha({ p }: { p: Pendencia }) {
-  const bg = p.dias < 0
-    ? 'bg-red-50 border border-red-200'
-    : p.dias === 0
-      ? 'bg-orange-50 border border-orange-200'
-      : p.dias <= 3
-        ? 'bg-amber-50 border border-amber-200'
-        : p.dias <= 7
-          ? 'bg-yellow-50 border border-yellow-200'
-          : 'bg-gray-50 border border-gray-200';
-  const corDias = p.dias < 0
+/**
+ * Linha por empresa: mostra todas as obrigações pendentes inline (chips coloridos
+ * por urgência) + as obrigações já marcadas como feitas no checklist (chip verde
+ * com check). Em vez de "yasmin - icms / yasmin - dapi" repetindo a empresa,
+ * fica "yasmin · ICMS · DAPI · ✓ SPED".
+ */
+const EmpresaAgrupadaLinha = React.memo(function EmpresaAgrupadaLinha({ g }: { g: EmpresaAgrupada }) {
+  const dias = g.diasMaisUrgente;
+  const bg = dias < 0
+    ? 'bg-red-50 border-red-200'
+    : dias === 0
+      ? 'bg-orange-50 border-orange-200'
+      : dias <= 3
+        ? 'bg-amber-50 border-amber-200'
+        : dias <= 7
+          ? 'bg-yellow-50 border-yellow-200'
+          : 'bg-gray-50 border-gray-200';
+  const corDias = dias < 0
     ? 'text-red-700'
-    : p.dias === 0
+    : dias === 0
       ? 'text-orange-700'
-      : p.dias <= 3
+      : dias <= 3
         ? 'text-amber-700'
-        : p.dias <= 7
+        : dias <= 7
           ? 'text-yellow-700'
           : 'text-gray-600';
-  const textoDias = p.dias < 0
-    ? `${Math.abs(p.dias)}d atraso`
-    : p.dias === 0
+  const textoDias = dias < 0
+    ? `${Math.abs(dias)}d atraso`
+    : dias === 0
       ? 'hoje'
-      : `em ${p.dias}d`;
+      : `em ${dias}d`;
+
   return (
-    <li className={`rounded-lg px-2.5 py-1.5 text-xs ${bg}`}>
-      {/* Mobile: empilha em 2 linhas. Desktop: tudo numa linha. */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2">
-        <div className="flex items-center gap-2 min-w-0 sm:flex-1">
-          <span className="font-mono text-[10px] font-bold text-gray-500 shrink-0">{p.empresaCodigo}</span>
-          <span className="font-semibold text-gray-800 truncate flex-1">{p.empresaNome}</span>
+    <li className={`rounded-lg border px-2.5 py-2 text-xs ${bg}`}>
+      <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span className="font-mono text-[10px] font-bold text-gray-500 shrink-0">{g.empresaCodigo}</span>
+          <span className="font-bold text-gray-800 truncate">{g.empresaNome}</span>
         </div>
-        <div className="flex items-center justify-between gap-2 sm:justify-end">
-          <span className="text-gray-500 truncate sm:shrink-0">{p.obrigacao}</span>
-          <span className={`shrink-0 font-bold ${corDias}`}>
-            {textoDias}{' · '}{formatBR(p.vencimento)}
-          </span>
-        </div>
+        <span className={`shrink-0 font-bold ${corDias}`}>{textoDias}</span>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {g.obrigacoesPendentes.map((o) => (
+          <ChipObrigacao key={o.obrigacao} nome={o.obrigacao} dias={o.dias} />
+        ))}
+        {g.obrigacoesFeitas.map((nome) => (
+          <ChipFeito key={nome} nome={nome} />
+        ))}
       </div>
     </li>
   );
 });
 
-type GrupoUrgencia = { titulo: string; cor: string; itens: Pendencia[] };
+function ChipObrigacao({ nome, dias }: { nome: string; dias: number }) {
+  const cor = dias < 0
+    ? 'bg-red-200 text-red-800 border-red-300'
+    : dias === 0
+      ? 'bg-orange-200 text-orange-800 border-orange-300'
+      : dias <= 3
+        ? 'bg-amber-200 text-amber-800 border-amber-300'
+        : dias <= 7
+          ? 'bg-yellow-200 text-yellow-800 border-yellow-400'
+          : 'bg-white text-gray-700 border-gray-300';
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${cor}`}
+      title={`${nome} — ${dias < 0 ? `${Math.abs(dias)}d atraso` : dias === 0 ? 'vence hoje' : `vence em ${dias}d`}`}
+    >
+      {nome}
+    </span>
+  );
+}
+
+function ChipFeito({ nome }: { nome: string }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700"
+      title={`${nome} — já marcado como feito no checklist`}
+    >
+      <CheckCircle2 size={10} strokeWidth={3} />
+      {nome}
+    </span>
+  );
+}
+
+type GrupoUrgencia = { titulo: string; cor: string; itens: EmpresaAgrupada[] };
 
 const ITENS_INICIAIS_POR_GRUPO = 50;
 
-function ListaPendenciasAgrupadas({ pendencias }: { pendencias: Pendencia[] }) {
+function ListaEmpresasAgrupadas({ empresas }: { empresas: EmpresaAgrupada[] }) {
   const grupos: GrupoUrgencia[] = useMemo(() => {
     const r: GrupoUrgencia[] = [];
-    const v: Pendencia[] = [];
-    const h: Pendencia[] = [];
-    const t3: Pendencia[] = [];
-    const t7: Pendencia[] = [];
-    const resto: Pendencia[] = [];
-    // Single pass — mais barato que 5 .filter() pra listas grandes.
-    for (const p of pendencias) {
-      if (p.dias < 0) v.push(p);
-      else if (p.dias === 0) h.push(p);
-      else if (p.dias <= 3) t3.push(p);
-      else if (p.dias <= 7) t7.push(p);
-      else resto.push(p);
+    const v: EmpresaAgrupada[] = [];
+    const h: EmpresaAgrupada[] = [];
+    const t3: EmpresaAgrupada[] = [];
+    const t7: EmpresaAgrupada[] = [];
+    const resto: EmpresaAgrupada[] = [];
+    // Agrupa pelas dias da obrigação MAIS URGENTE da empresa
+    for (const e of empresas) {
+      const d = e.diasMaisUrgente;
+      if (d < 0) v.push(e);
+      else if (d === 0) h.push(e);
+      else if (d <= 3) t3.push(e);
+      else if (d <= 7) t7.push(e);
+      else resto.push(e);
     }
     if (v.length) r.push({ titulo: 'Vencidos', cor: 'text-red-700', itens: v });
     if (h.length) r.push({ titulo: 'Hoje', cor: 'text-orange-700', itens: h });
@@ -341,7 +464,7 @@ function ListaPendenciasAgrupadas({ pendencias }: { pendencias: Pendencia[] }) {
     if (t7.length) r.push({ titulo: 'Em ≤ 7 dias', cor: 'text-yellow-700', itens: t7 });
     if (resto.length) r.push({ titulo: 'Resto do mês', cor: 'text-gray-600', itens: resto });
     return r;
-  }, [pendencias]);
+  }, [empresas]);
 
   return (
     <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
@@ -360,11 +483,11 @@ function GrupoRender({ grupo }: { grupo: GrupoUrgencia }) {
   return (
     <div>
       <div className={`text-[11px] font-black uppercase tracking-wider mb-1.5 ${grupo.cor}`}>
-        {grupo.titulo} <span className="font-bold opacity-70">({grupo.itens.length})</span>
+        {grupo.titulo} <span className="font-bold opacity-70">({grupo.itens.length} empresa{grupo.itens.length === 1 ? '' : 's'})</span>
       </div>
-      <ul className="space-y-1">
-        {visiveis.map((p) => (
-          <PendenciaLinha key={`${p.empresaId}|${p.obrigacao}`} p={p} />
+      <ul className="space-y-1.5">
+        {visiveis.map((g) => (
+          <EmpresaAgrupadaLinha key={g.empresaId} g={g} />
         ))}
       </ul>
       {restantes > 0 && (

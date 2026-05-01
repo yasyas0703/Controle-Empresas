@@ -169,7 +169,11 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
           // Se o estado foi descoberto pela consulta CNPJ, preenche automaticamente
           // os vencimentos fiscais (sem mexer nos que o usuário já preencheu)
           vencimentosFiscais: estadoMudou
-            ? garantirVencimentosFiscaisComRegras(prev.vencimentosFiscais, estadoNovo)
+            ? garantirVencimentosFiscaisComRegras(
+                prev.vencimentosFiscais,
+                estadoNovo,
+                String(prev.cidade || '').trim() ? prev.cidade : (data?.cidade || ''),
+              )
             : prev.vencimentosFiscais,
         };
       });
@@ -207,11 +211,18 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
         ...prev,
         [field]: value as Empresa[keyof Empresa],
       };
-      // Quando o usuário muda a UF, recalcula os vencimentos fiscais com regra
-      // (sem sobrescrever os que ele preencheu na mão).
+      // Quando o usuário muda a UF ou a cidade, recalcula os vencimentos
+      // fiscais com regra (sem sobrescrever os que ele preencheu na mão).
       if (field === 'estado') {
         next.vencimentosFiscais = garantirVencimentosFiscaisComRegras(
           prev.vencimentosFiscais,
+          value as string,
+          prev.cidade,
+        );
+      } else if (field === 'cidade') {
+        next.vencimentosFiscais = garantirVencimentosFiscaisComRegras(
+          prev.vencimentosFiscais,
+          prev.estado,
           value as string,
         );
       }
@@ -236,7 +247,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
         responsaveis: empresa.responsaveis ?? {},
         servicos: empresa.servicos ?? [],
         rets: empresa.rets ?? [],
-        vencimentosFiscais: garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado),
+        vencimentosFiscais: garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado, empresa.cidade),
         formaEnvio: empresa.formaEnvio ?? [],
       });
       setEmpresaCadastrada(empresa.cadastrada !== false);

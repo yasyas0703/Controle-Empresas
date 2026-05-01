@@ -1,14 +1,18 @@
 import type { Empresa, VencimentoFiscalNome } from '@/app/types';
 
 /**
- * Tabela de regras (UF × imposto → dia do mês).
- * Use `default` quando o dia for o mesmo independente da UF.
+ * Tabela de regras (UF/Cidade × imposto → dia do mês).
+ * Use `default` quando o dia for o mesmo independente da localização.
  *
- * Origem das regras: lista passada pelo usuário em abril/2026.
- * Fontes a estender quando aparecer regra nova: SPED, REINF, ISS, DARF-Serviços
- * Tomados e GIA-ST. Por enquanto ficam sem regra → empresa preenche na mão.
+ * Para impostos municipais (ISS), as regras vêm em `cidades` (chave =
+ * nome da cidade normalizado: minúsculo, sem acento, sem espaço extra).
+ *
+ * Origem: lista da gerente do Fiscal — Yasmin / 2026.
  */
-type RegraDia = { default?: number } & Partial<Record<UF, number>>;
+type RegraDia = {
+  default?: number;
+  cidades?: Record<string, number>;
+} & Partial<Record<UF, number>>;
 
 type UF =
   | 'AC' | 'AL' | 'AP' | 'AM' | 'BA' | 'CE' | 'DF' | 'ES' | 'GO' | 'MA'
@@ -17,15 +21,34 @@ type UF =
 
 const REGRAS: Partial<Record<VencimentoFiscalNome, RegraDia>> = {
   ICMS: { MG: 8, SP: 20, BA: 10, SC: 10, default: 20 },
+  'SPED ICMS/IPI': { MG: 15, SP: 20, BA: 10, SC: 20 },
+  'SPED CONTRIBUIÇÕES': { default: 10 },
+  REINF: { default: 13 },
   'DIFERENCIAL DE ALIQUOTA': { MG: 8, SP: 20, default: 10 },
-  // GIA-ST/DIFAL costuma seguir a mesma data de DIFAL.
-  'GIA-ST/DIFAL': { MG: 8, SP: 20, default: 10 },
+  'GIA-ST/DIFAL': { default: 10 },
   'ICMS-ST/DIFAL': { MG: 9, SP: 9, default: 10 },
   IPI: { default: 25 },
   'PIS/COFINS': { default: 25 },
   'CSLL/IRPJ': { default: 30 },
-  // Sem regra (preenche manual): SPED ICMS/IPI, ISS - PRESTAÇÃO DE SERVIÇOS,
-  // REINF, DARF-SERVIÇOS TOMADOS, SPED CONTRIBUIÇÕES.
+  DAPI: { MG: 8 },
+  DIME: { SC: 10 },
+  'ISS - PRESTAÇÃO DE SERVIÇOS': {
+    cidades: {
+      'ouro fino': 10,
+      'sapucai mirim': 10,
+      'lavras': 15,
+      'pouso alegre': 15,
+      'pereira barreto': 25,
+    },
+  },
+  'ISS - SERVIÇOS TOMADOS': {
+    cidades: {
+      'sao bernardo do campo': 15,
+      'sao paulo': 10,
+      'inconfidentes': 10,
+    },
+  },
+  // Sem regra (preenche manual): DARF-SERVIÇOS TOMADOS.
 };
 
 function normalizarUf(estado?: string | null): UF | null {
@@ -35,17 +58,34 @@ function normalizarUf(estado?: string | null): UF | null {
   return u as UF;
 }
 
+/** Normaliza nome de cidade: minúsculo, sem acento, espaços colapsados. */
+function normalizarCidade(cidade?: string | null): string | null {
+  if (!cidade) return null;
+  const sem = cidade
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+  return sem || null;
+}
+
 /**
- * Devolve o dia do mês configurado para (imposto, UF). Se a UF não tem regra
- * específica, usa o `default`. Se o imposto não tem nenhuma regra, devolve null
- * (o usuário preenche na mão).
+ * Devolve o dia do mês configurado para (imposto, UF, cidade).
+ * Ordem de prioridade: cidade > UF específica > default.
+ * Devolve null se não há nenhuma regra aplicável.
  */
 export function getDiaVencimento(
   nomeImposto: VencimentoFiscalNome | string,
   estado?: string | null,
+  cidade?: string | null,
 ): number | null {
   const regra = REGRAS[nomeImposto as VencimentoFiscalNome];
   if (!regra) return null;
+  const cid = normalizarCidade(cidade);
+  if (cid && regra.cidades && regra.cidades[cid] != null) {
+    return regra.cidades[cid];
+  }
   const uf = normalizarUf(estado);
   if (uf && regra[uf] != null) return regra[uf]!;
   return regra.default ?? null;
@@ -63,8 +103,9 @@ export function vencimentoDoMes(
   nomeImposto: VencimentoFiscalNome | string,
   estado: string | null | undefined,
   anoMes: string, // 'YYYY-MM'
+  cidade?: string | null,
 ): string | null {
-  const dia = getDiaVencimento(nomeImposto, estado);
+  const dia = getDiaVencimento(nomeImposto, estado, cidade);
   if (dia == null) return null;
   const m = anoMes.match(/^(\d{4})-(\d{1,2})$/);
   if (!m) return null;
@@ -86,8 +127,9 @@ export function proximoVencimento(
   nomeImposto: VencimentoFiscalNome | string,
   estado: string | null | undefined,
   referencia: Date = new Date(),
+  cidade?: string | null,
 ): string | null {
-  const dia = getDiaVencimento(nomeImposto, estado);
+  const dia = getDiaVencimento(nomeImposto, estado, cidade);
   if (dia == null) return null;
   const ano = referencia.getFullYear();
   const mes = referencia.getMonth() + 1; // 1..12
@@ -110,11 +152,11 @@ export function proximoVencimento(
  * Helper conveniente quando você já tem a empresa.
  */
 export function proximoVencimentoEmpresa(
-  empresa: Pick<Empresa, 'estado'>,
+  empresa: Pick<Empresa, 'estado' | 'cidade'>,
   nomeImposto: VencimentoFiscalNome | string,
   referencia?: Date,
 ): string | null {
-  return proximoVencimento(nomeImposto, empresa.estado, referencia);
+  return proximoVencimento(nomeImposto, empresa.estado, referencia, empresa.cidade);
 }
 
 /**
@@ -126,11 +168,33 @@ export function impostosComRegra(): string[] {
 }
 
 /**
- * `true` se o imposto tem regra automática para a UF informada (ou default).
+ * `true` se o imposto tem regra automática para a UF/cidade informada (ou default).
  */
 export function temRegraAutomatica(
   nomeImposto: VencimentoFiscalNome | string,
   estado?: string | null,
+  cidade?: string | null,
 ): boolean {
-  return getDiaVencimento(nomeImposto, estado) != null;
+  return getDiaVencimento(nomeImposto, estado, cidade) != null;
+}
+
+/**
+ * Decide se uma obrigação fiscal é aplicável para a empresa informada.
+ *
+ * Lógica:
+ *  - Obrigação sem regra cadastrada → preenche manual, aplica a todos (true).
+ *  - Obrigação com regra → aplica só se a regra casar com UF/cidade da empresa.
+ *
+ * Usado pelo checklist mensal e similares para esconder cells onde o imposto
+ * não faz sentido (ex.: DAPI numa empresa de SP, DIME fora de SC, ISS fora
+ * das cidades cadastradas).
+ */
+export function obrigacaoAplicaParaEmpresa(
+  nomeImposto: VencimentoFiscalNome | string,
+  estado?: string | null,
+  cidade?: string | null,
+): boolean {
+  const regra = REGRAS[nomeImposto as VencimentoFiscalNome];
+  if (!regra) return true;
+  return getDiaVencimento(nomeImposto, estado, cidade) != null;
 }

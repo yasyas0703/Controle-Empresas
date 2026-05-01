@@ -21,12 +21,23 @@ export default function BotaoTarefas({ variant, onClick }: Props) {
     if (loading) return;
     setErro(null);
     setLoading(true);
+
+    // Abre a aba IMEDIATAMENTE (síncrono dentro do click) pra não cair no
+    // bloqueador de popup. Depois redireciona pra URL real quando o SSO responder.
+    const novaAba = window.open('about:blank', '_blank', 'noopener,noreferrer');
+    if (!novaAba) {
+      setLoading(false);
+      setErro('Bloqueador de pop-up ativo. Permita pop-ups deste site e tente de novo.');
+      return;
+    }
+
     try {
       onClick?.();
 
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
       if (!accessToken) {
+        novaAba.close();
         setErro('Sessao nao encontrada. Faca login novamente.');
         return;
       }
@@ -42,18 +53,25 @@ export default function BotaoTarefas({ variant, onClick }: Props) {
       const data = await res.json().catch(() => ({} as any));
 
       if (!res.ok) {
+        novaAba.close();
         setErro(data?.error || 'Falha ao gerar acesso ao Tarefas');
         return;
       }
 
-      const url: string | undefined = data?.ssoUrl;
+      const url: string | undefined = data?.ssoUrl
+        ?? (data?.token
+          ? `${process.env.NEXT_PUBLIC_TAREFAS_URL || FALLBACK_TAREFAS_URL}/sso?token=${encodeURIComponent(data.token)}`
+          : undefined);
+
       if (!url) {
-        const fallback = process.env.NEXT_PUBLIC_TAREFAS_URL || FALLBACK_TAREFAS_URL;
-        window.location.href = `${fallback}/sso?token=${encodeURIComponent(data?.token || '')}`;
+        novaAba.close();
+        setErro('Falha ao gerar acesso ao Tarefas');
         return;
       }
-      window.location.href = url;
+
+      novaAba.location.href = url;
     } catch (e: any) {
+      novaAba.close();
       setErro(e?.message || 'Erro de conexao');
     } finally {
       setLoading(false);

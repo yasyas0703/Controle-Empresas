@@ -113,6 +113,17 @@ export interface PreviewEmpresaArquivada {
   selecionada: boolean;
   /** Data de desligamento sugerida — só usado em nao_encontrada. ISO YYYY-MM-DD. */
   desligadaEm: string | null;
+  /**
+   * Palpite: empresa existente no sistema com nome similar (faixa duvidosa,
+   * abaixo do threshold de match automático). Mostrado pro user revisar
+   * antes de confirmar a criação como nova — pode ser duplicata.
+   */
+  melhorPalpite: {
+    codigo: string;
+    nome: string;
+    apelido: string;
+    similaridade: number;
+  } | null;
 }
 
 export interface PreviewBancoNovo {
@@ -198,10 +209,59 @@ export function bancoIgnorar(nome: string): boolean {
   return BANCO_IGNORAR.has(upper);
 }
 
+/**
+ * Detecta se o nome da planilha indica uma FILIAL (não a matriz). O escritório
+ * não faz controle contábil de filiais — só da matriz. Sinais:
+ *   - Contém a palavra "FILIAL" (case-insensitive)
+ *   - Termina com sufixo de filial tipo " 0002", " 0003", "/0002", etc.
+ *     (matriz seria 0001)
+ */
+export function ehEmpresaFilial(nome: string): boolean {
+  const norm = normalizarString(nome);
+  if (/\bfilial\b/.test(norm)) return true;
+  // sufixo numérico tipo "0002"..."0099" (não 0001 que é matriz)
+  const m = norm.match(/(?:[\s/])(\d{4})$/);
+  if (m && m[1] !== '0001' && /^00\d\d$/.test(m[1])) return true;
+  return false;
+}
+
 export function findEmpresaPorCodigo(empresas: Empresa[], codigo: string): Empresa | null {
   const alvo = codigo.replace(/\D/g, ''); // só dígitos
   if (!alvo) return null;
   return empresas.find((e) => (e.codigo ?? '').replace(/\D/g, '') === alvo) ?? null;
+}
+
+/**
+ * Busca empresa com nome similar ao fornecido. Compara contra razão social
+ * E apelido (pega a maior similaridade). Busca em TODAS empresas, incluindo
+ * arquivadas/desligadas — assim a importação acha o cadastro existente
+ * mesmo quando o código mudou ou ela tá marcada como inativa.
+ *
+ * Threshold default 0.6 (mais conservador que match por código, que é 0.4),
+ * porque sem código batendo precisamos de mais confiança no nome.
+ */
+export function findEmpresaPorNome(
+  empresas: Empresa[],
+  nomePlanilha: string,
+  opts?: { minSimilaridade?: number; ignorarIds?: Set<UUID> }
+): { empresa: Empresa; similaridade: number } | null {
+  const min = opts?.minSimilaridade ?? 0.6;
+  const ignorar = opts?.ignorarIds;
+  let melhor: { empresa: Empresa; similaridade: number } | null = null;
+  for (const e of empresas) {
+    if (ignorar && ignorar.has(e.id)) continue;
+    const candidatos = [e.razao_social, e.apelido].filter((n): n is string => !!n);
+    if (candidatos.length === 0) continue;
+    let simMax = 0;
+    for (const c of candidatos) {
+      const s = similaridadeNomes(nomePlanilha, c);
+      if (s > simMax) simMax = s;
+    }
+    if (simMax >= min && (!melhor || simMax > melhor.similaridade)) {
+      melhor = { empresa: e, similaridade: simMax };
+    }
+  }
+  return melhor;
 }
 
 // ─── Similaridade de nomes (pra detectar código reciclado) ──
@@ -210,26 +270,106 @@ const SUFIXOS_EMPRESA = [
   'cia', 'me', 'mei', 'eireli', 'eppi', 'inc', 'co',
 ];
 
+// Junta sequências de letras soltas (1 char) numa palavra só. Resolve
+// abreviações tipo "DISTRIBUIDORA J S" ↔ "DISTRIBUIDORA JS" — sem isso, J
+// e S são descartados pelo filtro de length>=2 e a similaridade despenca.
+function juntarLetrasSoltas(tokens: string[]): string[] {
+  const out: string[] = [];
+  let buffer = '';
+  for (const t of tokens) {
+    if (t.length === 1 && /[a-z0-9]/i.test(t)) {
+      buffer += t;
+    } else {
+      if (buffer) { out.push(buffer); buffer = ''; }
+      out.push(t);
+    }
+  }
+  if (buffer) out.push(buffer);
+  return out;
+}
+
 function tokenizarNomeEmpresa(nome: string): Set<string> {
   const norm = normalizarString(nome)
-    .replace(/[.,;:/\-()]/g, ' ')
+    .replace(/[.,;:/\-()&]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  const tokens = norm.split(' ')
+  const raw = norm.split(' ').filter(Boolean);
+  const merged = juntarLetrasSoltas(raw);
+  const tokens = merged
     .filter((t) => t.length >= 2)
     .filter((t) => !SUFIXOS_EMPRESA.includes(t));
   return new Set(tokens);
 }
 
-// Jaccard: |A ∩ B| / |A ∪ B|. Vai de 0 a 1.
+// Match com tolerância a abreviações: 'dist' bate com 'distribuidora',
+// 'ind' com 'industrial', 'mpb' com 'mpb'. Mínimo 3 chars no prefixo
+// pra evitar match acidental (ex.: 'ja' com 'janeiro').
+function tokensCompativeis(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a.length < 3 || b.length < 3) return false;
+  return a.startsWith(b) || b.startsWith(a);
+}
+
+// Gera variantes do nome considerando prefixos de responsável/grupo do
+// escritório (ex: "LEILA - AUTOCAM", "R-ISOBOND", "KAYZA - GARCIA"). A
+// parte depois do PRIMEIRO hífen é considerada uma variante separada.
+// Resolve casos tipo "LEILA - AUTOCAM" ↔ "AUTOCAM MEDICAL DO BRASIL".
+function gerarVariantesNome(nome: string): string[] {
+  const variantes: string[] = [nome];
+  // Pega tudo após o primeiro " - ", "- " ou "-" (com letras antes)
+  const m = nome.match(/^[^-]{1,30}-\s*(.+)$/);
+  if (m && m[1].trim().length >= 3) {
+    variantes.push(m[1].trim());
+  }
+  return variantes;
+}
+
+// Compara dois conjuntos de tokens. Retorna max(Jaccard, cobertura máx).
+function compararTokens(a: string[], b: string[]): number {
+  if (a.length === 0 || b.length === 0) return 0;
+  const usados = new Set<number>();
+  let matches = 0;
+  for (const ta of a) {
+    for (let i = 0; i < b.length; i++) {
+      if (usados.has(i)) continue;
+      if (tokensCompativeis(ta, b[i])) {
+        matches++;
+        usados.add(i);
+        break;
+      }
+    }
+  }
+  if (matches === 0) return 0;
+  const jaccard = matches / (a.length + b.length - matches);
+  const coberturaMax = Math.max(matches / a.length, matches / b.length);
+  return Math.max(jaccard, coberturaMax);
+}
+
+// Similaridade de nomes — usa cobertura (não Jaccard puro) pra não punir
+// nomes mais curtos, e gera variantes pra strippar prefixos de responsável
+// (ex: "LEILA - AUTOCAM" também vira "AUTOCAM" pra comparar). Pega o
+// MAIOR similaridade entre todas as combinações de variantes.
+//
+// Casos resolvidos:
+//   "NOVAROTA"            ↔ "NOVAROTA COMERCIO IMPORTACAO LTDA"  → 100%
+//   "DIST JS"             ↔ "DISTRIBUIDORA J S LTDA"             → 100%
+//   "LEILA - AUTOCAM"     ↔ "AUTOCAM MEDICAL DO BRASIL"          → 100%
+//   "R-ISOBOND IND"       ↔ "ISOBOND INDUSTRIA E COMERCIO"       → 100%
+//
+// Vai de 0 a 1. Mantida a assinatura pra não quebrar quem importa.
 export function similaridadeNomes(nomeA: string, nomeB: string): number {
-  const a = tokenizarNomeEmpresa(nomeA);
-  const b = tokenizarNomeEmpresa(nomeB);
-  if (a.size === 0 || b.size === 0) return 0;
-  let intersect = 0;
-  for (const t of a) if (b.has(t)) intersect++;
-  const uniao = a.size + b.size - intersect;
-  return uniao === 0 ? 0 : intersect / uniao;
+  const variantesA = gerarVariantesNome(nomeA);
+  const variantesB = gerarVariantesNome(nomeB);
+  let max = 0;
+  for (const va of variantesA) {
+    const tokensA = Array.from(tokenizarNomeEmpresa(va));
+    for (const vb of variantesB) {
+      const tokensB = Array.from(tokenizarNomeEmpresa(vb));
+      const sim = compararTokens(tokensA, tokensB);
+      if (sim > max) max = sim;
+    }
+  }
+  return max;
 }
 
 // Threshold pra considerar match (mesma empresa, ignorando variações tipo " - LTDA")
@@ -367,6 +507,7 @@ export function parseCsvImportacao(input: ParserInput): ParsedImportacao {
           nomeEmpresaAtualNoSistema: '',
           selecionada: true,
           desligadaEm: null,
+          melhorPalpite: null,
         });
         empresaAtual = null;
         empresaArquivadaAtualTempKey = tempKey;
@@ -395,6 +536,7 @@ export function parseCsvImportacao(input: ParserInput): ParsedImportacao {
           nomeEmpresaAtualNoSistema: nomeSistema,
           selecionada: true,
           desligadaEm: null,
+          melhorPalpite: null,
         });
         empresaAtual = null;
         empresaArquivadaAtualTempKey = tempKey;

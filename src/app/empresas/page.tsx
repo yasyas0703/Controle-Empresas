@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Building2, Plus, Search, Pencil, Trash2, Eye, FileText, CalendarClock, Upload, Users, Clock } from 'lucide-react';
+import { AlertTriangle, Building2, Plus, Search, Pencil, Trash2, Eye, FileText, CalendarClock, Upload, Users, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import type { Empresa, UUID, Limiares } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
@@ -47,6 +47,8 @@ export default function EmpresasPage() {
   const [search, setSearch] = useState('');
   const [searchCodigo, setSearchCodigo] = useState('');
   const [tagFiltro, setTagFiltro] = useState('');
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useLocalStorageState<number>('triar-empresas-per-page', 50);
 
   const allTags = useMemo(() => {
     const set = new Set<string>();
@@ -79,6 +81,20 @@ export default function EmpresasPage() {
       })
       .sort((a, b) => (a.razao_social || a.apelido || '').localeCompare(b.razao_social || b.apelido || ''));
   }, [empresas, search, searchCodigo, tagFiltro]);
+
+  // Paginação — reseta pra página 1 quando filtros ou tamanho de página mudam
+  useEffect(() => {
+    setPage(1);
+  }, [search, searchCodigo, tagFiltro, perPage]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+  const pageClamped = Math.min(page, totalPages);
+  const sliceInicio = (pageClamped - 1) * perPage;
+  const sliceFim = sliceInicio + perPage;
+  const filteredVisivel = useMemo(
+    () => filtered.slice(sliceInicio, sliceFim),
+    [filtered, sliceInicio, sliceFim]
+  );
 
   const selectableIds = useMemo(() => {
     return filtered.filter((e) => canEditEmpresa(currentUserId, canManage, e)).map((e) => e.id);
@@ -140,7 +156,13 @@ export default function EmpresasPage() {
             </div>
             <div>
               <div className="text-2xl font-bold text-gray-900">Cadastro de Empresas</div>
-              <div className="text-sm text-gray-500">{filtered.length} empresa(s) • Use o Dashboard para filtros avançados</div>
+              <div className="text-sm text-gray-500">
+                {filtered.length === 0 ? '0 empresa(s)' : (
+                  <>
+                    Mostrando <span className="font-bold text-gray-700">{sliceInicio + 1}–{Math.min(sliceFim, filtered.length)}</span> de <span className="font-bold text-gray-700">{filtered.length}</span> empresa(s)
+                  </>
+                )} • Use o Dashboard para filtros avançados
+              </div>
             </div>
           </div>
 
@@ -244,7 +266,7 @@ export default function EmpresasPage() {
 
       {/* Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map((e) => {
+        {filteredVisivel.map((e) => {
           const nome = e.razao_social || e.apelido || '-';
           const canEdit = canEditEmpresa(currentUserId, canManage, e);
           const checked = selectedVisibleIds.includes(e.id);
@@ -431,6 +453,66 @@ export default function EmpresasPage() {
           </div>
         )}
       </div>
+
+      {/* Paginação */}
+      {filtered.length > perPage && (
+        <div className="rounded-2xl bg-white p-3 sm:p-4 shadow-sm flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <span className="font-semibold">Página</span>
+            <span className="rounded-lg bg-gray-100 px-2.5 py-1 font-bold text-gray-800 tabular-nums">
+              {pageClamped} <span className="text-gray-400">/ {totalPages}</span>
+            </span>
+            <span className="text-gray-400 hidden sm:inline">·</span>
+            <label className="hidden sm:inline-flex items-center gap-1.5 text-xs">
+              <span className="text-gray-500">Empresas por página:</span>
+              <select
+                value={perPage}
+                onChange={(e) => setPerPage(Number(e.target.value))}
+                className="rounded-lg bg-gray-50 border border-gray-200 px-2 py-1 text-xs font-bold focus:ring-2 focus:ring-cyan-400"
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+              </select>
+            </label>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setPage(1)}
+              disabled={pageClamped <= 1}
+              className="rounded-lg px-2 py-1.5 text-xs font-bold bg-gray-50 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              title="Primeira página"
+            >
+              «
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={pageClamped <= 1}
+              className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-bold bg-gray-50 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
+            >
+              <ChevronLeft size={16} />
+              <span className="hidden sm:inline">Anterior</span>
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={pageClamped >= totalPages}
+              className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-bold bg-gradient-to-r from-cyan-600 to-teal-500 text-white hover:from-cyan-700 hover:to-teal-600 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition"
+            >
+              <span className="hidden sm:inline">Próxima</span>
+              <ChevronRight size={16} />
+            </button>
+            <button
+              onClick={() => setPage(totalPages)}
+              disabled={pageClamped >= totalPages}
+              className="rounded-lg px-2 py-1.5 text-xs font-bold bg-gray-50 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              title="Última página"
+            >
+              »
+            </button>
+          </div>
+        </div>
+      )}
 
       {modalCreate && <ModalCadastrarEmpresa onClose={() => setModalCreate(false)} />}
       {modalImport && <ModalImportarPlanilha onClose={() => setModalImport(false)} />}

@@ -1,23 +1,30 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Grid3x3, Search, XCircle, Filter, CalendarClock, Users, AlertTriangle, Shield,
+  Grid3x3, Search, XCircle, Filter, CalendarClock, Users, AlertTriangle, Shield, CheckCircle2,
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR } from '@/app/utils/date';
 import { garantirVencimentosFiscaisComRegras } from '@/app/utils/vencimentos';
 import type {
-  Empresa, HistoricoVencimentoItem, Limiares, UUID, Usuario, VencimentoFiscal,
+  ChecklistFiscalItem, Empresa, HistoricoVencimentoItem, Limiares, UUID, Usuario, VencimentoFiscal,
 } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
 import ModalLimiares from '@/app/components/ModalLimiares';
 import { sortByPtBr } from '@/lib/sort';
+import { fetchChecklistFiscalByMes } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
 
-type StatusFiscal = 'vencido' | 'critico' | 'atencao' | 'proximo' | 'ok' | 'sem-data';
+function mesAtualKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+type StatusFiscal = 'vencido' | 'critico' | 'atencao' | 'proximo' | 'ok' | 'feito' | 'sem-data';
 
 type FiscalCellItem = {
   fiscal: VencimentoFiscal;
@@ -39,7 +46,8 @@ const STATUS_RANK: Record<StatusFiscal, number> = {
   atencao: 2,
   proximo: 3,
   ok: 4,
-  'sem-data': 5,
+  feito: 5,
+  'sem-data': 6,
 };
 
 const STATUS_STYLE: Record<StatusFiscal, {
@@ -50,10 +58,11 @@ const STATUS_STYLE: Record<StatusFiscal, {
   atencao: { bg: 'bg-amber-400', text: 'text-amber-950', border: 'border-amber-600', label: 'Atencao (<=60d)', dot: 'bg-amber-400', cellBg: 'bg-amber-300 hover:bg-amber-400' },
   proximo: { bg: 'bg-lime-400', text: 'text-lime-950', border: 'border-lime-600', label: 'Proximo (<=90d)', dot: 'bg-lime-400', cellBg: 'bg-lime-300 hover:bg-lime-400' },
   ok: { bg: 'bg-emerald-500', text: 'text-white', border: 'border-emerald-700', label: 'Em dia', dot: 'bg-emerald-500', cellBg: 'bg-emerald-400 hover:bg-emerald-500' },
+  feito: { bg: 'bg-emerald-700', text: 'text-white', border: 'border-emerald-900', label: 'Tudo feito', dot: 'bg-emerald-700', cellBg: 'bg-emerald-600 hover:bg-emerald-700' },
   'sem-data': { bg: 'bg-gray-300', text: 'text-gray-700', border: 'border-gray-400', label: 'Sem data', dot: 'bg-gray-300', cellBg: 'bg-gray-200 hover:bg-gray-300' },
 };
 
-const STATUS_LEGENDA_ORDER: StatusFiscal[] = ['vencido', 'critico', 'atencao', 'proximo', 'ok', 'sem-data'];
+const STATUS_LEGENDA_ORDER: StatusFiscal[] = ['vencido', 'critico', 'atencao', 'proximo', 'ok', 'feito', 'sem-data'];
 
 function getStatus(dias: number | null, lim: Limiares): StatusFiscal {
   if (dias === null) return 'sem-data';
@@ -85,6 +94,73 @@ export default function VencimentosFiscaisPage() {
   const [historicoAlvo, setHistoricoAlvo] = useState<{ empresa: Empresa; fiscal: VencimentoFiscal; status: StatusFiscal; dias: number | null } | null>(null);
   const [savingHistorico, setSavingHistorico] = useState(false);
 
+  // Checklist do mês corrente — usado para esconder vencimentos já cumpridos.
+  // Se a usuária marcou DAPI feito no checklist de Maio, não faz sentido mostrar
+  // como "crítico" aqui — ela já cumpriu.
+  const [checklistFeitas, setChecklistFeitas] = useState<Set<string>>(new Set());
+  const mesCorrente = mesAtualKey();
+  useEffect(() => {
+    let cancelado = false;
+    fetchChecklistFiscalByMes(mesCorrente)
+      .then((lista: ChecklistFiscalItem[]) => {
+        if (cancelado) return;
+        const feitas = new Set<string>();
+        for (const it of lista) {
+          if (it.concluido) feitas.add(`${it.empresaId}|${it.obrigacao}`);
+        }
+        setChecklistFeitas(feitas);
+      })
+      .catch(() => { /* silencioso — sem checklist mostra tudo como antes */ });
+    return () => { cancelado = true; };
+  }, [mesCorrente]);
+
+  // Realtime: quando alguém marca/desmarca no checklist (em outra aba ou
+  // outro usuário), atualiza o painel automaticamente sem precisar F5.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`vencimentos-fiscais-checklist-${mesCorrente}`)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'checklist_fiscal', filter: `mes=eq.${mesCorrente}` }, (payload: any) => {
+        const row = payload.new ?? payload.old;
+        if (!row) return;
+        const chave = `${row.empresa_id}|${row.obrigacao}`;
+        setChecklistFeitas((prev) => {
+          const next = new Set(prev);
+          if (payload.eventType === 'DELETE') {
+            next.delete(chave);
+          } else if (row.concluido) {
+            next.add(chave);
+          } else {
+            next.delete(chave);
+          }
+          return next;
+        });
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [mesCorrente]);
+
+  // Quando a aba volta a ficar visível (ex: usuário trocou de aba e voltou),
+  // refaz o fetch do checklist por garantia (caso o realtime tenha perdido evento)
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      fetchChecklistFiscalByMes(mesCorrente)
+        .then((lista: ChecklistFiscalItem[]) => {
+          const feitas = new Set<string>();
+          for (const it of lista) {
+            if (it.concluido) feitas.add(`${it.empresaId}|${it.obrigacao}`);
+          }
+          setChecklistFeitas(feitas);
+        })
+        .catch(() => undefined);
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [mesCorrente]);
+
   const fiscalDept = useMemo(() => {
     const nameMatch = departamentos.find((d) => d.nome.trim().toLowerCase() === 'fiscal');
     if (nameMatch) return nameMatch;
@@ -107,19 +183,34 @@ export default function VencimentosFiscaisPage() {
   const linhas: EmpresaLinha[] = useMemo(() => {
     const resultado: EmpresaLinha[] = [];
     for (const empresa of empresas) {
-      const fiscaisComData = garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado)
+      // Todas as obrigações com data (independente do checklist)
+      const fiscaisTodos = garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado, empresa.cidade)
         .filter((f) => f.vencimento);
 
-      const itens: FiscalCellItem[] = fiscaisComData.map((fiscal) => {
+      // Apenas as ainda pendentes (não marcadas no checklist do mês corrente).
+      // Se a empresa tem ICMS, e o ICMS está marcado como feito → some daqui.
+      const fiscaisPendentes = fiscaisTodos
+        .filter((f) => !checklistFeitas.has(`${empresa.id}|${f.nome}`));
+
+      const itens: FiscalCellItem[] = fiscaisPendentes.map((fiscal) => {
         const dias = daysUntil(fiscal.vencimento);
         return { fiscal, dias, status: getStatus(dias, limiares) };
       });
 
-      const pior: StatusFiscal = itens.length === 0
-        ? 'sem-data'
-        : itens.reduce<StatusFiscal>((acc, it) => (
-            STATUS_RANK[it.status] < STATUS_RANK[acc] ? it.status : acc
-          ), 'ok');
+      // Distinção importante:
+      //  - sem regras nem itens cadastrados → 'sem-data' (empresa sem nada a controlar)
+      //  - tinha obrigações e cumpriu TODAS no checklist → 'feito' (verde, ainda visível)
+      //  - obrigações pendentes → calcula o pior status
+      let pior: StatusFiscal;
+      if (fiscaisTodos.length === 0) {
+        pior = 'sem-data';
+      } else if (fiscaisPendentes.length === 0) {
+        pior = 'feito';
+      } else {
+        pior = itens.reduce<StatusFiscal>((acc, it) => (
+          STATUS_RANK[it.status] < STATUS_RANK[acc] ? it.status : acc
+        ), 'ok');
+      }
 
       const diasUrgentes = itens
         .filter((it) => it.dias !== null)
@@ -131,7 +222,7 @@ export default function VencimentosFiscaisPage() {
       resultado.push({ empresa, fiscalUserId, itens, piorStatus: pior, diasMaisUrgente });
     }
     return resultado;
-  }, [empresas, limiares, fiscalDept]);
+  }, [empresas, limiares, fiscalDept, checklistFeitas]);
 
   const linhasFiltradas = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -183,7 +274,7 @@ export default function VencimentosFiscaisPage() {
   }, [fiscalUsers, linhas]);
 
   const totaisGerais = useMemo(() => {
-    const t = { vencido: 0, critico: 0, atencao: 0, proximo: 0, ok: 0,'sem-data': 0, total: linhas.length };
+    const t = { vencido: 0, critico: 0, atencao: 0, proximo: 0, ok: 0, feito: 0, 'sem-data': 0, total: linhas.length };
     for (const l of linhas) t[l.piorStatus]++;
     return t;
   }, [linhas]);
@@ -202,7 +293,7 @@ export default function VencimentosFiscaisPage() {
     setSavingHistorico(true);
     try {
       const { empresa, fiscal } = historicoAlvo;
-      const fiscaisAtuais = garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado);
+      const fiscaisAtuais = garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado, empresa.cidade);
       const vencimentosFiscais = fiscaisAtuais.map((f) =>
         f.id === fiscal.id
           ? { ...f, tagVencimento: payload.tagVencimento, historicoVencimento: payload.historicoVencimento }
@@ -282,7 +373,7 @@ export default function VencimentosFiscaisPage() {
             </span>
           </div>
         </div>
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
           {STATUS_LEGENDA_ORDER.map((status) => {
             const s = STATUS_STYLE[status];
             const count =
@@ -291,6 +382,7 @@ export default function VencimentosFiscaisPage() {
               status === 'atencao' ? totaisGerais.atencao :
               status === 'proximo' ? totaisGerais.proximo :
               status === 'ok' ? totaisGerais.ok :
+              status === 'feito' ? totaisGerais.feito :
               totaisGerais['sem-data'];
             return (
               <button
@@ -312,6 +404,7 @@ export default function VencimentosFiscaisPage() {
                     {status === 'atencao' && `<=${limiares.atencao}d`}
                     {status === 'proximo' && `<=${limiares.proximo}d`}
                     {status === 'ok' && `> ${limiares.proximo}d`}
+                    {status === 'feito' && 'Cumpriu tudo'}
                     {status === 'sem-data' && 'Sem venc.'}
                   </div>
                 </div>
@@ -369,6 +462,7 @@ export default function VencimentosFiscaisPage() {
             <option value="atencao">So atencao</option>
             <option value="proximo">So proximos</option>
             <option value="ok">So em dia</option>
+            <option value="feito">So tudo feito (cumpriu tudo do mes)</option>
             <option value="sem-data">So sem data</option>
           </select>
         </div>
@@ -476,25 +570,35 @@ export default function VencimentosFiscaisPage() {
                                   )}
                                 </div>
                               )}
-                              <div className="flex items-center justify-between gap-0.5 mb-0.5 pr-4">
-                                <span className="text-[8px] font-black uppercase tracking-wide opacity-90 truncate">
-                                  {cell.label.split(' ')[0]}
-                                </span>
-                                <span className="text-[8px] font-bold opacity-80 shrink-0">
-                                  {l.itens.length}
-                                </span>
-                              </div>
-                              <div className="font-black text-sm leading-none tabular-nums">
-                                {l.diasMaisUrgente === null ? '-' :
-                                  l.diasMaisUrgente < 0 ? `${Math.abs(l.diasMaisUrgente)}d⬇` :
-                                  l.diasMaisUrgente === 0 ? 'HOJE' :
-                                  `${l.diasMaisUrgente}d`}
-                              </div>
-                              {(vencidosCount > 0 || criticosCount > 0) && (
-                                <div className="mt-0.5 flex flex-wrap gap-0.5">
-                                  {vencidosCount > 0 && <span className="rounded bg-black/25 px-1 text-[9px] font-bold">V:{vencidosCount}</span>}
-                                  {criticosCount > 0 && <span className="rounded bg-black/25 px-1 text-[9px] font-bold">C:{criticosCount}</span>}
+                              {l.piorStatus === 'feito' ? (
+                                <div className="flex flex-col items-center justify-center h-full">
+                                  <span className="text-[8px] font-black uppercase tracking-wide opacity-90 mb-0.5">FEITO</span>
+                                  <span className="text-lg leading-none">✓</span>
+                                  <span className="text-[8px] font-bold opacity-80 mt-0.5">tudo do mês</span>
                                 </div>
+                              ) : (
+                                <>
+                                  <div className="flex items-center justify-between gap-0.5 mb-0.5 pr-4">
+                                    <span className="text-[8px] font-black uppercase tracking-wide opacity-90 truncate">
+                                      {cell.label.split(' ')[0]}
+                                    </span>
+                                    <span className="text-[8px] font-bold opacity-80 shrink-0">
+                                      {l.itens.length}
+                                    </span>
+                                  </div>
+                                  <div className="font-black text-sm leading-none tabular-nums">
+                                    {l.diasMaisUrgente === null ? '-' :
+                                      l.diasMaisUrgente < 0 ? `${Math.abs(l.diasMaisUrgente)}d⬇` :
+                                      l.diasMaisUrgente === 0 ? 'HOJE' :
+                                      `${l.diasMaisUrgente}d`}
+                                  </div>
+                                  {(vencidosCount > 0 || criticosCount > 0) && (
+                                    <div className="mt-0.5 flex flex-wrap gap-0.5">
+                                      {vencidosCount > 0 && <span className="rounded bg-black/25 px-1 text-[9px] font-bold">V:{vencidosCount}</span>}
+                                      {criticosCount > 0 && <span className="rounded bg-black/25 px-1 text-[9px] font-bold">C:{criticosCount}</span>}
+                                    </div>
+                                  )}
+                                </>
                               )}
                             </button>
                           </td>
@@ -532,6 +636,7 @@ export default function VencimentosFiscaisPage() {
         <ModalDetalheEmpresa
           empresa={empresas.find((e) => e.id === modalEmpresa.id) ?? modalEmpresa}
           limiares={limiares}
+          checklistFeitas={checklistFeitas}
           onClose={() => setModalEmpresa(null)}
           onClickFiscal={(fiscal, dias, status) => {
             const empresaAtualizada = empresas.find((e) => e.id === modalEmpresa.id) ?? modalEmpresa;
@@ -579,26 +684,31 @@ export default function VencimentosFiscaisPage() {
 function ModalDetalheEmpresa({
   empresa,
   limiares,
+  checklistFeitas,
   onClose,
   onClickFiscal,
 }: {
   empresa: Empresa;
   limiares: Limiares;
+  checklistFeitas: Set<string>;
   onClose: () => void;
   onClickFiscal: (fiscal: VencimentoFiscal, dias: number | null, status: StatusFiscal) => void;
 }) {
   const fiscais = useMemo(() => {
-    return garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado)
+    return garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado, empresa.cidade)
       .map((fiscal) => {
         const dias = daysUntil(fiscal.vencimento);
-        return { fiscal, dias, status: getStatus(dias, limiares) };
+        const feitoNoChecklist = checklistFeitas.has(`${empresa.id}|${fiscal.nome}`);
+        return { fiscal, dias, status: getStatus(dias, limiares), feitoNoChecklist };
       })
       .sort((a, b) => {
+        // Feitos no checklist vão pro fim
+        if (a.feitoNoChecklist !== b.feitoNoChecklist) return a.feitoNoChecklist ? 1 : -1;
         const rank = STATUS_RANK[a.status] - STATUS_RANK[b.status];
         if (rank !== 0) return rank;
         return (a.dias ?? 9999) - (b.dias ?? 9999);
       });
-  }, [empresa, limiares]);
+  }, [empresa, limiares, checklistFeitas]);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onMouseDown={(e) => e.currentTarget === e.target && onClose()}>
@@ -621,9 +731,30 @@ function ModalDetalheEmpresa({
             Clique em qualquer obrigacao abaixo para ver ou registrar no historico.
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {fiscais.map(({ fiscal, dias, status }) => {
+            {fiscais.map(({ fiscal, dias, status, feitoNoChecklist }) => {
               const s = STATUS_STYLE[status];
               const temHistorico = (fiscal.historicoVencimento?.length ?? 0) > 0;
+              if (feitoNoChecklist) {
+                return (
+                  <button
+                    key={fiscal.id}
+                    onClick={() => onClickFiscal(fiscal, dias, status)}
+                    className="rounded-xl border-2 border-emerald-300 bg-emerald-50 text-emerald-900 p-3 text-left transition shadow-sm hover:shadow-lg hover:scale-[1.02]"
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wide text-emerald-700">
+                        <CheckCircle2 size={12} />
+                        Feito no checklist
+                      </span>
+                      <span className="text-[10px] font-bold opacity-80">
+                        {fiscal.vencimento ? formatBR(fiscal.vencimento) : 'Sem data'}
+                      </span>
+                    </div>
+                    <div className="font-bold text-sm leading-tight">{fiscal.nome}</div>
+                    <div className="mt-1 text-[11px] text-emerald-700 font-semibold">Já cumprido neste mês</div>
+                  </button>
+                );
+              }
               return (
                 <button
                   key={fiscal.id}

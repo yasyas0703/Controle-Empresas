@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Banknote, Plus, Pencil, Check, X, Trash2, Power, PowerOff, Loader2 } from 'lucide-react';
 import ModalBase from './ModalBase';
 import ConfirmModal from './ConfirmModal';
@@ -38,6 +38,14 @@ export default function ModalGerenciarBancos({ isOpen, onClose, empresa, onChang
   const [editForm, setEditForm] = useState<FormState>(EMPTY_FORM);
   const [confirmDelete, setConfirmDelete] = useState<ContaBancaria | null>(null);
 
+  // mostrarAlerta vem do contexto e não é estável (recriado a cada render).
+  // Sem ref, o useEffect abaixo entrava em loop infinito quando o modal abria
+  // — por isso a tela "Adicionar Bancos" ficava carregando para sempre.
+  const mostrarAlertaRef = useRef(mostrarAlerta);
+  useEffect(() => {
+    mostrarAlertaRef.current = mostrarAlerta;
+  }, [mostrarAlerta]);
+
   useEffect(() => {
     if (!isOpen) return;
     let cancelado = false;
@@ -49,7 +57,7 @@ export default function ModalGerenciarBancos({ isOpen, onClose, empresa, onChang
       })
       .catch((err) => {
         console.error(err);
-        mostrarAlerta('Erro', 'Não foi possível carregar os bancos.', 'erro');
+        mostrarAlertaRef.current('Erro', 'Não foi possível carregar os bancos.', 'erro');
       })
       .finally(() => {
         if (!cancelado) setLoading(false);
@@ -57,7 +65,7 @@ export default function ModalGerenciarBancos({ isOpen, onClose, empresa, onChang
     return () => {
       cancelado = true;
     };
-  }, [isOpen, empresa.id, mostrarAlerta]);
+  }, [isOpen, empresa.id]);
 
   const bancosOrdenados = useMemo(
     () => [...bancos].sort((a, b) => (a.ordem - b.ordem) || a.nome.localeCompare(b.nome, 'pt-BR')),

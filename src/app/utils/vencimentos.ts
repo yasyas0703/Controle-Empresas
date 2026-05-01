@@ -63,21 +63,23 @@ export function garantirVencimentosFiscais(existentes?: VencimentoFiscal[] | nul
 
 /**
  * Mesma coisa que `garantirVencimentosFiscais`, mas aplica as regras automáticas
- * de UF×imposto preenchendo o `vencimento` de itens que estão vazios e onde
- * existe regra. Itens que o usuário preencheu na mão são mantidos como estão.
+ * de UF/cidade × imposto preenchendo o `vencimento` de itens que estão vazios e
+ * onde existe regra. Itens que o usuário preencheu na mão são mantidos.
  *
  * @param estado UF da empresa (ex.: 'MG'). Pode ser undefined.
+ * @param cidade Cidade da empresa — usada para regras municipais (ISS).
  * @param referencia Data base para o cálculo (default = hoje). Útil pra testes.
  */
 export function garantirVencimentosFiscaisComRegras(
   existentes: VencimentoFiscal[] | null | undefined,
   estado: string | null | undefined,
+  cidade?: string | null,
   referencia: Date = new Date(),
 ): VencimentoFiscal[] {
   const base = garantirVencimentosFiscais(existentes);
   return base.map((item) => {
     if (item.vencimento) return item; // usuário já preencheu manualmente
-    const sugerido = proximoVencimento(item.nome, estado, referencia);
+    const sugerido = proximoVencimento(item.nome, estado, referencia, cidade);
     if (!sugerido) return item;
     return { ...item, vencimento: sugerido };
   });

@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Controle Empresas — Datasheet</title>
+<style>
+  @page {
+    size: A4;
+    margin: 18mm 16mm;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    color: #1f2937;
+    font-size: 10.5pt;
+    line-height: 1.55;
+    background: #ffffff;
+  }
+
+  /* ===== CAPA ===== */
+  .cover {
+    page-break-after: always;
+    height: 257mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    background: linear-gradient(135deg, #0c4a6e 0%, #075985 50%, #0e7490 100%);
+    color: white;
+    padding: 30mm 20mm;
+    margin: -18mm -16mm;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cover::before {
+    content: '';
+    position: absolute;
+    top: -100px;
+    right: -100px;
+    width: 400px;
+    height: 400px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+  }
+
+  .cover::after {
+    content: '';
+    position: absolute;
+    bottom: -150px;
+    left: -150px;
+    width: 500px;
+    height: 500px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+  }
+
+  .cover-top { position: relative; z-index: 1; }
+  .cover-mid { position: relative; z-index: 1; }
+  .cover-bot { position: relative; z-index: 1; }
+
+  .cover-tag {
+    display: inline-block;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 9.5pt;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+
+  .cover h1 {
+    font-size: 52pt;
+    font-weight: 800;
+    line-height: 1;
+    margin: 0 0 12px 0;
+    letter-spacing: -1.5px;
+  }
+
+  .cover h2 {
+    font-size: 18pt;
+    font-weight: 300;
+    margin: 0;
+    color: rgba(255,255,255,0.9);
+    line-height: 1.3;
+  }
+
+  .cover-stripe {
+    height: 4px;
+    width: 80px;
+    background: #fbbf24;
+    margin: 20px 0;
+    border-radius: 2px;
+  }
+
+  .cover-pitch {
+    font-size: 13pt;
+    line-height: 1.6;
+    color: rgba(255,255,255,0.95);
+    max-width: 130mm;
+  }
+
+  .cover-bot {
+    border-top: 1px solid rgba(255,255,255,0.2);
+    padding-top: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    font-size: 9.5pt;
+    color: rgba(255,255,255,0.85);
+  }
+
+  .cover-bot .doc-meta { text-align: right; }
+  .cover-bot strong { color: #fff; font-weight: 600; }
+
+  /* ===== SUMÁRIO ===== */
+  .toc {
+    page-break-after: always;
+    padding-top: 5mm;
+  }
+
+  .toc h2 {
+    font-size: 22pt;
+    color: #075985;
+    margin: 0 0 25px 0;
+    padding-bottom: 10px;
+    border-bottom: 3px solid #0e7490;
+  }
+
+  .toc-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    column-count: 2;
+    column-gap: 15mm;
+  }
+
+  .toc-list li {
+    padding: 7px 0;
+    font-size: 10.5pt;
+    color: #374151;
+    border-bottom: 1px dotted #d1d5db;
+    break-inside: avoid;
+  }
+
+  .toc-list li::before {
+    content: '▸';
+    color: #0e7490;
+    font-weight: bold;
+    margin-right: 8px;
+  }
+
+  /* ===== HEADERS ===== */
+  h1 {
+    font-size: 22pt;
+    color: #075985;
+    margin: 0 0 8px 0;
+    page-break-after: avoid;
+  }
+
+  h2 {
+    font-size: 16pt;
+    color: #075985;
+    margin: 28px 0 12px 0;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #0e7490;
+    page-break-after: avoid;
+  }
+
+  h3 {
+    font-size: 12.5pt;
+    color: #0c4a6e;
+    margin: 18px 0 8px 0;
+    page-break-after: avoid;
+  }
+
+  h3.module {
+    background: linear-gradient(90deg, #ecfeff 0%, transparent 100%);
+    border-left: 4px solid #0e7490;
+    padding: 8px 12px;
+    border-radius: 0 6px 6px 0;
+    color: #075985;
+  }
+
+  /* ===== TEXT ===== */
+  p { margin: 8px 0; text-align: justify; }
+  ul, ol { margin: 8px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  strong { color: #0c4a6e; font-weight: 600; }
+  blockquote {
+    margin: 14px 0;
+    padding: 10px 16px;
+    background: #f0f9ff;
+    border-left: 4px solid #0e7490;
+    color: #075985;
+    font-style: italic;
+    border-radius: 0 6px 6px 0;
+  }
+
+  /* ===== TABLES ===== */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 9.5pt;
+    page-break-inside: avoid;
+  }
+
+  th {
+    background: #0e7490;
+    color: white;
+    padding: 9px 11px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 9.5pt;
+  }
+
+  td {
+    padding: 8px 11px;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: top;
+  }
+
+  tr:nth-child(even) td { background: #f9fafb; }
+  tr:hover td { background: #ecfeff; }
+
+  /* ===== HIGHLIGHT BOXES ===== */
+  .lead {
+    font-size: 12pt;
+    line-height: 1.6;
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    padding: 16px 20px;
+    border-radius: 8px;
+    margin: 16px 0;
+    color: #0c4a6e;
+  }
+
+  .lead strong { color: #075985; }
+
+  .callout {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border: 1px solid #fbbf24;
+    padding: 12px 18px;
+    border-radius: 8px;
+    margin: 14px 0;
+    font-style: italic;
+    color: #78350f;
+  }
+
+  .module-list { list-style: none; padding: 0; }
+  .module-list li {
+    background: #f9fafb;
+    border-left: 3px solid #0e7490;
+    padding: 6px 12px;
+    margin: 4px 0;
+    border-radius: 0 4px 4px 0;
+  }
+
+  .badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 10px 0;
+  }
+  .badge {
+    background: #ecfeff;
+    color: #0e7490;
+    border: 1px solid #67e8f9;
+    padding: 4px 10px;
+    border-radius: 14px;
+    font-size: 8.5pt;
+    font-weight: 600;
+  }
+
+  .feature-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin: 12px 0;
+  }
+
+  .feature-card {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-left: 3px solid #0e7490;
+    padding: 8px 12px;
+    border-radius: 0 6px 6px 0;
+    font-size: 9.5pt;
+    page-break-inside: avoid;
+  }
+  .feature-card strong { display: block; color: #075985; margin-bottom: 2px; }
+
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin: 12px 0;
+  }
+  .status-card {
+    padding: 10px;
+    border-radius: 6px;
+    text-align: center;
+    font-size: 9pt;
+    font-weight: 600;
+  }
+  .status-vencido { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+  .status-critico { background: #ffedd5; color: #9a3412; border: 1px solid #fdba74; }
+  .status-atencao { background: #fef9c3; color: #854d0e; border: 1px solid #fde047; }
+  .status-emdia { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+
+  .pageBreak { page-break-before: always; }
+  .avoid-break { page-break-inside: avoid; }
+
+  /* ===== FOOTER FINAL ===== */
+  .closer {
+    margin-top: 30px;
+    background: linear-gradient(135deg, #075985 0%, #0e7490 100%);
+    color: white;
+    padding: 22px 26px;
+    border-radius: 10px;
+  }
+  .closer h2 {
+    color: white;
+    border: none;
+    margin: 0 0 8px 0;
+    font-size: 16pt;
+  }
+  .closer p { margin: 4px 0; color: rgba(255,255,255,0.95); }
+  .closer .contact-line { font-size: 11pt; margin-top: 12px; }
+  .closer a { color: #fde68a; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<!-- ===================== CAPA ===================== -->
+<div class="cover">
+  <div class="cover-top">
+    <span class="cover-tag">Datasheet · Versão 2026.04</span>
+  </div>
+
+  <div class="cover-mid">
+    <h1>Controle<br>Empresas</h1>
+    <div class="cover-stripe"></div>
+    <h2>Plataforma de gestão para escritórios de contabilidade</h2>
+    <p class="cover-pitch" style="margin-top:30px;">
+      Centralize a carteira de clientes, vencimentos por departamento, documentos,
+      RETs, responsabilidades e auditoria — em um único painel,
+      acessível em qualquer dispositivo, sem instalação.
+    </p>
+  </div>
+
+  <div class="cover-bot">
+    <div>
+      <strong>Apresentação Comercial</strong><br>
+      Documento confidencial — não distribuir
+    </div>
+    <div class="doc-meta">
+      <strong>Yasmin Teodoro</strong><br>
+      Desenvolvimento sob medida
+    </div>
+  </div>
+</div>
+
+<!-- ===================== SUMÁRIO ===================== -->
+<div class="toc">
+  <h2>Sumário</h2>
+  <ol class="toc-list">
+    <li>O que é o Controle Empresas</li>
+    <li>Para quem é</li>
+    <li>A dor que o sistema resolve</li>
+    <li>Cadastro de empresas</li>
+    <li>Painel de vencimentos por departamento</li>
+    <li>Checklist mensal fiscal</li>
+    <li>Cadastro de obrigações</li>
+    <li>Reconhecimento de guias por PDF</li>
+    <li>Documentos com validade</li>
+    <li>RETs (Regime Especial Tributário)</li>
+    <li>Calendário visual</li>
+    <li>Análises e gráficos</li>
+    <li>Tags e Serviços prestados</li>
+    <li>Equipe e permissões</li>
+    <li>Histórico / Auditoria</li>
+    <li>Lixeira e Backup</li>
+    <li>Notificações em tempo real</li>
+    <li>Exportação para PDF e Integrações</li>
+    <li>Segurança e usabilidade</li>
+    <li>Stack técnica</li>
+    <li>Resultado prático e indicadores</li>
+    <li>Próximos passos e contato</li>
+  </ol>
+</div>
+
+<!-- ===================== CONTEÚDO ===================== -->
+
+<h1>O que é o Controle Empresas</h1>
+
+<div class="lead">
+  O <strong>Controle Empresas</strong> é um sistema online, feito sob medida para escritórios
+  de contabilidade, que centraliza o que hoje está espalhado em planilhas, agendas, e-mails e
+  cabeças de pessoas: <strong>carteira de clientes, vencimentos por departamento, documentos,
+  RETs, responsabilidades, histórico de tudo o que foi feito e por quem</strong>.
+</div>
+
+<p>
+  Em uma frase: é o <strong>painel de comando do escritório</strong> — quem entra de manhã sabe
+  exatamente o que vence hoje, quem é responsável, o que está atrasado e o que precisa de atenção,
+  sem precisar abrir 10 planilhas.
+</p>
+
+<h2>Para quem é</h2>
+<ul>
+  <li>Escritórios de contabilidade que atendem <strong>dezenas a centenas de empresas</strong> simultaneamente.</li>
+  <li>Escritórios que já usam <strong>Domínio Sistemas</strong> e querem manter a base sincronizada (importação direta da planilha do Domínio).</li>
+  <li>Equipes divididas por departamento (<strong>Fiscal, Pessoal, Contábil, Cadastro</strong>) que precisam de controle individual sem perder a visão global.</li>
+  <li>Gestores que querem <strong>acabar com o "achismo"</strong>: saber em tempo real quem está com o quê, o que está atrasado e quem entregou.</li>
+</ul>
+
+<h2>A dor que o sistema resolve</h2>
+<table>
+  <thead>
+    <tr>
+      <th style="width:48%;">Problema típico do escritório</th>
+      <th>Como o Controle Empresas resolve</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Vencimentos espalhados em várias planilhas, cada departamento com a sua</td><td>Painel único de vencimentos, com visão por departamento e visão consolidada</td></tr>
+    <tr><td>Ninguém sabe quem é responsável por cada empresa em cada área</td><td>Matriz <strong>empresa × departamento × usuário responsável</strong>, atribuível em massa</td></tr>
+    <tr><td>RET e documentos com validade vencem sem ninguém perceber</td><td>Alertas automáticos: vencido, crítico (0–15 dias), atenção (15–30 dias), em dia</td></tr>
+    <tr><td>Cadastro novo: digitar CNPJ, endereço, regime, IE, IM... toda vez</td><td>Consulta automática de CNPJ — preenche endereço e dados em 1 clique</td></tr>
+    <tr><td>Importar 200 empresas do Domínio é um pesadelo manual</td><td>Importação em massa via planilha do Domínio, com criação automática de departamentos, responsáveis e cruzamento com base existente</td></tr>
+    <tr><td>"Quem alterou esse cadastro? Quando?" — ninguém sabe</td><td>Auditoria completa, com diff campo a campo de cada alteração</td></tr>
+    <tr><td>Apagou sem querer? Perdeu o trabalho</td><td>Lixeira com restauração de 1 clique e auto-limpeza após 10 dias</td></tr>
+    <tr><td>Documentos da empresa em pastas no computador de alguém</td><td>Upload anexado ao cadastro da empresa, com validade e visibilidade controlada</td></tr>
+    <tr><td>Funcionário saiu / mudou de setor — e os clientes dele?</td><td>Reatribuição de responsáveis sem perder histórico, com permissões automáticas</td></tr>
+  </tbody>
+</table>
+
+<div class="pageBreak"></div>
+
+<h1>Funcionalidades em detalhe</h1>
+
+<h3 class="module">1. Cadastro de empresas — o coração do sistema</h3>
+<ul>
+  <li>Cadastro completo: razão social, apelido, CNPJ/CPF/MEI/CEI/CAEPF/CNO (detecção automática do tipo de inscrição), inscrição estadual, inscrição municipal, regimes federal/estadual/municipal, endereço completo, status, código interno.</li>
+  <li><strong>Consulta CNPJ automática</strong> (BrasilAPI / ReceitaWS) — preenche endereço e dados públicos sem digitar.</li>
+  <li><strong>Importação em massa</strong> direto da planilha do <strong>Domínio Sistemas</strong>: detecta separador, mapeia colunas, cria departamentos e usuários que não existem, <strong>não sobrescreve</strong> atribuições já válidas.</li>
+  <li>Importação separada de <strong>responsabilidades fiscais</strong> (vincular responsáveis a empresas já cadastradas).</li>
+  <li><strong>Apelido e código</strong> para busca rápida (não precisa decorar CNPJ).</li>
+  <li><strong>Empresas desligadas</strong> ficam arquivadas sem sumir do histórico.</li>
+</ul>
+
+<h3 class="module">2. Painel de vencimentos por departamento</h3>
+<p>Cada departamento tem o seu painel dedicado, com filtros e cores coerentes:</p>
+<div class="badges">
+  <span class="badge">Painel Fiscal</span>
+  <span class="badge">Painel Pessoal</span>
+  <span class="badge">Painel Contábil</span>
+  <span class="badge">Painel Cadastro</span>
+</div>
+<p><strong>Obrigações fiscais cobertas:</strong> ICMS, SPED ICMS/IPI, IPI, GIA-ST/DIFAL, ICMS-ST,
+ISS, REINF, DARF Serviços Tomados, PIS/COFINS, SPED Contribuições, CSLL/IRPJ, Diferencial de Alíquota.</p>
+
+<p>Status visual em todos os módulos:</p>
+<div class="status-grid">
+  <div class="status-card status-vencido">VENCIDO</div>
+  <div class="status-card status-critico">CRÍTICO 0–15d</div>
+  <div class="status-card status-atencao">ATENÇÃO 15–30d</div>
+  <div class="status-card status-emdia">EM DIA</div>
+</div>
+
+<ul>
+  <li><strong>Tags personalizadas</strong> para destacar itens especiais ("urgente", "aguardando cliente", "em revisão").</li>
+  <li><strong>Histórico do vencimento</strong>: quem fez, quando, observações — uma linha do tempo por item.</li>
+  <li>Filtros: por status, por responsável, por tipo, por empresa.</li>
+</ul>
+
+<h3 class="module">3. Checklist mensal fiscal</h3>
+<p>Tela específica em formato de <strong>grade obrigação × empresa × mês</strong>, onde a equipe marca conforme entrega — visualmente parecida com uma planilha, mas com:</p>
+<ul>
+  <li>Marcação de quem concluiu, quando e com qual observação.</li>
+  <li>Filtros por mês, por obrigação e por empresa.</li>
+  <li>Acompanhamento de progresso em tempo real.</li>
+</ul>
+
+<h3 class="module">4. Cadastro de obrigações — motor de vencimentos</h3>
+<p>O sistema gera vencimentos automaticamente a partir de obrigações cadastradas com:</p>
+<div class="feature-grid">
+  <div class="feature-card"><strong>Departamento</strong>Fiscal / Pessoal / Contábil / Cadastro</div>
+  <div class="feature-card"><strong>Esfera</strong>Federal / Estadual / Municipal / Interna</div>
+  <div class="feature-card"><strong>Frequência</strong>Mensal a Anual + Eventual</div>
+  <div class="feature-card"><strong>Tipo de data</strong>Dia útil / dia corrido / dia fixo</div>
+  <div class="feature-card"><strong>Data legal</strong>Prazo oficial</div>
+  <div class="feature-card"><strong>Data meta</strong>Prazo interno (antes do legal)</div>
+  <div class="feature-card"><strong>Offset competência</strong>Ex.: ICMS jan vence em fev</div>
+  <div class="feature-card"><strong>Sinalizadores</strong>Gera multa, notifica cliente</div>
+</div>
+<div class="callout">Cadastra uma vez e o sistema replica para todas as empresas que se enquadram, no mês inteiro.</div>
+
+<h3 class="module">5. Reconhecimento de guias por PDF</h3>
+<p>Sobe a guia em PDF, o sistema <strong>lê e identifica automaticamente</strong> qual é a obrigação, qual a competência e o vencimento — eliminando digitação manual em uma das tarefas mais repetitivas do dia a dia.</p>
+
+<h3 class="module">6. Documentos com validade</h3>
+<ul>
+  <li>Upload anexado direto ao cadastro da empresa (até 10 MB por arquivo).</li>
+  <li>Cada documento tem <strong>nome, validade, departamentos responsáveis e nível de visibilidade</strong>.</li>
+  <li><strong>Visibilidade granular</strong>: público, por departamento, confidencial (só gestor), ou por usuários específicos.</li>
+  <li>Aparecem nos painéis de vencimentos junto com as obrigações.</li>
+</ul>
+
+<h3 class="module">7. RETs — Regime Especial Tributário</h3>
+<ul>
+  <li>Número do <strong>PTA</strong>, vencimento, última renovação, número da <strong>portaria</strong>.</li>
+  <li>Status ativo/inativo.</li>
+  <li>Aparece nos alertas do dashboard quando se aproxima do vencimento.</li>
+</ul>
+
+<h3 class="module">8. Calendário visual</h3>
+<ul>
+  <li>Grade mensal com todos os vencimentos da carteira em cores de status.</li>
+  <li>Painel lateral abre detalhes do dia clicado, com responsáveis visíveis.</li>
+  <li>Navegação ágil mês a mês.</li>
+</ul>
+
+<h3 class="module">9. Análises e gráficos</h3>
+<ul>
+  <li><strong>Donuts</strong> de distribuição: regime federal, tipo de inscrição, tipo de estabelecimento (matriz/filial).</li>
+  <li><strong>Mini-cards</strong>: total de empresas, cadastradas, com RET, com documento vencido.</li>
+  <li>Filtros por regime, por tipo de inscrição, por tipo de estabelecimento.</li>
+  <li>Indicadores de "saúde" do portfólio.</li>
+</ul>
+
+<h3 class="module">10. Tags e Serviços prestados</h3>
+<ul>
+  <li><strong>Tags</strong>: etiquetas livres para classificar empresas além do CNPJ — ex.: "Cliente VIP", "Em recuperação", "Holding", "Grupo X".</li>
+  <li><strong>Serviços</strong>: cadastro de serviços e vinculação às empresas. Painel mostra quantas empresas estão em cada serviço — útil para honorários, escopo contratual e relatórios gerenciais.</li>
+</ul>
+
+<h3 class="module">11. Equipe e permissões</h3>
+<ul>
+  <li>Gestão de <strong>usuários</strong> (criar, editar, ativar/desativar, alterar senha).</li>
+  <li>Dois papéis: <strong>Gerente</strong> (acesso total) e <strong>Usuário</strong> (só vê o que é dele).</li>
+  <li>Cada usuário pertence a um <strong>departamento</strong>.</li>
+  <li><strong>Reset de senha por e-mail</strong> com código de verificação.</li>
+  <li>O usuário comum só vê e edita empresas onde está vinculado como responsável.</li>
+</ul>
+
+<h3 class="module">12. Histórico / Auditoria</h3>
+<ul>
+  <li><strong>Toda ação registrada</strong>: criar, editar, excluir, login, logout, importar, restaurar.</li>
+  <li><strong>Diff campo a campo</strong>: o sistema mostra exatamente o que mudou — "Inscrição Estadual: 12345 → 67890".</li>
+  <li>Filtros por tipo de ação, por usuário e por entidade (empresa, documento, RET, usuário).</li>
+  <li>Permanente — útil para auditoria interna e defesa em caso de questionamento.</li>
+</ul>
+
+<h3 class="module">13. Lixeira e Backup</h3>
+<ul>
+  <li>Tudo que é excluído vai para a <strong>lixeira</strong> (soft-delete) — restauração com 1 clique, ao estado exato anterior. Limpeza automática após 10 dias.</li>
+  <li>Página dedicada de <strong>backup</strong> — geração programada de cópias da base, tranquilidade adicional além do backup nativo do banco.</li>
+</ul>
+
+<h3 class="module">14. Notificações em tempo real</h3>
+<ul>
+  <li>Sino no topo com contador de não lidas.</li>
+  <li>Alertas dentro do sistema <strong>+ notificações no navegador</strong> (push) quando vence algo importante.</li>
+  <li>Tipos: informação, sucesso, aviso, erro.</li>
+</ul>
+
+<h3 class="module">15. Exportação PDF e Integrações</h3>
+<ul>
+  <li>Listagens de empresas, vencimentos e relatórios podem ser exportados em <strong>PDF formatado</strong>, prontos para enviar ao cliente ou imprimir.</li>
+  <li><strong>Gmail / e-mail</strong> — envio de comunicações e notificações ao cliente.</li>
+  <li><strong>Consulta CNPJ</strong> em APIs públicas (BrasilAPI, ReceitaWS).</li>
+  <li>Google APIs configuráveis para extensões futuras.</li>
+</ul>
+
+<div class="pageBreak"></div>
+
+<h1>Por que é seguro</h1>
+<ul>
+  <li><strong>Login com e-mail e senha</strong>, com tokens renovados automaticamente.</li>
+  <li><strong>Banco em PostgreSQL profissional</strong> (Supabase), com backup gerenciado.</li>
+  <li><strong>Row Level Security</strong> — a segurança roda <strong>dentro do banco</strong>, não só na tela. Mesmo que alguém tente acessar um dado que não pode, o banco recusa.</li>
+  <li><strong>Auditoria de tudo</strong> — qualquer ação tem autor, data e diff salvos para sempre.</li>
+  <li><strong>Soft-delete</strong> — nada some por engano.</li>
+  <li><strong>Visibilidade granular</strong> de documentos — confidencial, por departamento, por usuário.</li>
+  <li><strong>HTTPS</strong> em toda a comunicação.</li>
+</ul>
+
+<h2>Por que é fácil de usar</h2>
+<ul>
+  <li><strong>Interface moderna</strong>, no padrão dos sistemas que a equipe já usa no dia a dia (parece um app, não um software de 2008).</li>
+  <li><strong>100% responsivo</strong> — funciona em desktop, notebook, tablet e celular, com layouts pensados para cada tela.</li>
+  <li><strong>Modo claro e escuro</strong>.</li>
+  <li><strong>Busca instantânea</strong> em todos os módulos — digite e filtra em tempo real.</li>
+  <li><strong>Atalhos visuais</strong>: cores de status, badges, ícones consistentes.</li>
+  <li><strong>Sem instalação</strong> — abre no navegador. Funciona em Windows, Mac e Linux igualmente.</li>
+</ul>
+
+<h2>Stack técnica</h2>
+<table>
+  <thead>
+    <tr><th style="width:30%">Camada</th><th>Tecnologia</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Frontend</td><td>Next.js 16 (React 19) com App Router</td></tr>
+    <tr><td>Linguagem</td><td>TypeScript 5 (tipagem rigorosa, zero <code>any</code>)</td></tr>
+    <tr><td>UI</td><td>Tailwind CSS 4 + Lucide Icons</td></tr>
+    <tr><td>Backend</td><td>Supabase (PostgreSQL + Auth + Storage + Realtime)</td></tr>
+    <tr><td>Validação</td><td>Zod (CPF, CNPJ, CEP)</td></tr>
+    <tr><td>PDFs</td><td>pdfjs-dist + jspdf (visualização e exportação)</td></tr>
+    <tr><td>Planilhas</td><td>ExcelJS (importação Domínio)</td></tr>
+    <tr><td>E-mail</td><td>Nodemailer + Google APIs</td></tr>
+    <tr><td>Hospedagem</td><td>Vercel ou similar (CDN global, SSL automático)</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Modelo de dados:</strong> 11+ tabelas no PostgreSQL, com relacionamentos referenciais,
+índices de performance, 20+ políticas de segurança e funções de autorização
+(<code>is_manager</code>, <code>can_access_empresa</code>).</p>
+
+<h2>Resultado prático para o cliente</h2>
+<ul>
+  <li>Em <strong>1 dia</strong> a base do escritório está importada e o sistema operacional.</li>
+  <li>Em <strong>1 semana</strong> a equipe está navegando sem treinamento longo (a interface é autoexplicativa).</li>
+  <li>Em <strong>1 mês</strong> o gestor consegue responder qualquer pergunta da carteira <strong>em segundos</strong>.</li>
+</ul>
+
+<h3>Indicadores típicos após implantação</h3>
+<ul>
+  <li>Redução do <strong>tempo gasto procurando informação</strong> — de minutos para segundos.</li>
+  <li>Queda nas <strong>multas por atraso</strong> (alertas antecipados de 30 e 15 dias).</li>
+  <li>Diminuição do <strong>retrabalho</strong> (cadastro feito uma vez, usado por todos).</li>
+  <li><strong>Onboarding de funcionários novos</strong> mais rápido — o sistema é a fonte da verdade, sem depender de quem "tem o conhecimento".</li>
+</ul>
+
+<h2>O que está incluído</h2>
+<ul>
+  <li>Sistema completo, web, multi-usuário, multi-departamento.</li>
+  <li>Importação inicial da base do escritório (planilha do Domínio).</li>
+  <li>Treinamento da equipe.</li>
+  <li>Suporte direto com a desenvolvedora.</li>
+  <li>Atualizações contínuas — novas funcionalidades chegam sem custo adicional.</li>
+</ul>
+
+<div class="closer">
+  <h2>Próximos passos</h2>
+  <p><strong>1.</strong> Demonstração ao vivo — sessão de tela compartilhada para passar pelos módulos com dados reais.</p>
+  <p><strong>2.</strong> Período de avaliação — acesso ao sistema com a base do escritório importada, para a equipe testar no dia a dia.</p>
+  <p><strong>3.</strong> Implantação — migração definitiva, treinamento e go-live.</p>
+  <p class="contact-line">
+    <strong>Yasmin Teodoro</strong><br>
+    <a href="mailto:yasminteodoro0703@gmail.com">yasminteodoro0703@gmail.com</a>
+  </p>
+</div>
+
+</body>
+</html>
