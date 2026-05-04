@@ -275,9 +275,11 @@ export default function ControleContabilPage() {
         respId: getRespContabil(e),
       }))
       .filter((l) => {
-        // Se a empresa não tem nenhum banco no ano selecionado, não mostra
-        // (isolamento por ano — só aparece quem teve marcação nesse ano).
-        if (l.bancos.length === 0) return false;
+        // Sem bancos no ano E sem responsável contábil → fica de fora.
+        // Empresa recém-cadastrada com responsável contábil aparece mesmo sem banco
+        // (a UI mostra "Nenhum banco cadastrado" + botão de adicionar), pra propagar
+        // o cadastro pra essa view sem o usuário precisar criar um banco antes.
+        if (l.bancos.length === 0 && !l.respId) return false;
         if (!mostrarArquivadas && isArquivada(l.empresa)) return false;
         if (q) {
           const hay = `${l.empresa.codigo} ${l.empresa.razao_social ?? ''} ${l.empresa.apelido ?? ''}`.toLowerCase();
