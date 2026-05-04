@@ -33,8 +33,14 @@ export function detectTipoInscricao(doc: string, currentTipo?: TipoInscricao): T
     return 'CNPJ';
   }
   if (digits.length === 12) {
+    // 12 dígitos é o tamanho de CNO/CEI, mas também é um estágio intermediário ao digitar
+    // um CNPJ (14 dígitos). Só assume CNO/CEI se o usuário já selecionou manualmente —
+    // caso contrário mantém o tipo atual e deixa o usuário continuar digitando até 14.
+    // Sem isso, ao chegar em 12 dígitos o sistema mudava pra CNO e o formatador cortava
+    // em 15 chars, impedindo o usuário de digitar o restante do CNPJ.
     if (currentTipo === 'CEI') return 'CEI';
-    return 'CNO';
+    if (currentTipo === 'CNO') return 'CNO';
+    return currentTipo || '';
   }
   return currentTipo || '';
 }
