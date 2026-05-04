@@ -669,7 +669,7 @@ export default function ChecklistFiscalPage() {
         {canManage && (
           <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
             <div className="inline-flex items-center gap-1 rounded-xl bg-gray-100 p-1">
-              <button onClick={() => setAba('fiscal')} className="rounded-lg px-4 py-1.5 text-xs sm:text-sm font-bold text-gray-600 hover:bg-white">Fiscal</button>
+              <button onClick={() => setAba('fiscal')} className="rounded-lg px-4 py-1.5 text-xs sm:text-sm font-bold text-gray-600 hover:bg-white">Regime Normal</button>
               <button className="rounded-lg px-4 py-1.5 text-xs sm:text-sm font-bold bg-gradient-to-r from-purple-500 via-fuchsia-500 to-pink-500 text-white shadow">SN</button>
             </div>
           </div>
@@ -729,7 +729,7 @@ export default function ChecklistFiscalPage() {
                   : 'text-gray-600 hover:bg-white'
               }`}
             >
-              Fiscal
+              Regime Normal
             </button>
             <button
               type="button"
