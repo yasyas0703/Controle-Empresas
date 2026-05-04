@@ -13,7 +13,10 @@ export function normalizarNomeDepartamento(nome?: string | null): DepartamentoSl
     .replace(COMBINING_DIACRITICS, '')
     .trim();
   if (!n) return null;
-  if (n === 'fiscal') return 'fiscal';
+  // 'fiscal' e 'fiscal - sn' são deps separados no banco, mas pro menu/sidebar
+  // ambos contam como "fiscal" — vêem as mesmas abinhas (Painel Fiscal / Checklist Mensal),
+  // que internamente isolam o conteúdo de cada dep via FISCAL_SN_DEPT_NOME.
+  if (n === 'fiscal' || n === 'fiscal - sn' || n === 'fiscal-sn' || n === 'fiscal sn') return 'fiscal';
   if (n === 'pessoal' || n === 'departamento pessoal' || n === 'dp' || n === 'rh' || n === 'recursos humanos') return 'pessoal';
   if (n === 'contabil' || n === 'contabilidade') return 'contabil';
   if (n === 'cadastro' || n === 'cadastros') return 'cadastro';
