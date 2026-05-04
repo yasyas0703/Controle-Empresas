@@ -134,12 +134,19 @@ export default function ChecklistFiscalPage() {
     carregar(mes);
   }, [mes, carregar]);
 
-  // Default: para usuário comum (não gerente/admin), começa filtrando só empresas dele
+  // Para usuário comum (não gerente/admin), o filtro "minhas empresas" é FORÇADO
+  // — não vê empresas dos outros responsáveis. Gerente/admin: default off, livre p/ alternar.
   useEffect(() => {
-    if (apenasMinhasInitRef.current) return;
     if (!currentUserId) return;
-    apenasMinhasInitRef.current = true;
-    if (!canManage) setApenasMinhas(true);
+    if (!canManage) {
+      // não-gerente: sempre travado em true
+      setApenasMinhas(true);
+      // limpa qualquer filtro de outro usuário
+      setFiltroUsuario('');
+    } else if (!apenasMinhasInitRef.current) {
+      apenasMinhasInitRef.current = true;
+      // gerente: deixa como está (default false)
+    }
   }, [currentUserId, canManage]);
 
   // Realtime: atualiza automaticamente quando outro usuário marca/desmarca
@@ -157,12 +164,14 @@ export default function ChecklistFiscalPage() {
             return next;
           });
         } else {
+          const statusRow = row.status === 'feito' || row.status === 'sem_obrigacao' ? row.status : null;
           const item: ChecklistFiscalItem = {
             id: row.id,
             empresaId: row.empresa_id,
             mes: row.mes,
             obrigacao: row.obrigacao,
             concluido: !!row.concluido,
+            status: statusRow,
             concluidoPorId: row.concluido_por_id,
             concluidoPorNome: row.concluido_por_nome ?? undefined,
             concluidoEm: row.concluido_em ?? undefined,
@@ -184,8 +193,8 @@ export default function ChecklistFiscalPage() {
     };
   }, [mes]);
 
-  // Marca/desmarca uma célula
-  const toggle = async (empresa: Empresa, obrigacao: string, concluido: boolean) => {
+  // Marca/desmarca uma célula. status null = limpa
+  const toggle = async (empresa: Empresa, obrigacao: string, novo: 'feito' | 'sem_obrigacao' | null) => {
     const key = buildKey(empresa.id, obrigacao);
     const atual = items.get(key);
     setSavingKeys((prev) => new Set(prev).add(key));
@@ -193,22 +202,26 @@ export default function ChecklistFiscalPage() {
     // Optimistic update
     setItems((prev) => {
       const next = new Map(prev);
-      if (concluido) {
+      if (novo) {
         next.set(key, {
           id: atual?.id ?? 'tmp',
           empresaId: empresa.id,
           mes,
           obrigacao,
-          concluido: true,
+          concluido: novo === 'feito',
+          status: novo,
           concluidoPorId: currentUserId ?? null,
           concluidoPorNome: currentUser?.nome,
           concluidoEm: new Date().toISOString(),
           observacao: atual?.observacao,
+          arquivoUrl: atual?.arquivoUrl,
+          arquivoNome: atual?.arquivoNome,
+          arquivoHistorico: atual?.arquivoHistorico,
           criadoEm: atual?.criadoEm ?? new Date().toISOString(),
           atualizadoEm: new Date().toISOString(),
         });
       } else if (atual) {
-        next.set(key, { ...atual, concluido: false, concluidoPorId: null, concluidoPorNome: undefined, concluidoEm: undefined });
+        next.set(key, { ...atual, concluido: false, status: null, concluidoPorId: null, concluidoPorNome: undefined, concluidoEm: undefined });
       }
       return next;
     });
@@ -218,7 +231,7 @@ export default function ChecklistFiscalPage() {
         empresaId: empresa.id,
         mes,
         obrigacao,
-        concluido,
+        status: novo,
         concluidoPorId: currentUserId,
         concluidoPorNome: currentUser?.nome,
         observacao: atual?.observacao ?? null,
@@ -446,7 +459,8 @@ export default function ChecklistFiscalPage() {
               item: aplica ? items.get(buildKey(empresa.id, obrigacao)) : undefined,
             };
           });
-        const aplicaveis = cells.filter((c) => c.aplica);
+        // "sem_obrigacao" sai do denominador (a empresa não tem essa obrigação no mês)
+        const aplicaveis = cells.filter((c) => c.aplica && c.item?.status !== 'sem_obrigacao');
         const feitas = aplicaveis.filter((c) => c.item?.concluido).length;
         const total = aplicaveis.length;
         const progresso = total === 0 ? 0 : (feitas / total) * 100;
@@ -459,10 +473,12 @@ export default function ChecklistFiscalPage() {
           const hay = `${l.empresa.codigo} ${l.empresa.razao_social ?? ''} ${l.empresa.apelido ?? ''}`.toLowerCase();
           if (!hay.includes(q)) return false;
         }
-        if (filtroUsuario) {
+        // Filtro de usuário só para gerentes (não-gerentes não enxergam outros)
+        if (canManage && filtroUsuario) {
           if (l.respId !== filtroUsuario) return false;
         }
-        if (apenasMinhas && currentUserId) {
+        // Não-gerentes: força ver só as próprias empresas
+        if ((apenasMinhas || !canManage) && currentUserId) {
           if (l.respId !== currentUserId) return false;
         }
         if (filtroProgresso === 'pendentes' && l.feitas > 0) return false;
@@ -479,7 +495,7 @@ export default function ChecklistFiscalPage() {
       if (a.progresso !== b.progresso) return b.progresso - a.progresso;
       return a.empresa.codigo.localeCompare(b.empresa.codigo);
     });
-  }, [empresas, items, search, filtroUsuario, apenasMinhas, currentUserId, filtroProgresso, getResponsavelFiscal]);
+  }, [empresas, items, search, filtroUsuario, apenasMinhas, currentUserId, canManage, filtroProgresso, getResponsavelFiscal]);
 
   // Stats
   const stats = useMemo(() => {
@@ -489,9 +505,12 @@ export default function ChecklistFiscalPage() {
     const empresasPendentes = linhas.filter((l) => l.feitas === 0).length;
     const empresasParciais = linhas.filter((l) => l.feitas > 0 && l.feitas < l.total).length;
     const progressoGeral = totalCells === 0 ? 0 : (feitasCells / totalCells) * 100;
-    // por obrigação — total considera apenas empresas onde a obrigação se aplica
+    // por obrigação — total considera empresas onde a obrigação se aplica E não foi marcada como "sem obrigação no mês"
     const porObrigacao = VENCIMENTOS_FISCAIS_NOMES.map((obr) => {
-      const aplicaveis = linhas.filter((l) => l.cells.find((c) => c.obrigacao === obr)?.aplica);
+      const aplicaveis = linhas.filter((l) => {
+        const c = l.cells.find((c) => c.obrigacao === obr);
+        return c?.aplica && c.item?.status !== 'sem_obrigacao';
+      });
       const feitas = aplicaveis.filter((l) => l.cells.find((c) => c.obrigacao === obr)?.item?.concluido).length;
       const total = aplicaveis.length;
       return { obrigacao: obr, feitas, total, pct: total === 0 ? 0 : (feitas / total) * 100 };
@@ -520,7 +539,7 @@ export default function ChecklistFiscalPage() {
     const header = ['Código', 'Empresa', 'Responsável Fiscal', ...VENCIMENTOS_FISCAIS_NOMES, 'Progresso (%)', 'Feitas/Total'];
     const rows = linhas.map((l) => {
       const resp = l.respId ? (usuarios.find((u) => u.id === l.respId)?.nome ?? '') : '';
-      const cells = l.cells.map((c) => (!c.aplica ? 'N/A' : c.item?.concluido ? 'OK' : ''));
+      const cells = l.cells.map((c) => (!c.aplica ? 'N/A' : c.item?.status === 'sem_obrigacao' ? 'SEM OBR' : c.item?.concluido ? 'OK' : ''));
       return [l.empresa.codigo, l.empresa.razao_social || l.empresa.apelido || '', resp, ...cells, Math.round(l.progresso), `${l.feitas}/${l.total}`];
     });
     const csv = [header, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n');
@@ -735,14 +754,16 @@ export default function ChecklistFiscalPage() {
               className="w-full rounded-xl bg-gray-50 pl-10 pr-4 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-emerald-400 focus:bg-white transition"
             />
           </div>
-          <select
-            value={filtroUsuario}
-            onChange={(e) => setFiltroUsuario(e.target.value)}
-            className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-emerald-400"
-          >
-            <option value="">Todos responsáveis fiscais</option>
-            {fiscalUsers.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
-          </select>
+          {canManage && (
+            <select
+              value={filtroUsuario}
+              onChange={(e) => setFiltroUsuario(e.target.value)}
+              className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-emerald-400"
+            >
+              <option value="">Todos responsáveis fiscais</option>
+              {fiscalUsers.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+            </select>
+          )}
           <select
             value={filtroProgresso}
             onChange={(e) => setFiltroProgresso(e.target.value as typeof filtroProgresso)}
@@ -753,24 +774,26 @@ export default function ChecklistFiscalPage() {
             <option value="parciais">Só em andamento</option>
             <option value="concluidas">Só 100% concluídas</option>
           </select>
-          <button
-            onClick={() => setApenasMinhas((v) => !v)}
-            className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold border-2 transition ${
-              apenasMinhas
-                ? 'bg-emerald-50 border-emerald-400 text-emerald-700'
-                : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-emerald-300'
-            }`}
-            disabled={!currentUserId}
-            title={!currentUserId ? 'Faça login para filtrar suas empresas' : undefined}
-          >
-            <UserIcon size={16} />
-            {apenasMinhas ? 'Mostrando minhas' : 'Só minhas empresas'}
-          </button>
+          {canManage && (
+            <button
+              onClick={() => setApenasMinhas((v) => !v)}
+              className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold border-2 transition ${
+                apenasMinhas
+                  ? 'bg-emerald-50 border-emerald-400 text-emerald-700'
+                  : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-emerald-300'
+              }`}
+              disabled={!currentUserId}
+              title={!currentUserId ? 'Faça login para filtrar suas empresas' : undefined}
+            >
+              <UserIcon size={16} />
+              {apenasMinhas ? 'Mostrando minhas' : 'Só minhas empresas'}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Stats por usuário (chips) */}
-      {fiscalUsers.length > 0 && (
+      {/* Stats por usuário (chips) — só gerente vê o progresso de todos */}
+      {canManage && fiscalUsers.length > 0 && (
         <div className="rounded-2xl bg-white p-3 sm:p-4 shadow-sm border border-gray-100">
           <div className="flex items-center gap-2 text-sm font-bold text-gray-800 mb-2">
             <Users size={14} className="text-gray-400" />
@@ -914,9 +937,17 @@ export default function ChecklistFiscalPage() {
                         const key = buildKey(l.empresa.id, obrigacao);
                         const saving = savingKeys.has(key);
                         const feito = !!item?.concluido;
+                        const semObr = item?.status === 'sem_obrigacao';
                         const temObs = !!(item?.observacao && item.observacao.trim());
                         const temArquivo = !!item?.arquivoUrl;
                         const canEdit = canManage || (!!currentUserId && l.respId === currentUserId);
+
+                        const handleClickStatus = (alvo: 'feito' | 'sem_obrigacao') => {
+                          if (!canEdit || saving) return;
+                          // clicar no estado já ativo desmarca
+                          const atual = item?.status ?? null;
+                          toggle(l.empresa, obrigacao, atual === alvo ? null : alvo);
+                        };
 
                         return (
                           <td key={obrigacao} className="border-b border-gray-100 p-1 w-[90px] min-w-[90px] max-w-[90px]">
@@ -924,30 +955,53 @@ export default function ChecklistFiscalPage() {
                               className={`group relative rounded-lg border-2 p-1.5 transition ${
                                 feito
                                   ? 'bg-emerald-50 border-emerald-300 hover:border-emerald-500'
-                                  : 'bg-gray-50 border-gray-200 hover:border-emerald-300'
+                                  : semObr
+                                    ? 'bg-rose-50 border-rose-300 hover:border-rose-500'
+                                    : 'bg-gray-50 border-gray-200 hover:border-emerald-300'
                               } ${saving ? 'opacity-60' : ''}`}
                             >
-                              <button
-                                type="button"
-                                onClick={() => canEdit && !saving && toggle(l.empresa, obrigacao, !feito)}
-                                disabled={!canEdit || saving}
-                                className={`w-full flex items-center justify-center h-7 rounded-md transition ${
-                                  feito
-                                    ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm'
-                                    : canEdit
-                                      ? 'bg-white border border-gray-300 hover:border-emerald-500 hover:bg-emerald-50 text-gray-400 hover:text-emerald-600'
-                                      : 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                                }`}
-                                title={
-                                  !canEdit ? 'Sem permissão (responsável fiscal ou gerente)' :
-                                  feito ? `Feito por ${item?.concluidoPorNome ?? '-'} em ${item?.concluidoEm ? new Date(item.concluidoEm).toLocaleString('pt-BR') : '-'}\nClique para desmarcar` :
-                                  'Clique para marcar como feito'
-                                }
-                              >
-                                {feito ? <Check size={18} strokeWidth={3} /> : <span className="text-[10px] font-semibold">marcar</span>}
-                              </button>
-                              {feito && item?.concluidoPorNome && (
-                                <div className="mt-1 text-[9px] text-emerald-700 font-bold text-center truncate" title={item.concluidoPorNome}>
+                              <div className="grid grid-cols-2 gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleClickStatus('feito')}
+                                  disabled={!canEdit || saving}
+                                  className={`flex items-center justify-center h-7 rounded-md transition ${
+                                    feito
+                                      ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm'
+                                      : canEdit
+                                        ? 'bg-white border border-gray-300 hover:border-emerald-500 hover:bg-emerald-50 text-gray-400 hover:text-emerald-600'
+                                        : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                                  }`}
+                                  title={
+                                    !canEdit ? 'Sem permissão (responsável fiscal ou gerente)' :
+                                    feito ? `Feito por ${item?.concluidoPorNome ?? '-'} em ${item?.concluidoEm ? new Date(item.concluidoEm).toLocaleString('pt-BR') : '-'}\nClique para desmarcar` :
+                                    'Marcar como feito'
+                                  }
+                                >
+                                  <Check size={16} strokeWidth={3} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleClickStatus('sem_obrigacao')}
+                                  disabled={!canEdit || saving}
+                                  className={`flex items-center justify-center h-7 rounded-md transition ${
+                                    semObr
+                                      ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-sm'
+                                      : canEdit
+                                        ? 'bg-white border border-gray-300 hover:border-rose-500 hover:bg-rose-50 text-gray-400 hover:text-rose-600'
+                                        : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                                  }`}
+                                  title={
+                                    !canEdit ? 'Sem permissão (responsável fiscal ou gerente)' :
+                                    semObr ? `Sem obrigação neste mês\nMarcado por ${item?.concluidoPorNome ?? '-'}\nClique para desmarcar` :
+                                    'Marcar como SEM obrigação neste mês'
+                                  }
+                                >
+                                  <XCircle size={16} strokeWidth={2.5} />
+                                </button>
+                              </div>
+                              {(feito || semObr) && item?.concluidoPorNome && (
+                                <div className={`mt-1 text-[9px] font-bold text-center truncate ${feito ? 'text-emerald-700' : 'text-rose-700'}`} title={item.concluidoPorNome}>
                                   {item.concluidoPorNome.split(' ')[0]}
                                 </div>
                               )}

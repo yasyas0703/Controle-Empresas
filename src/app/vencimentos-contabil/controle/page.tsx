@@ -479,7 +479,7 @@ export default function ControleContabilPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="Progresso geral" valor={`${stats.pct}%`} accent="emerald" />
-        <StatCard label="Conferidos" valor={stats.feitas} accent="emerald" sub={`de ${stats.totalCelulas}`} />
+        <StatCard label="Lançados" valor={stats.feitas} accent="emerald" sub={`de ${stats.totalCelulas}`} />
         <StatCard label="Recebidos pendentes" valor={stats.pendentes} accent="orange" />
         <StatCard label="Bancos cadastrados" valor={stats.totalBancos} accent="cyan" sub={`em ${linhas.length} empresa${linhas.length === 1 ? '' : 's'}`} />
       </div>
@@ -487,7 +487,7 @@ export default function ControleContabilPage() {
       {/* Legenda */}
       <div className="rounded-xl bg-white border border-gray-100 px-4 py-2 flex items-center gap-4 flex-wrap text-[11px] text-gray-600">
         <span className="font-bold text-gray-500 uppercase tracking-wider text-[10px]">Legenda:</span>
-        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded bg-emerald-500" /> Feito</span>
+        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded bg-emerald-500" /> Lançado</span>
         <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded bg-orange-400" /> Recebido (pendente)</span>
         <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded border border-dashed border-slate-400 bg-slate-50 text-[7px] font-bold text-slate-500 flex items-center justify-center leading-none">S/M</span> Sem movimento</span>
         <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded border border-gray-300 bg-white" /> Sem marcação</span>
@@ -784,7 +784,7 @@ function CelulaConferencia({
 
   const tooltip =
     status === 'feito'
-      ? `Conferido${marcadoPorNome ? ' por ' + marcadoPorNome : ''}${arquivosCount > 0 ? ` · ${arquivosCount} extrato${arquivosCount > 1 ? 's' : ''}` : ''}`
+      ? `Lançado${marcadoPorNome ? ' por ' + marcadoPorNome : ''}${arquivosCount > 0 ? ` · ${arquivosCount} extrato${arquivosCount > 1 ? 's' : ''}` : ''}`
       : status === 'recebido_pendente'
         ? `Recebido (pendente)${marcadoPorNome ? ' por ' + marcadoPorNome : ''}`
         : status === 'sem_movimento'

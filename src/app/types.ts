@@ -103,12 +103,15 @@ export const VENCIMENTOS_FISCAIS_NOMES = [
 
 export type VencimentoFiscalNome = (typeof VENCIMENTOS_FISCAIS_NOMES)[number];
 
+export type ChecklistFiscalStatus = 'feito' | 'sem_obrigacao' | null;
+
 export interface ChecklistFiscalItem {
   id: UUID;
   empresaId: UUID;
   mes: string; // formato 'YYYY-MM'
   obrigacao: string; // nome da obrigação fiscal
   concluido: boolean;
+  status?: ChecklistFiscalStatus;
   concluidoPorId?: UUID | null;
   concluidoPorNome?: string;
   concluidoEm?: string; // ISO

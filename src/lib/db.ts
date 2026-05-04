@@ -1684,6 +1684,7 @@ type ChecklistFiscalRow = {
   mes: string;
   obrigacao: string;
   concluido: boolean;
+  status: string | null;
   concluido_por_id: string | null;
   concluido_por_nome: string | null;
   concluido_em: string | null;
@@ -1696,12 +1697,14 @@ type ChecklistFiscalRow = {
 };
 
 function toChecklistItem(row: ChecklistFiscalRow): ChecklistFiscalItem {
+  const statusVal = row.status === 'feito' || row.status === 'sem_obrigacao' ? row.status : null;
   return {
     id: row.id,
     empresaId: row.empresa_id,
     mes: row.mes,
     obrigacao: row.obrigacao,
     concluido: row.concluido,
+    status: statusVal,
     concluidoPorId: row.concluido_por_id,
     concluidoPorNome: row.concluido_por_nome ?? undefined,
     concluidoEm: row.concluido_em ? toIso(row.concluido_em) : undefined,
@@ -1755,20 +1758,22 @@ export async function upsertChecklistFiscal(payload: {
   empresaId: UUID;
   mes: string;
   obrigacao: string;
-  concluido: boolean;
+  status: 'feito' | 'sem_obrigacao' | null;
   concluidoPorId?: UUID | null;
   concluidoPorNome?: string;
   observacao?: string | null;
 }): Promise<ChecklistFiscalItem> {
   const now = new Date().toISOString();
+  const isFeito = payload.status === 'feito';
   const row = {
     empresa_id: payload.empresaId,
     mes: payload.mes,
     obrigacao: payload.obrigacao,
-    concluido: payload.concluido,
-    concluido_por_id: payload.concluido ? (payload.concluidoPorId ?? null) : null,
-    concluido_por_nome: payload.concluido ? (payload.concluidoPorNome ?? null) : null,
-    concluido_em: payload.concluido ? now : null,
+    concluido: isFeito,
+    status: payload.status,
+    concluido_por_id: payload.status ? (payload.concluidoPorId ?? null) : null,
+    concluido_por_nome: payload.status ? (payload.concluidoPorNome ?? null) : null,
+    concluido_em: payload.status ? now : null,
     observacao: payload.observacao ?? null,
     atualizado_em: now,
   };

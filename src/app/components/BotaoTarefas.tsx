@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ListTodo, Loader2, ExternalLink } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -16,30 +16,19 @@ const FALLBACK_TAREFAS_URL = 'https://controle-tarefas.vercel.app';
 export default function BotaoTarefas({ variant, onClick }: Props) {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [ssoUrl, setSsoUrl] = useState<string | null>(null);
+  const fetchingRef = useRef(false);
 
-  async function handleClick() {
-    if (loading) return;
-    setErro(null);
-    setLoading(true);
-
-    // Abre a aba IMEDIATAMENTE (síncrono dentro do click) pra não cair no
-    // bloqueador de popup. Depois redireciona pra URL real quando o SSO responder.
-    const novaAba = window.open('about:blank', '_blank', 'noopener,noreferrer');
-    if (!novaAba) {
-      setLoading(false);
-      setErro('Bloqueador de pop-up ativo. Permita pop-ups deste site e tente de novo.');
-      return;
-    }
-
+  const buscarSsoUrl = useCallback(async (): Promise<string | null> => {
+    if (ssoUrl) return ssoUrl;
+    if (fetchingRef.current) return null;
+    fetchingRef.current = true;
     try {
-      onClick?.();
-
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
       if (!accessToken) {
-        novaAba.close();
-        setErro('Sessao nao encontrada. Faca login novamente.');
-        return;
+        setErro('Sessão não encontrada. Faça login novamente.');
+        return null;
       }
 
       const res = await fetch('/api/sso/issue', {
@@ -49,13 +38,11 @@ export default function BotaoTarefas({ variant, onClick }: Props) {
           Authorization: `Bearer ${accessToken}`,
         },
       });
-
       const data = await res.json().catch(() => ({} as any));
 
       if (!res.ok) {
-        novaAba.close();
         setErro(data?.error || 'Falha ao gerar acesso ao Tarefas');
-        return;
+        return null;
       }
 
       const url: string | undefined = data?.ssoUrl
@@ -64,33 +51,68 @@ export default function BotaoTarefas({ variant, onClick }: Props) {
           : undefined);
 
       if (!url) {
-        novaAba.close();
         setErro('Falha ao gerar acesso ao Tarefas');
-        return;
+        return null;
       }
 
-      novaAba.location.href = url;
+      setSsoUrl(url);
+      setErro(null);
+      return url;
     } catch (e: any) {
-      novaAba.close();
-      setErro(e?.message || 'Erro de conexao');
+      setErro(e?.message || 'Erro de conexão');
+      return null;
     } finally {
-      setLoading(false);
+      fetchingRef.current = false;
+    }
+  }, [ssoUrl]);
+
+  // Pré-busca silenciosa ao montar — assim o click abre direto, sem popup blocker
+  useEffect(() => {
+    void buscarSsoUrl();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Click: se já temos URL, deixa o <a target="_blank"> abrir naturalmente.
+  // Se ainda não temos (pré-busca falhou), busca e navega na mesma aba (sem popup blocker).
+  async function handleClick(e: React.MouseEvent<HTMLAnchorElement>) {
+    onClick?.();
+    if (ssoUrl) return; // anchor abre nova aba normalmente
+    e.preventDefault();
+    if (loading) return;
+    setLoading(true);
+    const url = await buscarSsoUrl();
+    setLoading(false);
+    if (url) {
+      // Sem popup blocker: navega na aba atual
+      window.location.href = url;
     }
   }
+
+  // Re-busca em hover/focus caso ainda não tenhamos
+  const prefetch = () => { if (!ssoUrl && !fetchingRef.current) void buscarSsoUrl(); };
+
+  const commonAnchorProps = {
+    href: ssoUrl ?? '#',
+    target: '_blank' as const,
+    rel: 'noopener noreferrer',
+    onClick: handleClick,
+    onMouseEnter: prefetch,
+    onFocus: prefetch,
+    'aria-busy': loading,
+  };
 
   if (variant === 'sidebar-expanded') {
     return (
       <div className="px-1.5 pt-1.5 pb-2">
-        <button
-          onClick={handleClick}
-          disabled={loading}
-          className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 shadow-md hover:shadow-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+        <a
+          {...commonAnchorProps}
+          className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 shadow-md hover:shadow-lg transition-all aria-busy:opacity-60"
           title="Abrir Controle de Tarefas"
         >
           {loading ? <Loader2 size={18} className="animate-spin shrink-0" /> : <ListTodo size={18} className="shrink-0" />}
           <span className="flex-1 text-left">Controle de Tarefas</span>
           <ExternalLink size={14} className="opacity-80 shrink-0" />
-        </button>
+        </a>
         {erro && (
           <div className="mt-1.5 text-[10px] text-red-600 font-semibold px-1 leading-tight">{erro}</div>
         )}
@@ -101,43 +123,40 @@ export default function BotaoTarefas({ variant, onClick }: Props) {
   if (variant === 'sidebar-collapsed') {
     return (
       <div className="px-1.5 pt-1.5 pb-2">
-        <button
-          onClick={handleClick}
-          disabled={loading}
-          className="w-full flex items-center justify-center rounded-lg p-2.5 text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 shadow-md hover:shadow-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+        <a
+          {...commonAnchorProps}
+          className="w-full flex items-center justify-center rounded-lg p-2.5 text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 shadow-md hover:shadow-lg transition-all aria-busy:opacity-60"
           title="Abrir Controle de Tarefas"
         >
           {loading ? <Loader2 size={18} className="animate-spin" /> : <ListTodo size={18} />}
-        </button>
+        </a>
       </div>
     );
   }
 
   if (variant === 'mobile-bar') {
     return (
-      <button
-        onClick={handleClick}
-        disabled={loading}
-        className="p-2 rounded-lg hover:bg-violet-50 text-violet-600 disabled:opacity-60"
+      <a
+        {...commonAnchorProps}
+        className="p-2 rounded-lg hover:bg-violet-50 text-violet-600 aria-busy:opacity-60"
         title="Abrir Controle de Tarefas"
       >
         {loading ? <Loader2 size={20} className="animate-spin" /> : <ListTodo size={20} />}
-      </button>
+      </a>
     );
   }
 
   if (variant === 'mobile-menu') {
     return (
       <div className="px-2 pt-2 pb-1">
-        <button
-          onClick={handleClick}
-          disabled={loading}
-          className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 shadow-md disabled:opacity-60"
+        <a
+          {...commonAnchorProps}
+          className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 shadow-md aria-busy:opacity-60"
         >
           {loading ? <Loader2 size={18} className="animate-spin shrink-0" /> : <ListTodo size={18} className="shrink-0" />}
           <span className="flex-1 text-left">Controle de Tarefas</span>
           <ExternalLink size={14} className="opacity-80 shrink-0" />
-        </button>
+        </a>
         {erro && (
           <div className="mt-1.5 text-[10px] text-red-600 font-semibold px-1 leading-tight">{erro}</div>
         )}
@@ -148,10 +167,9 @@ export default function BotaoTarefas({ variant, onClick }: Props) {
   // variant === 'card'
   return (
     <div>
-      <button
-        onClick={handleClick}
-        disabled={loading}
-        className="w-full flex items-center justify-between gap-4 rounded-2xl px-6 py-5 text-left text-white bg-gradient-to-br from-violet-600 via-fuchsia-600 to-pink-600 hover:from-violet-700 hover:via-fuchsia-700 hover:to-pink-700 shadow-lg hover:shadow-xl transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+      <a
+        {...commonAnchorProps}
+        className="w-full flex items-center justify-between gap-4 rounded-2xl px-6 py-5 text-left text-white bg-gradient-to-br from-violet-600 via-fuchsia-600 to-pink-600 hover:from-violet-700 hover:via-fuchsia-700 hover:to-pink-700 shadow-lg hover:shadow-xl transition-all aria-busy:opacity-60"
       >
         <div className="flex items-center gap-4 min-w-0">
           <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-white/20 shrink-0">
@@ -163,7 +181,7 @@ export default function BotaoTarefas({ variant, onClick }: Props) {
           </div>
         </div>
         <ExternalLink size={20} className="opacity-90 shrink-0" />
-      </button>
+      </a>
       {erro && (
         <div className="mt-2 text-xs text-red-600 font-semibold">{erro}</div>
       )}

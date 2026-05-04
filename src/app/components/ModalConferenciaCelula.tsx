@@ -65,22 +65,31 @@ export default function ModalConferenciaCelula({
   const [visualizando, setVisualizando] = useState<ExtratoArquivo | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Recarrega quando abrir
+  // mostrarAlerta vem do contexto e não é estável — usa ref pra não re-disparar o efeito
+  const mostrarAlertaRef = useRef(mostrarAlerta);
+  useEffect(() => { mostrarAlertaRef.current = mostrarAlerta; }, [mostrarAlerta]);
+
+  // Sincroniza prop -> state local quando abre ou quando o pai atualiza statusAtual
   useEffect(() => {
     if (!isOpen) return;
     setStatus(statusAtual);
     setObservacao(statusAtual?.observacao ?? '');
+  }, [isOpen, statusAtual]);
+
+  // Carrega extratos somente quando abre / muda banco / muda mes (NÃO depende de statusAtual)
+  useEffect(() => {
+    if (!isOpen) return;
     let cancelado = false;
     setLoading(true);
     fetchExtratosByContaMes(banco.id, mes)
       .then((lista) => { if (!cancelado) setExtratos(lista); })
       .catch((err) => {
         console.error(err);
-        if (!cancelado) mostrarAlerta('Erro', 'Não foi possível carregar os extratos.', 'erro');
+        if (!cancelado) mostrarAlertaRef.current('Erro', 'Não foi possível carregar os extratos.', 'erro');
       })
       .finally(() => { if (!cancelado) setLoading(false); });
     return () => { cancelado = true; };
-  }, [isOpen, banco.id, mes, statusAtual, mostrarAlerta]);
+  }, [isOpen, banco.id, mes]);
 
   async function aplicarStatus(novo: ControleContabilStatus) {
     setSalvandoStatus(novo);
@@ -278,7 +287,7 @@ export default function ModalConferenciaCelula({
                   status.status === 'feito' ? 'text-emerald-800' :
                   status.status === 'recebido_pendente' ? 'text-orange-800' : 'text-slate-700'
                 }`}>
-                  {status.status === 'feito' ? 'Conferido'
+                  {status.status === 'feito' ? 'Lançado'
                     : status.status === 'recebido_pendente' ? 'Recebido (pendente)'
                     : 'Sem movimento'}
                 </div>
@@ -304,7 +313,7 @@ export default function ModalConferenciaCelula({
                 }`}
               >
                 {salvandoStatus === 'feito' ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-                Feito
+                Lançado
               </button>
               <button
                 onClick={() => aplicarStatus('recebido_pendente')}

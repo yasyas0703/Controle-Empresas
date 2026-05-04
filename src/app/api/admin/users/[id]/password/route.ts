@@ -50,27 +50,33 @@ async function assertManager(req: Request) {
 export const runtime = 'nodejs';
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  // Rate limit: max 5 trocas de senha por hora por IP
-  const ip = getClientIp(req);
-  const rl = rateLimit(`password:${ip}`, 5, 60 * 60 * 1000);
-  if (!rl.ok) {
-    return NextResponse.json({ error: 'Muitas tentativas. Tente novamente mais tarde.' }, { status: 429 });
-  }
-
   const authz = await assertManager(req);
   if (!authz.ok) return NextResponse.json({ error: authz.message }, { status: authz.status });
+
+  // Rate limit: admin/dev/ghost sem limite; gerente: 50/h por IP (proteção contra account takeover).
+  const devId = process.env.DEVELOPER_USER_ID;
+  const ghostId = process.env.GHOST_USER_ID;
+  const isPrivileged =
+    authz.callerRole === 'admin' ||
+    (devId && authz.callerId === devId) ||
+    (ghostId && authz.callerId === ghostId);
+  if (!isPrivileged) {
+    const ip = getClientIp(req);
+    const rl = rateLimit(`password:${ip}`, 50, 60 * 60 * 1000);
+    if (!rl.ok) {
+      return NextResponse.json({ error: 'Muitas tentativas. Tente novamente mais tarde.' }, { status: 429 });
+    }
+  }
 
   const { id } = await ctx.params;
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
   // Conta protegida: somente a própria desenvolvedora pode alterar sua senha
-  const devId = process.env.DEVELOPER_USER_ID;
   if (devId && id === devId && authz.callerId !== devId) {
     return NextResponse.json({ error: 'Não foi possível alterar a senha.' }, { status: 403 });
   }
 
   // Conta ghost: somente o ghost e a desenvolvedora podem alterar a senha do ghost
-  const ghostId = process.env.GHOST_USER_ID;
   if (ghostId && id === ghostId && authz.callerId !== ghostId && (!devId || authz.callerId !== devId)) {
     return NextResponse.json({ error: 'Não foi possível alterar a senha.' }, { status: 403 });
   }
