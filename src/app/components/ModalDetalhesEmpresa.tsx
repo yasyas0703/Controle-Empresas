@@ -485,6 +485,16 @@ export default function ModalDetalhesEmpresa({
               </div>
             </Section>
 
+            <Section title="Particularidades da Empresa" tone="orange">
+              {empresa.particularidades ? (
+                <div className="text-sm text-gray-900 whitespace-pre-wrap break-words">
+                  {empresa.particularidades}
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500 italic">Nenhuma particularidade registrada.</div>
+              )}
+            </Section>
+
             <Section title="Responsáveis por Departamento" tone="cyan">
               {(() => {
                 const entries = Object.entries(empresa.responsaveis || {});

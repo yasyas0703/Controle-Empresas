@@ -18,7 +18,7 @@ type DepartamentoConfig = {
   titulo: string;
   descricao: string;
   gradient: string;
-  tabs: [TabDef, TabDef];
+  tabs: TabDef[];
 };
 
 export const DEPARTAMENTO_CONFIG: Record<Exclude<DepartamentoSlug, 'fiscal'>, DepartamentoConfig> = {
@@ -35,10 +35,9 @@ export const DEPARTAMENTO_CONFIG: Record<Exclude<DepartamentoSlug, 'fiscal'>, De
   contabil: {
     slug: 'contabil',
     titulo: 'Contábil',
-    descricao: 'Área em definição — em breve os controles de vencimentos e acompanhamento do Contábil.',
+    descricao: 'Área em definição — em breve os controles de acompanhamento do Contábil.',
     gradient: 'from-blue-500 via-indigo-500 to-sky-500',
     tabs: [
-      { href: '/vencimentos-contabil', label: 'Vencimentos Contábil', icon: Grid3x3, gradient: 'from-blue-500 via-indigo-500 to-sky-500' },
       { href: '/vencimentos-contabil/controle', label: 'Controle Contábil', icon: ListChecks, gradient: 'from-emerald-500 via-teal-500 to-cyan-500' },
     ],
   },

@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Empresa, Departamento, Usuario } from '@/app/types';
 import { sortResponsaveisByNome } from '@/lib/sort';
+import { normalizarNomeDepartamento, type DepartamentoSlug } from '@/app/utils/departamento';
 
 function formatDate(iso: string | undefined | null): string {
   if (!iso) return '—';
@@ -283,4 +284,86 @@ export function exportEmpresasPdf(
     ? (empresas[0].codigo || 'empresa')
     : `${empresas.length}-empresas`;
   doc.save(`relatorio-${nomes}-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+export function exportEmpresasResumoPdf(
+  empresas: Empresa[],
+  departamentos: Departamento[],
+  usuarios: Usuario[],
+): void {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 10;
+
+  const userMap = new Map(usuarios.map((u) => [u.id, u.nome]));
+  const depBySlug = new Map<DepartamentoSlug, string>();
+  for (const d of departamentos) {
+    const slug = normalizarNomeDepartamento(d.nome);
+    if (slug && !depBySlug.has(slug)) depBySlug.set(slug, d.id);
+  }
+  const getResp = (empresa: Empresa, slug: DepartamentoSlug): string => {
+    const depId = depBySlug.get(slug);
+    if (!depId) return '—';
+    const userId = empresa.responsaveis?.[depId];
+    return (userId && userMap.get(userId)) || '—';
+  };
+
+  // Cabeçalho
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(15, 118, 110);
+  doc.text('Relatório de Empresas', margin, margin + 4);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  const geradoEm = new Date().toLocaleString('pt-BR');
+  doc.text(`Gerado em ${geradoEm} • ${empresas.length} empresa(s)`, margin, margin + 9);
+
+  autoTable(doc, {
+    startY: margin + 14,
+    head: [[
+      'Código',
+      'CNPJ/CPF',
+      'Razão Social',
+      'Apelido',
+      'Regime',
+      'Cidade/UF',
+      'Resp. Contábil',
+      'Resp. Fiscal',
+    ]],
+    body: empresas.map((e) => [
+      e.codigo || '—',
+      e.cnpj || '—',
+      e.razao_social || '—',
+      e.apelido || '—',
+      e.regime_federal || '—',
+      [e.cidade, e.estado].filter(Boolean).join('/') || '—',
+      getResp(e, 'contabil'),
+      getResp(e, 'fiscal'),
+    ]),
+    margin: { left: margin, right: margin },
+    styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+    headStyles: { fillColor: [15, 118, 110], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [240, 253, 250] },
+    columnStyles: {
+      0: { cellWidth: 16 },
+      1: { cellWidth: 32 },
+      4: { cellWidth: 28 },
+      5: { cellWidth: 32 },
+      6: { cellWidth: 35 },
+      7: { cellWidth: 35 },
+    },
+  });
+
+  const totalPages = (doc.internal as unknown as { getNumberOfPages: () => number }).getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7);
+    doc.setTextColor(156, 163, 175);
+    doc.text(`Página ${i} de ${totalPages}`, pageW - margin, pageH - 5, { align: 'right' });
+  }
+
+  doc.save(`empresas-resumo-${empresas.length}-${new Date().toISOString().slice(0, 10)}.pdf`);
 }

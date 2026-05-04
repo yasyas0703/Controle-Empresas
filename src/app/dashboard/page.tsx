@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { AlertTriangle, Calendar, CalendarClock, FileText, Building2, Clock, Search, MapPin, Briefcase, Eye, Pencil, PowerOff, Trash2, CheckSquare, Square, FileDown, X, Tag, History } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { AlertTriangle, Calendar, CalendarClock, FileText, Building2, Clock, Search, MapPin, Briefcase, Eye, Pencil, PowerOff, Trash2, CheckSquare, Square, FileDown, X, Tag, History, FileSpreadsheet, ChevronDown } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
 import { detectTipoEstabelecimento, detectTipoInscricao, formatarDocumento, getTipoInscricaoDisplay } from '@/app/utils/validation';
@@ -16,7 +16,8 @@ import CardVencimentosFiscais from '@/app/dashboard/CardVencimentosFiscais';
 import { ehEmpresaHistorica } from '@/app/utils/empresaHistorica';
 import { garantirVencimentosFiscaisComRegras } from '@/app/utils/vencimentos';
 import { getDepartamentoSlugDoUsuario } from '@/app/utils/departamento';
-import { exportEmpresasPdf } from '@/lib/exportPdf';
+import { exportEmpresasPdf, exportEmpresasResumoPdf } from '@/lib/exportPdf';
+import { exportEmpresasXlsx } from '@/lib/exportXlsx';
 import { comparePtBr, sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
 
 function canEditEmpresa(currentUserId: UUID | null, canManage: boolean, empresa: Empresa): boolean {
@@ -94,6 +95,19 @@ export default function DashboardPage() {
   const [selecionando, setSelecionando] = useState(false);
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
   const [paginaTamanho, setPaginaTamanho] = useState(50);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    function onClick(ev: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(ev.target as Node)) {
+        setExportMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [exportMenuOpen]);
 
   const [empresaEdit, setEmpresaEdit] = useState<Empresa | null>(null);
   const [empresaView, setEmpresaView] = useState<Empresa | null>(null);
@@ -631,6 +645,61 @@ export default function DashboardPage() {
             >
               {selecionando ? 'Cancelar' : 'Selecionar'}
             </button>
+            <div ref={exportMenuRef} className="relative">
+              <button
+                onClick={() => setExportMenuOpen((v) => !v)}
+                disabled={filteredEmpresas.length === 0}
+                className="text-xs px-3 py-1.5 rounded-lg font-bold transition bg-emerald-100 text-emerald-700 hover:bg-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                title={`Exportar ${filteredEmpresas.length} empresa(s) filtrada(s)`}
+              >
+                <FileDown size={14} />
+                Exportar ({filteredEmpresas.length})
+                <ChevronDown size={12} />
+              </button>
+              {exportMenuOpen && (
+                <div className="absolute right-0 mt-2 w-64 rounded-xl bg-white shadow-2xl border border-gray-100 z-40 overflow-hidden">
+                  <button
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      exportEmpresasPdf(filteredEmpresas, departamentos, usuarios);
+                    }}
+                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-emerald-50 text-left transition"
+                  >
+                    <FileText size={18} className="text-emerald-600 mt-0.5 shrink-0" />
+                    <div>
+                      <div className="text-sm font-bold text-gray-800">PDF Detalhado</div>
+                      <div className="text-[11px] text-gray-500">Uma página por empresa, com todos os dados</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      exportEmpresasResumoPdf(filteredEmpresas, departamentos, usuarios);
+                    }}
+                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-emerald-50 text-left transition border-t border-gray-100"
+                  >
+                    <FileText size={18} className="text-blue-600 mt-0.5 shrink-0" />
+                    <div>
+                      <div className="text-sm font-bold text-gray-800">PDF Resumido</div>
+                      <div className="text-[11px] text-gray-500">Tabela com 1 linha por empresa</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      void exportEmpresasXlsx(filteredEmpresas, departamentos, usuarios);
+                    }}
+                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-emerald-50 text-left transition border-t border-gray-100"
+                  >
+                    <FileSpreadsheet size={18} className="text-emerald-600 mt-0.5 shrink-0" />
+                    <div>
+                      <div className="text-sm font-bold text-gray-800">Excel (.xlsx)</div>
+                      <div className="text-[11px] text-gray-500">Planilha completa com filtros e congelamento</div>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-10 gap-3">

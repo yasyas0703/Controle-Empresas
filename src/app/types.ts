@@ -225,6 +225,7 @@ export interface Empresa {
   regime_federal?: string;
   regime_estadual?: string;
   regime_municipal?: string;
+  particularidades?: string;
   tributacao?: Tributacao | null;
   cliente_desde?: string | null;   // YYYY-MM-DD
   desligada_em?: string | null;    // YYYY-MM-DD — quando preenchido, a empresa está desligada

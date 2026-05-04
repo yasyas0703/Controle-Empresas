@@ -57,6 +57,7 @@ create table empresas (
   regime_federal text,
   regime_estadual text,
   regime_municipal text,
+  particularidades text,
   estado text,
   cidade text,
   bairro text,

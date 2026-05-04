@@ -93,6 +93,7 @@ type EmpresaRow = {
   regime_federal: string | null;
   regime_estadual: string | null;
   regime_municipal: string | null;
+  particularidades: string | null;
   tributacao: string | null;
   cliente_desde: string | null;
   desligada_em: string | null;
@@ -289,6 +290,49 @@ function normalizarVencimentosFiscais(value: unknown): VencimentoFiscal[] {
 /** Gera signed URL para um arquivo de vencimento fiscal (usa o mesmo bucket de documentos). */
 export async function getVencimentoFiscalSignedUrl(arquivoUrl: string): Promise<string> {
   return getDocumentoSignedUrl(arquivoUrl);
+}
+
+// MEI é um sub-regime do Simples Nacional — mantém em SN para o Controle Contábil reconhecer.
+export function regimeFederalToTributacao(regime: string | null | undefined): Tributacao | null {
+  if (!regime) return null;
+  switch (regime) {
+    case 'Lucro Real': return 'lucro_real';
+    case 'Lucro Presumido': return 'lucro_presumido';
+    case 'Simples Nacional':
+    case 'MEI':
+      return 'simples_nacional';
+    default: return null;
+  }
+}
+
+export function tributacaoToRegimeFederal(t: Tributacao | null | undefined): string | null {
+  if (!t) return null;
+  switch (t) {
+    case 'lucro_real': return 'Lucro Real';
+    case 'lucro_presumido': return 'Lucro Presumido';
+    case 'simples_nacional': return 'Simples Nacional';
+    default: return null;
+  }
+}
+
+// regime_federal é o source of truth para o regime tributário.
+// Se ele estiver no patch, sempre deriva tributacao dele (mesmo que tributacao venha junto).
+// Se só tributacao estiver no patch (ex.: Controle Contábil), deriva regime_federal —
+// preservando 'MEI' quando tributacao vira simples_nacional.
+function aplicarSincRegimeTributacao(
+  row: Record<string, unknown>,
+  patch: { regime_federal?: string | null; tributacao?: Tributacao | null },
+  contexto: { regimeAtual?: string | null } = {},
+) {
+  const setRegime = patch.regime_federal !== undefined;
+  const setTributacao = patch.tributacao !== undefined;
+  if (setRegime) {
+    row.tributacao = regimeFederalToTributacao(patch.regime_federal);
+  } else if (setTributacao) {
+    if (!(patch.tributacao === 'simples_nacional' && contexto.regimeAtual === 'MEI')) {
+      row.regime_federal = tributacaoToRegimeFederal(patch.tributacao);
+    }
+  }
 }
 
 function buildRetRow(empresaId: UUID, ret: RetItem, includeTracking = true): Record<string, unknown> {
@@ -763,6 +807,7 @@ export async function fetchEmpresas(): Promise<Empresa[]> {
     regime_federal: e.regime_federal ?? undefined,
     regime_estadual: e.regime_estadual ?? undefined,
     regime_municipal: e.regime_municipal ?? undefined,
+    particularidades: e.particularidades ?? undefined,
     tributacao: (e.tributacao as Tributacao | null) ?? null,
     cliente_desde: e.cliente_desde ?? null,
     desligada_em: e.desligada_em ?? null,
@@ -828,7 +873,11 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
       regime_federal: payload.regime_federal || null,
       regime_estadual: payload.regime_estadual || null,
       regime_municipal: payload.regime_municipal || null,
-      tributacao: payload.tributacao || null,
+      particularidades: payload.particularidades || null,
+      tributacao:
+        payload.tributacao
+        ?? regimeFederalToTributacao(payload.regime_federal)
+        ?? null,
       cliente_desde: payload.cliente_desde || null,
       desligada_em: payload.desligada_em || null,
       estado: payload.estado || null,
@@ -873,7 +922,9 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
     if (payload.regime_federal !== undefined) row.regime_federal = payload.regime_federal || null;
     if (payload.regime_estadual !== undefined) row.regime_estadual = payload.regime_estadual || null;
     if (payload.regime_municipal !== undefined) row.regime_municipal = payload.regime_municipal || null;
+    if (payload.particularidades !== undefined) row.particularidades = payload.particularidades || null;
     if (payload.tributacao !== undefined) row.tributacao = payload.tributacao || null;
+    aplicarSincRegimeTributacao(row, { regime_federal: payload.regime_federal, tributacao: payload.tributacao });
     if (payload.cliente_desde !== undefined) row.cliente_desde = payload.cliente_desde || null;
     if (payload.desligada_em !== undefined) row.desligada_em = payload.desligada_em || null;
     if (payload.estado !== undefined) row.estado = payload.estado || null;
@@ -1016,7 +1067,9 @@ export async function updateEmpresa(id: UUID, patch: Partial<Empresa>) {
   if (patch.regime_federal !== undefined) row.regime_federal = patch.regime_federal || null;
   if (patch.regime_estadual !== undefined) row.regime_estadual = patch.regime_estadual || null;
   if (patch.regime_municipal !== undefined) row.regime_municipal = patch.regime_municipal || null;
+  if (patch.particularidades !== undefined) row.particularidades = patch.particularidades || null;
   if (patch.tributacao !== undefined) row.tributacao = patch.tributacao || null;
+  aplicarSincRegimeTributacao(row, { regime_federal: patch.regime_federal, tributacao: patch.tributacao });
   if (patch.cliente_desde !== undefined) row.cliente_desde = patch.cliente_desde || null;
   if (patch.desligada_em !== undefined) row.desligada_em = patch.desligada_em || null;
   if (patch.estado !== undefined) row.estado = patch.estado || null;

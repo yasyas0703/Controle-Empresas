@@ -114,6 +114,22 @@ select option {
 .dark .bg-pink-100 { background-color: #3a1d2a !important; }
 .dark .bg-rose-100 { background-color: #3a1d2a !important; }
 
+/* Tints (200) - chips/badges mais saturados (vencimentos, status) */
+.dark .bg-blue-200 { background-color: #1f3550 !important; }
+.dark .bg-red-200 { background-color: #5a2a38 !important; }
+.dark .bg-green-200 { background-color: #1a3a2a !important; }
+.dark .bg-emerald-200 { background-color: #1a3a2a !important; }
+.dark .bg-purple-200 { background-color: #2e2150 !important; }
+.dark .bg-violet-200 { background-color: #2e2150 !important; }
+.dark .bg-yellow-200 { background-color: #3d331a !important; }
+.dark .bg-amber-200 { background-color: #3d2e14 !important; }
+.dark .bg-indigo-200 { background-color: #232c54 !important; }
+.dark .bg-orange-200 { background-color: #482c1e !important; }
+.dark .bg-cyan-200 { background-color: #163c50 !important; }
+.dark .bg-teal-200 { background-color: #163c46 !important; }
+.dark .bg-pink-200 { background-color: #482435 !important; }
+.dark .bg-rose-200 { background-color: #482435 !important; }
+
 /* Texts */
 .dark .text-gray-900 { color: var(--fg) !important; }
 .dark .text-gray-800 { color: var(--fg) !important; }
@@ -217,6 +233,16 @@ select option {
 .dark .border-indigo-200,
 .dark .border-cyan-200,
 .dark .border-teal-200 { border-color: var(--border) !important; }
+
+/* Borders 300/400 — usadas em chips/pílulas de status */
+.dark .border-red-300 { border-color: #6e3340 !important; }
+.dark .border-orange-300 { border-color: #5a3422 !important; }
+.dark .border-amber-300 { border-color: #4f3a1a !important; }
+.dark .border-yellow-300 { border-color: #4f4220 !important; }
+.dark .border-yellow-400 { border-color: #5c4d24 !important; }
+.dark .border-emerald-300 { border-color: #1f4a36 !important; }
+.dark .border-green-300 { border-color: #1f4a36 !important; }
+.dark .border-blue-300 { border-color: #244466 !important; }
 
 /* Hovers */
 .dark .hover\:bg-white:hover { background-color: var(--muted) !important; }

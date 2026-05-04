@@ -1167,9 +1167,23 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
           }
         : {}),
     };
+    // regime_federal é o source of truth — o form manda regime_federal NOVO + tributacao VELHA juntos,
+    // então quando regime_federal vier no patch, sempre derivamos tributacao a partir dele (mesmo que tributacao venha junto).
+    const sincRegimeTributacao: Partial<Empresa> = {};
+    const setRegime = patch.regime_federal !== undefined;
+    const setTributacao = patch.tributacao !== undefined;
+    if (setRegime) {
+      sincRegimeTributacao.tributacao = db.regimeFederalToTributacao(patch.regime_federal);
+    } else if (setTributacao) {
+      // Preserva 'MEI' quando tributacao vira simples_nacional.
+      if (!(patch.tributacao === 'simples_nacional' && before.regime_federal === 'MEI')) {
+        sincRegimeTributacao.regime_federal = db.tributacaoToRegimeFederal(patch.tributacao) ?? undefined;
+      }
+    }
     const after: Empresa = {
       ...before,
       ...patchPreparado,
+      ...sincRegimeTributacao,
       responsaveis: { ...before.responsaveis, ...(patch.responsaveis ?? {}) },
       atualizadoEm: isoNow(),
     };

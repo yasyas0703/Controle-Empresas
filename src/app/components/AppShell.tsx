@@ -38,7 +38,6 @@ const nav: NavItem[] = [
   { href: '/vencimentos-fiscais/checklist', label: 'Checklist Mensal', icon: ListChecks, department: 'fiscal' },
   { href: '/vencimentos-pessoal', label: 'Vencimentos Pessoal', icon: Grid3x3, department: 'pessoal' },
   { href: '/vencimentos-pessoal/controle', label: 'Controle Pessoal', icon: ListChecks, department: 'pessoal' },
-  { href: '/vencimentos-contabil', label: 'Vencimentos Contábil', icon: Grid3x3, department: 'contabil' },
   { href: '/vencimentos-contabil/controle', label: 'Controle Contábil', icon: ListChecks, department: 'contabil' },
   { href: '/vencimentos-cadastro', label: 'Vencimentos Cadastro', icon: Grid3x3, department: 'cadastro' },
   { href: '/vencimentos-cadastro/controle', label: 'Controle Cadastro', icon: ListChecks, department: 'cadastro' },
