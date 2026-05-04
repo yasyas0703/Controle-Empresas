@@ -1,4 +1,4 @@
-import type { Empresa, VencimentoFiscalNome } from '@/app/types';
+import type { Empresa, VencimentoFiscalNome, VencimentoFiscalSnNome } from '@/app/types';
 
 /**
  * Tabela de regras (UF/Cidade × imposto → dia do mês).
@@ -49,6 +49,23 @@ const REGRAS: Partial<Record<VencimentoFiscalNome, RegraDia>> = {
     },
   },
   // Sem regra (preenche manual): DARF-SERVIÇOS TOMADOS.
+};
+
+/**
+ * Regras dos vencimentos do regime Simples Nacional.
+ *
+ * Dia 0 = "último dia do mês" (caso da Declaração DAS).
+ * Origem: lista da gerente do Fiscal — Yasmin / 2026.
+ */
+const REGRAS_SN: Partial<Record<VencimentoFiscalSnNome, RegraDia>> = {
+  'EMISSÃO GUIA DAS': { default: 20 },
+  'RECIBO DAS': { default: 20 },
+  'DECLARAÇÃO DAS': { default: 0 }, // 0 → último dia do mês
+  SINTEGRA: { default: 20 },
+  DESTDA: { default: 20 },
+  'DIFERENCIAL DE ALIQUOTA': { default: 4 },
+  'ICMS ANTECIPADO': { default: 20 },
+  'ST ANTECIPADO': { default: 29 },
 };
 
 function normalizarUf(estado?: string | null): UF | null {
@@ -197,4 +214,66 @@ export function obrigacaoAplicaParaEmpresa(
   const regra = REGRAS[nomeImposto as VencimentoFiscalNome];
   if (!regra) return true;
   return getDiaVencimento(nomeImposto, estado, cidade) != null;
+}
+
+// ─── Simples Nacional ─────────────────────────────────────────────────────
+
+/**
+ * Devolve o dia configurado para uma obrigação SN.
+ * Convenção: 0 = último dia do mês.
+ */
+export function getDiaVencimentoSn(
+  nomeImposto: VencimentoFiscalSnNome | string,
+  estado?: string | null,
+  cidade?: string | null,
+): number | null {
+  const regra = REGRAS_SN[nomeImposto as VencimentoFiscalSnNome];
+  if (!regra) return null;
+  const cid = normalizarCidade(cidade);
+  if (cid && regra.cidades && regra.cidades[cid] != null) {
+    return regra.cidades[cid];
+  }
+  const uf = normalizarUf(estado);
+  if (uf && regra[uf] != null) return regra[uf]!;
+  return regra.default ?? null;
+}
+
+/**
+ * Calcula a data ISO (YYYY-MM-DD) do vencimento SN no mês de referência.
+ * Quando o dia configurado é 0, retorna o último dia do mês (caso da
+ * Declaração DAS — convenção combinada com a gerente do Fiscal).
+ */
+export function vencimentoDoMesSn(
+  nomeImposto: VencimentoFiscalSnNome | string,
+  estado: string | null | undefined,
+  anoMes: string,
+  cidade?: string | null,
+): string | null {
+  const dia = getDiaVencimentoSn(nomeImposto, estado, cidade);
+  if (dia == null) return null;
+  const m = anoMes.match(/^(\d{4})-(\d{1,2})$/);
+  if (!m) return null;
+  const ano = Number(m[1]);
+  const mes = Number(m[2]);
+  if (mes < 1 || mes > 12) return null;
+  const ultimoDia = new Date(ano, mes, 0).getDate();
+  // Dia 0 = último dia do mês
+  const diaFinal = dia === 0 ? ultimoDia : Math.min(dia, ultimoDia);
+  return `${ano}-${String(mes).padStart(2, '0')}-${String(diaFinal).padStart(2, '0')}`;
+}
+
+/**
+ * Indica se uma obrigação SN se aplica à empresa (UF/cidade).
+ * Hoje todas as obrigações SN cadastradas têm `default`, ou seja, valem para
+ * qualquer estado/cidade — se algum dia surgir uma regra estadual, isso fica
+ * coberto pela mesma lógica.
+ */
+export function obrigacaoSnAplicaParaEmpresa(
+  nomeImposto: VencimentoFiscalSnNome | string,
+  estado?: string | null,
+  cidade?: string | null,
+): boolean {
+  const regra = REGRAS_SN[nomeImposto as VencimentoFiscalSnNome];
+  if (!regra) return true;
+  return getDiaVencimentoSn(nomeImposto, estado, cidade) != null;
 }

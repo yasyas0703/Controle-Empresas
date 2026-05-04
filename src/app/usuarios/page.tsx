@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Pencil, CheckCircle2, XCircle, X, Shield, User, Crown } from 'lucide-react';
+import { Plus, Trash2, Pencil, CheckCircle2, XCircle, X, Shield, User, Crown, Info } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import type { Role, Usuario } from '@/app/types';
+import { FISCAL_DEPT_NOME, FISCAL_SN_DEPT_NOME } from '@/app/types';
 
 const ROLE_ORDER: Record<string, number> = { admin: 0, gerente: 1, usuario: 2 };
 
@@ -18,7 +19,17 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 export default function UsuariosPage() {
-  const { canAdmin, currentUser, usuarios, departamentos, criarUsuario, atualizarUsuario, toggleUsuarioAtivo, removerUsuario, mostrarAlerta, isDeveloper, isGhost, protectedUserIds } = useSistema();
+  const { canAdmin, currentUser, usuarios, departamentos, criarUsuario, atualizarUsuario, toggleUsuarioAtivo, removerUsuario, criarDepartamento, mostrarAlerta, isDeveloper, isGhost, protectedUserIds } = useSistema();
+  const [criandoSnDept, setCriandoSnDept] = useState(false);
+
+  const fiscalDept = useMemo(
+    () => departamentos.find((d) => d.nome.trim().toLowerCase() === FISCAL_DEPT_NOME) ?? null,
+    [departamentos]
+  );
+  const fiscalSnDept = useMemo(
+    () => departamentos.find((d) => d.nome.trim().toLowerCase() === FISCAL_SN_DEPT_NOME) ?? null,
+    [departamentos]
+  );
 
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
@@ -101,8 +112,40 @@ export default function UsuariosPage() {
         <div className="text-xl sm:text-2xl font-bold text-gray-900">Gerenciar Usuários</div>
         <div className="text-sm text-gray-500">Crie usuários, defina o cargo e vincule ao departamento</div>
 
+        {/* Dica: divisão Fiscal x Fiscal - SN */}
+        {fiscalDept && !fiscalSnDept && (
+          <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+            <Info size={18} className="text-amber-600 shrink-0" />
+            <div className="flex-1 text-xs sm:text-sm text-amber-900">
+              Para usuários do <span className="font-bold">Simples Nacional</span> existe um departamento separado.
+              Crie agora o <span className="font-bold">&quot;Fiscal - SN&quot;</span> para já poder vinculá-los aqui.
+            </div>
+            <button
+              type="button"
+              disabled={criandoSnDept}
+              onClick={async () => {
+                setCriandoSnDept(true);
+                try {
+                  await criarDepartamento('Fiscal - SN');
+                  mostrarAlerta('Departamento criado', '"Fiscal - SN" foi adicionado. Já pode vincular usuários.', 'sucesso');
+                } catch {
+                  mostrarAlerta('Erro', 'Não foi possível criar o departamento.', 'erro');
+                } finally {
+                  setCriandoSnDept(false);
+                }
+              }}
+              className="rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-3 py-2 text-xs sm:text-sm font-bold shadow disabled:opacity-50 shrink-0"
+            >
+              {criandoSnDept ? 'Criando...' : 'Criar "Fiscal - SN"'}
+            </button>
+          </div>
+        )}
+
         <div className="mt-6 rounded-2xl bg-cyan-50 p-5">
           <div className="font-bold text-cyan-900">Criar Novo Usuário</div>
+          <div className="text-[11px] sm:text-xs text-cyan-700 mt-1">
+            Para usuários fiscais, escolha entre <span className="font-bold">Fiscal</span> (regime normal) e <span className="font-bold">Fiscal - SN</span> (Simples Nacional) no campo Departamento.
+          </div>
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field label="Nome">
               <input value={nome} onChange={(e) => setNome(e.target.value)} className="w-full rounded-xl bg-white px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400" placeholder="Nome do usuário" />

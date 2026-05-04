@@ -8,12 +8,14 @@ import {
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import type { ChecklistFiscalItem, Empresa, UUID, Usuario } from '@/app/types';
-import { VENCIMENTOS_FISCAIS_NOMES } from '@/app/types';
+import { VENCIMENTOS_FISCAIS_NOMES, VENCIMENTOS_FISCAIS_SN_NOMES, FISCAL_DEPT_NOME, FISCAL_SN_DEPT_NOME } from '@/app/types';
 import * as db from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { sortByPtBr } from '@/lib/sort';
-import { obrigacaoAplicaParaEmpresa } from '@/app/utils/regrasVencimentosFiscais';
+import { obrigacaoAplicaParaEmpresa, obrigacaoSnAplicaParaEmpresa } from '@/app/utils/regrasVencimentosFiscais';
 import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
+
+type RegimeAba = 'fiscal' | 'sn';
 
 type ChecklistKey = string; // `${empresaId}|${obrigacao}`
 
@@ -58,6 +60,7 @@ export default function ChecklistFiscalPage() {
   const { empresas, departamentos, usuarios, currentUser, currentUserId, canManage, mostrarAlerta } = useSistema();
 
   const [mes, setMes] = useState<string>(() => currentMonth());
+  const [aba, setAba] = useState<RegimeAba>('fiscal');
   const [items, setItems] = useState<Map<ChecklistKey, ChecklistFiscalItem>>(new Map());
   const [loading, setLoading] = useState(true);
   const [savingKeys, setSavingKeys] = useState<Set<ChecklistKey>>(new Set());
@@ -83,28 +86,92 @@ export default function ChecklistFiscalPage() {
   const [arqSignedUrl, setArqSignedUrl] = useState<string | null>(null);
 
   const fiscalDept = useMemo(
-    () => departamentos.find((d) => d.nome.trim().toLowerCase() === 'fiscal')
-      ?? departamentos.find((d) => d.nome.toLowerCase().includes('fiscal'))
+    () => departamentos.find((d) => d.nome.trim().toLowerCase() === FISCAL_DEPT_NOME)
+      ?? departamentos.find((d) => {
+        const n = d.nome.toLowerCase();
+        return n.includes('fiscal') && !n.includes('sn');
+      })
       ?? null,
     [departamentos]
   );
 
+  const fiscalSnDept = useMemo(
+    () => departamentos.find((d) => d.nome.trim().toLowerCase() === FISCAL_SN_DEPT_NOME) ?? null,
+    [departamentos]
+  );
+
+  // Departamento "ativo" — varia conforme a aba (Fiscal x SN). Para usuário
+  // comum, a aba é forçada para o seu próprio departamento (ver useEffect abaixo).
+  const deptAtivo = aba === 'sn' ? fiscalSnDept : fiscalDept;
+
+  // Lookup: id do usuário → seu departamentoId
+  const userDeptById = useMemo(() => {
+    const m = new Map<UUID, UUID | null>();
+    for (const u of usuarios) m.set(u.id, u.departamentoId);
+    return m;
+  }, [usuarios]);
+
+  // Verifica se o usuário pertence à aba ativa (pelo departamentoId dele).
+  // Aba SN → só usuários com depto = fiscalSnDept.
+  // Aba Fiscal → usuários SEM depto fiscal-SN (ou seja, fiscal regular ou qualquer outro depto que esteja como responsavel).
+  const usuarioPertenceAba = useCallback((userId: UUID | null | undefined): boolean => {
+    if (!userId) return false;
+    const depId = userDeptById.get(userId) ?? null;
+    if (aba === 'sn') return !!fiscalSnDept && depId === fiscalSnDept.id;
+    // Aba Fiscal: tudo que NÃO é fiscal-SN
+    return !(fiscalSnDept && depId === fiscalSnDept.id);
+  }, [aba, fiscalSnDept, userDeptById]);
+
+  // Pega o id do responsável fiscal da empresa, olhando em ambas as keys
+  // (fiscal e fiscal-sn). Retorna o primeiro encontrado — uma empresa só
+  // tem um responsável fiscal em qualquer momento.
+  const getResponsavelFiscal = useCallback((empresa: Empresa): UUID | null => {
+    if (fiscalDept) {
+      const u = empresa.responsaveis?.[fiscalDept.id];
+      if (u) return u;
+    }
+    if (fiscalSnDept) {
+      const u = empresa.responsaveis?.[fiscalSnDept.id];
+      if (u) return u;
+    }
+    return null;
+  }, [fiscalDept, fiscalSnDept]);
+
   const fiscalUsers: Usuario[] = useMemo(() => {
-    if (!fiscalDept) return [];
+    if (!deptAtivo) return [];
+    // Quem aparece como responsavel em alguma empresa (qualquer key fiscal)
     const idsResp = new Set<UUID>();
     for (const e of empresas) {
-      const uid = e.responsaveis?.[fiscalDept.id];
-      if (uid) idsResp.add(uid);
+      const uid = getResponsavelFiscal(e);
+      if (uid && usuarioPertenceAba(uid)) idsResp.add(uid);
     }
-    const doDepto = usuarios.filter((u) => u.ativo && u.departamentoId === fiscalDept.id);
-    const extras = usuarios.filter((u) => u.ativo && idsResp.has(u.id) && u.departamentoId !== fiscalDept.id);
+    // Usuários ativos cujo depto é o da aba — sempre aparecem
+    const doDepto = usuarios.filter((u) => u.ativo && u.departamentoId === deptAtivo.id);
+    // Extras: usuário responsavel em alguma empresa mas que NÃO está no depto da aba.
+    // (Pode ser legado ou alguém de outro depto que assumiu uma empresa.)
+    const extras = usuarios.filter((u) => u.ativo && idsResp.has(u.id) && u.departamentoId !== deptAtivo.id);
     return sortByPtBr([...doDepto, ...extras], (u) => u.nome);
-  }, [fiscalDept, empresas, usuarios]);
+  }, [deptAtivo, empresas, usuarios, getResponsavelFiscal, usuarioPertenceAba]);
 
-  const getResponsavelFiscal = useCallback((empresa: Empresa): UUID | null => {
-    if (!fiscalDept) return null;
-    return empresa.responsaveis?.[fiscalDept.id] ?? null;
-  }, [fiscalDept]);
+  // Lista de obrigações da aba ativa.
+  const obrigacoesAba: readonly string[] = aba === 'sn' ? VENCIMENTOS_FISCAIS_SN_NOMES : VENCIMENTOS_FISCAIS_NOMES;
+
+  const aplicaObrigacao = useCallback((obrigacao: string, empresa: Empresa): boolean => {
+    return aba === 'sn'
+      ? obrigacaoSnAplicaParaEmpresa(obrigacao, empresa.estado, empresa.cidade)
+      : obrigacaoAplicaParaEmpresa(obrigacao, empresa.estado, empresa.cidade);
+  }, [aba]);
+
+  // Para usuário comum: a aba é forçada conforme seu departamento.
+  // Gerente/admin pode alternar livremente.
+  useEffect(() => {
+    if (canManage) return;
+    if (currentUser?.departamentoId && fiscalSnDept && currentUser.departamentoId === fiscalSnDept.id) {
+      setAba('sn');
+    } else {
+      setAba('fiscal');
+    }
+  }, [canManage, currentUser?.departamentoId, fiscalSnDept]);
 
   const isHoje = mes === currentMonth();
 
@@ -451,8 +518,8 @@ export default function ChecklistFiscalPage() {
       .map((empresa) => {
         const respId = getResponsavelFiscal(empresa);
         const cells: { obrigacao: string; item: ChecklistFiscalItem | undefined; aplica: boolean }[] =
-          VENCIMENTOS_FISCAIS_NOMES.map((obrigacao) => {
-            const aplica = obrigacaoAplicaParaEmpresa(obrigacao, empresa.estado, empresa.cidade);
+          obrigacoesAba.map((obrigacao) => {
+            const aplica = aplicaObrigacao(obrigacao, empresa);
             return {
               obrigacao,
               aplica,
@@ -469,6 +536,10 @@ export default function ChecklistFiscalPage() {
       .filter((l) => {
         // Empresas sem responsável fiscal ficam fora do checklist
         if (!l.respId) return false;
+        // A empresa só aparece na aba se o departamento do RESPONSÁVEL bate
+        // com a aba (Fiscal x Fiscal-SN). Assim, mover um usuário para
+        // "Fiscal - SN" automaticamente migra as empresas dele para a aba SN.
+        if (!usuarioPertenceAba(l.respId)) return false;
         if (q) {
           const hay = `${l.empresa.codigo} ${l.empresa.razao_social ?? ''} ${l.empresa.apelido ?? ''}`.toLowerCase();
           if (!hay.includes(q)) return false;
@@ -495,7 +566,7 @@ export default function ChecklistFiscalPage() {
       if (a.progresso !== b.progresso) return b.progresso - a.progresso;
       return a.empresa.codigo.localeCompare(b.empresa.codigo);
     });
-  }, [empresas, items, search, filtroUsuario, apenasMinhas, currentUserId, canManage, filtroProgresso, getResponsavelFiscal]);
+  }, [empresas, items, search, filtroUsuario, apenasMinhas, currentUserId, canManage, filtroProgresso, getResponsavelFiscal, obrigacoesAba, aplicaObrigacao, usuarioPertenceAba]);
 
   // Stats
   const stats = useMemo(() => {
@@ -506,7 +577,7 @@ export default function ChecklistFiscalPage() {
     const empresasParciais = linhas.filter((l) => l.feitas > 0 && l.feitas < l.total).length;
     const progressoGeral = totalCells === 0 ? 0 : (feitasCells / totalCells) * 100;
     // por obrigação — total considera empresas onde a obrigação se aplica E não foi marcada como "sem obrigação no mês"
-    const porObrigacao = VENCIMENTOS_FISCAIS_NOMES.map((obr) => {
+    const porObrigacao = obrigacoesAba.map((obr) => {
       const aplicaveis = linhas.filter((l) => {
         const c = l.cells.find((c) => c.obrigacao === obr);
         return c?.aplica && c.item?.status !== 'sem_obrigacao';
@@ -516,7 +587,7 @@ export default function ChecklistFiscalPage() {
       return { obrigacao: obr, feitas, total, pct: total === 0 ? 0 : (feitas / total) * 100 };
     });
     return { totalCells, feitasCells, empresasCompletas, empresasPendentes, empresasParciais, progressoGeral, porObrigacao };
-  }, [linhas]);
+  }, [linhas, obrigacoesAba]);
 
   // Stats por usuário (para destacar)
   const statsPorUsuario = useMemo(() => {
@@ -536,7 +607,7 @@ export default function ChecklistFiscalPage() {
 
   // Exportar CSV do mês atual filtrado
   const exportCSV = () => {
-    const header = ['Código', 'Empresa', 'Responsável Fiscal', ...VENCIMENTOS_FISCAIS_NOMES, 'Progresso (%)', 'Feitas/Total'];
+    const header = ['Código', 'Empresa', 'Responsável Fiscal', ...obrigacoesAba, 'Progresso (%)', 'Feitas/Total'];
     const rows = linhas.map((l) => {
       const resp = l.respId ? (usuarios.find((u) => u.id === l.respId)?.nome ?? '') : '';
       const cells = l.cells.map((c) => (!c.aplica ? 'N/A' : c.item?.status === 'sem_obrigacao' ? 'SEM OBR' : c.item?.concluido ? 'OK' : ''));
@@ -547,7 +618,7 @@ export default function ChecklistFiscalPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `checklist_fiscal_${mes}.csv`;
+    a.download = `checklist_${aba}_${mes}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -590,6 +661,31 @@ export default function ChecklistFiscalPage() {
     );
   }
 
+  // Quando o usuário (gerente/admin) clica na aba SN, mas ainda não existe o depto Fiscal - SN.
+  if (aba === 'sn' && !fiscalSnDept) {
+    return (
+      <div className="space-y-4 sm:space-y-6 min-w-0 max-w-full">
+        <FiscalTabs />
+        {canManage && (
+          <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+            <div className="inline-flex items-center gap-1 rounded-xl bg-gray-100 p-1">
+              <button onClick={() => setAba('fiscal')} className="rounded-lg px-4 py-1.5 text-xs sm:text-sm font-bold text-gray-600 hover:bg-white">Fiscal</button>
+              <button className="rounded-lg px-4 py-1.5 text-xs sm:text-sm font-bold bg-gradient-to-r from-purple-500 via-fuchsia-500 to-pink-500 text-white shadow">SN</button>
+            </div>
+          </div>
+        )}
+        <div className="rounded-2xl bg-white p-8 shadow-sm text-center">
+          <ListChecks className="mx-auto mb-4 text-gray-300" size={48} />
+          <div className="text-lg font-bold text-gray-700 mb-1">Departamento &quot;Fiscal - SN&quot; não encontrado</div>
+          <div className="text-sm text-gray-500 max-w-md mx-auto">
+            Cadastre um departamento com o nome <span className="font-semibold text-gray-700">Fiscal - SN</span> em
+            {' '}<a href="/departamentos" className="text-emerald-700 underline font-semibold">Departamentos</a> e vincule a ele os usuários do Simples Nacional para usar esta aba.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 sm:space-y-6 min-w-0 max-w-full">
       <FiscalTabs />
@@ -602,9 +698,11 @@ export default function ChecklistFiscalPage() {
               <ListChecks className="text-white" size={22} />
             </div>
             <div className="min-w-0">
-              <div className="text-lg sm:text-2xl font-bold text-gray-900">Checklist Fiscal Mensal</div>
+              <div className="text-lg sm:text-2xl font-bold text-gray-900">
+                Checklist {aba === 'sn' ? 'Simples Nacional' : 'Fiscal'} Mensal
+              </div>
               <div className="text-xs sm:text-sm text-gray-500">
-                Marque conforme finalizar cada uma das {VENCIMENTOS_FISCAIS_NOMES.length} obrigações. Cada mês tem seu próprio controle.
+                Marque conforme finalizar cada uma das {obrigacoesAba.length} obrigações. Cada mês tem seu próprio controle.
               </div>
             </div>
           </div>
@@ -618,6 +716,35 @@ export default function ChecklistFiscalPage() {
             </button>
           </div>
         </div>
+
+        {/* Abas Fiscal x SN — só gerente/admin alterna; usuário comum vê só a sua */}
+        {canManage && (
+          <div className="mt-4 inline-flex items-center gap-1 rounded-xl bg-gray-100 p-1">
+            <button
+              type="button"
+              onClick={() => setAba('fiscal')}
+              className={`rounded-lg px-4 py-1.5 text-xs sm:text-sm font-bold transition ${
+                aba === 'fiscal'
+                  ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white shadow'
+                  : 'text-gray-600 hover:bg-white'
+              }`}
+            >
+              Fiscal
+            </button>
+            <button
+              type="button"
+              onClick={() => setAba('sn')}
+              className={`rounded-lg px-4 py-1.5 text-xs sm:text-sm font-bold transition ${
+                aba === 'sn'
+                  ? 'bg-gradient-to-r from-purple-500 via-fuchsia-500 to-pink-500 text-white shadow'
+                  : 'text-gray-600 hover:bg-white'
+              }`}
+              title={fiscalSnDept ? 'Checklist do Simples Nacional' : 'Crie um departamento "Fiscal - SN" para usar esta aba'}
+            >
+              SN {!fiscalSnDept && <span className="ml-1 text-[10px] opacity-70">(sem depto)</span>}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Seletor de mês */}
@@ -856,7 +983,7 @@ export default function ChecklistFiscalPage() {
                   <th className="sticky top-0 z-20 bg-gray-900 text-white text-[10px] font-bold uppercase tracking-wider text-center px-2 py-2 border-b-2 border-gray-700 w-[90px] min-w-[90px]">
                     Progresso
                   </th>
-                  {VENCIMENTOS_FISCAIS_NOMES.map((obr, idx) => {
+                  {obrigacoesAba.map((obr, idx) => {
                     const s = stats.porObrigacao[idx];
                     return (
                       <th
@@ -1131,7 +1258,7 @@ export default function ChecklistFiscalPage() {
         const arquivoHistorico = itemAtual?.arquivoHistorico ?? [];
         const temHistArquivo = arquivoHistorico.length > 0;
         const podeEditar = canManage || (!!currentUserId && (() => {
-          const respId = arqTarget.empresa.responsaveis?.[fiscalDept?.id ?? ''];
+          const respId = arqTarget.empresa.responsaveis?.[deptAtivo?.id ?? ''];
           return respId === currentUserId;
         })());
         const fechar = () => {

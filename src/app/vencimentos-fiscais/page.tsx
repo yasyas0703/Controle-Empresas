@@ -164,7 +164,11 @@ export default function VencimentosFiscaisPage() {
   const fiscalDept = useMemo(() => {
     const nameMatch = departamentos.find((d) => d.nome.trim().toLowerCase() === 'fiscal');
     if (nameMatch) return nameMatch;
-    return departamentos.find((d) => d.nome.toLowerCase().includes('fiscal')) ?? null;
+    // Fuzzy fallback — mas exclui o Fiscal-SN, que é depto separado.
+    return departamentos.find((d) => {
+      const n = d.nome.toLowerCase();
+      return n.includes('fiscal') && !n.includes('sn');
+    }) ?? null;
   }, [departamentos]);
 
   // Usuarios que aparecem como responsaveis pelo depto fiscal em alguma empresa

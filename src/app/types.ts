@@ -103,6 +103,28 @@ export const VENCIMENTOS_FISCAIS_NOMES = [
 
 export type VencimentoFiscalNome = (typeof VENCIMENTOS_FISCAIS_NOMES)[number];
 
+/**
+ * Obrigações fiscais específicas de empresas no regime Simples Nacional.
+ * Vencimentos definidos pela gerente do Fiscal — Yasmin / 2026.
+ * Dia 0 (Declaração DAS) significa último dia do mês.
+ */
+export const VENCIMENTOS_FISCAIS_SN_NOMES = [
+  'EMISSÃO GUIA DAS',
+  'RECIBO DAS',
+  'DECLARAÇÃO DAS',
+  'SINTEGRA',
+  'DESTDA',
+  'DIFERENCIAL DE ALIQUOTA',
+  'ICMS ANTECIPADO',
+  'ST ANTECIPADO',
+] as const;
+
+export type VencimentoFiscalSnNome = (typeof VENCIMENTOS_FISCAIS_SN_NOMES)[number];
+
+/** Nomes canônicos (lower-case) usados para identificar departamentos fiscais. */
+export const FISCAL_DEPT_NOME = 'fiscal';
+export const FISCAL_SN_DEPT_NOME = 'fiscal - sn';
+
 export type ChecklistFiscalStatus = 'feito' | 'sem_obrigacao' | null;
 
 export interface ChecklistFiscalItem {
