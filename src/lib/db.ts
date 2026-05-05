@@ -1310,10 +1310,19 @@ export async function deleteObservacao(obsId: UUID) {
 
 // ─── Logs ───────────────────────────────────────────────────
 
-export async function fetchLogs(): Promise<LogEntry[]> {
+export async function fetchLogs(limit = 1000): Promise<LogEntry[]> {
+  // Limita os logs carregados pra economizar trafego (plano free Supabase).
+  // 1000 = sobra muito pra exibir o historico recente. Se admin precisar olhar
+  // mais antigo, dá pra implementar paginacao na pagina de historico.
   const hiddenUserIds = getHiddenUserIds();
-  const all = await fetchAllRows<LogRow>('logs', { order: { column: 'em', ascending: false } });
-  return all
+  const { data, error } = await supabase
+    .from('logs')
+    .select('*')
+    .order('em', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  const rows = (data ?? []) as LogRow[];
+  return rows
     .filter((l) => (l.user_id ? !hiddenUserIds.has(l.user_id) : true))
     .filter((l) => {
       const entityId = l.entity_id;

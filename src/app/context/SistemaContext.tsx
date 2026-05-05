@@ -436,7 +436,9 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         db.fetchServicos(),
         db.fetchTags(),
         db.fetchNotificacoes(userId),
-        db.fetchLogs().catch(() => []),
+        // Logs: só admin/gerente acessa a página de histórico, então só ele precisa
+        // carregar. Pra usuário comum, retorna []. Reduz trafego/saida no plano free.
+        isManager ? db.fetchLogs().catch(() => []) : Promise.resolve([]),
         isManager ? db.fetchLixeira() : Promise.resolve([]),
         isManager ? db.fetchUsuariosAdmin() : db.fetchUsuariosBasic().catch(() => (me ? [me] : [])),
       ]);
