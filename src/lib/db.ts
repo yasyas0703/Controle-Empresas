@@ -1772,39 +1772,43 @@ function toChecklistItem(row: ChecklistFiscalRow): ChecklistFiscalItem {
   };
 }
 
-// ─── Empresas × Obrigações habilitadas manualmente ────────────────────────
-// Quando a regra fiscal (cidade/UF) não cobre uma empresa, o usuário pode
-// "forçar" a obrigação pra ela. Vale pra todos os meses até desabilitar.
+// ─── Empresas × Obrigações: overrides manuais ─────────────────────────────
+// Permite forçar habilitar (true) ou desabilitar (false) uma obrigação pra
+// uma empresa, sobrescrevendo a regra automática. Vale pra todos os meses
+// até alguém limpar o override.
 
-export interface ObrigacaoHabilitada {
+export interface ObrigacaoOverride {
   empresaId: UUID;
   obrigacao: string;
+  habilitada: boolean;
   habilitadaPorId?: UUID | null;
   habilitadaPorNome?: string | null;
   habilitadaEm: string;
 }
 
-interface ObrigacaoHabilitadaRow {
+interface ObrigacaoOverrideRow {
   empresa_id: string;
   obrigacao: string;
+  habilitada: boolean;
   habilitada_por_id: string | null;
   habilitada_por_nome: string | null;
   habilitada_em: string;
 }
 
-function toObrigacaoHabilitada(row: ObrigacaoHabilitadaRow): ObrigacaoHabilitada {
+function toObrigacaoOverride(row: ObrigacaoOverrideRow): ObrigacaoOverride {
   return {
     empresaId: row.empresa_id,
     obrigacao: row.obrigacao,
+    habilitada: row.habilitada,
     habilitadaPorId: row.habilitada_por_id,
     habilitadaPorNome: row.habilitada_por_nome,
     habilitadaEm: toIso(row.habilitada_em),
   };
 }
 
-export async function fetchObrigacoesHabilitadas(): Promise<ObrigacaoHabilitada[]> {
+export async function fetchObrigacoesOverrides(): Promise<ObrigacaoOverride[]> {
   const PAGE = 1000;
-  const todas: ObrigacaoHabilitadaRow[] = [];
+  const todas: ObrigacaoOverrideRow[] = [];
   let offset = 0;
   while (true) {
     const { data, error } = await supabase
@@ -1812,26 +1816,29 @@ export async function fetchObrigacoesHabilitadas(): Promise<ObrigacaoHabilitada[
       .select('*')
       .range(offset, offset + PAGE - 1);
     if (error) throw error;
-    const lote = (data ?? []) as ObrigacaoHabilitadaRow[];
+    const lote = (data ?? []) as ObrigacaoOverrideRow[];
     todas.push(...lote);
     if (lote.length < PAGE) break;
     offset += PAGE;
     if (offset > 100_000) break;
   }
-  return todas.map(toObrigacaoHabilitada);
+  return todas.map(toObrigacaoOverride);
 }
 
-export async function habilitarObrigacao(payload: {
+export async function setObrigacaoHabilitacao(payload: {
   empresaId: UUID;
   obrigacao: string;
+  habilitada: boolean;
   porId?: UUID | null;
   porNome?: string | null;
-}): Promise<ObrigacaoHabilitada> {
+}): Promise<ObrigacaoOverride> {
   const row = {
     empresa_id: payload.empresaId,
     obrigacao: payload.obrigacao,
+    habilitada: payload.habilitada,
     habilitada_por_id: payload.porId ?? null,
     habilitada_por_nome: payload.porNome ?? null,
+    habilitada_em: new Date().toISOString(),
   };
   const { data, error } = await supabase
     .from('empresa_obrigacoes_habilitadas')
@@ -1839,16 +1846,17 @@ export async function habilitarObrigacao(payload: {
     .select()
     .single();
   if (error) throw error;
-  return toObrigacaoHabilitada(data as ObrigacaoHabilitadaRow);
+  return toObrigacaoOverride(data as ObrigacaoOverrideRow);
 }
 
-export async function desabilitarObrigacao(empresaId: UUID, obrigacao: string): Promise<void> {
-  const { error } = await supabase
-    .from('empresa_obrigacoes_habilitadas')
-    .delete()
-    .eq('empresa_id', empresaId)
-    .eq('obrigacao', obrigacao);
-  if (error) throw error;
+// Mantido por compatibilidade — equivalente a setObrigacaoHabilitacao(habilitada=true).
+export async function habilitarObrigacao(payload: {
+  empresaId: UUID;
+  obrigacao: string;
+  porId?: UUID | null;
+  porNome?: string | null;
+}): Promise<ObrigacaoOverride> {
+  return setObrigacaoHabilitacao({ ...payload, habilitada: true });
 }
 
 export async function fetchChecklistFiscalByMes(mes: string): Promise<ChecklistFiscalItem[]> {

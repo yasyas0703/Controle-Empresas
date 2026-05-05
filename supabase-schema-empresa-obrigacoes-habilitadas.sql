@@ -14,11 +14,19 @@
 create table if not exists empresa_obrigacoes_habilitadas (
   empresa_id uuid not null references empresas(id) on delete cascade,
   obrigacao text not null,
+  -- true  = forçar habilitar (override quando a regra não cobre essa empresa)
+  -- false = forçar desabilitar (override pra desligar uma obrigação que tem regra
+  --         mas que essa empresa especifica nao faz mais)
+  habilitada boolean not null default true,
   habilitada_por_id uuid references usuarios(id) on delete set null,
   habilitada_por_nome text,
   habilitada_em timestamptz not null default now(),
   primary key (empresa_id, obrigacao)
 );
+
+-- Idempotente: pra bancos onde a tabela ja existia sem a coluna habilitada
+alter table empresa_obrigacoes_habilitadas
+  add column if not exists habilitada boolean not null default true;
 
 create index if not exists idx_emp_obrig_hab_empresa
   on empresa_obrigacoes_habilitadas (empresa_id);
