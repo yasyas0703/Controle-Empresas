@@ -518,10 +518,12 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       }, 1500);
     };
 
+    // Lista enxuta. Removidas: 'logs' (cresce a cada acao do sistema, era a maior
+    // fonte de mensagens realtime), 'lixeira', 'documentos', 'observacoes', 'rets',
+    // 'responsaveis' — esses sao consultados sob demanda nas telas que precisam.
+    // Quando um usuario quer ver o estado mais novo dessas, basta refresh / re-abrir.
     const tables = [
-      'empresas', 'documentos', 'observacoes', 'rets', 'responsaveis',
-      'usuarios', 'departamentos', 'servicos', 'tags',
-      'notificacoes', 'lixeira', 'logs',
+      'empresas', 'usuarios', 'departamentos', 'servicos', 'tags', 'notificacoes',
     ];
 
     let channel = supabase.channel(`app-realtime-${userId}`);

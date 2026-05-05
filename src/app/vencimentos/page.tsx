@@ -109,25 +109,9 @@ export default function VencimentosPage() {
     return () => { cancelado = true; };
   }, [mesCorrente]);
 
-  // Realtime: atualiza ✓ verde na hora quando alguém marca/desmarca
-  useEffect(() => {
-    const channel = supabase
-      .channel(`vencimentos-page-checklist-${mesCorrente}`)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'checklist_fiscal', filter: `mes=eq.${mesCorrente}` }, (payload: any) => {
-        const row = payload.new ?? payload.old;
-        if (!row) return;
-        const chave = `${row.empresa_id}|${row.obrigacao}`;
-        setChecklistFeitas((prev) => {
-          const next = new Set(prev);
-          if (payload.eventType === 'DELETE' || !row.concluido) next.delete(chave);
-          else next.add(chave);
-          return next;
-        });
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [mesCorrente]);
+  // Realtime removido daqui (economia do plano free Supabase). O ✓ verde aparece
+  // após troca de mês ou refresh — quem edita a marcação é o /vencimentos-fiscais/checklist
+  // que mantém realtime ativo.
 
   const getDepName = (dId: string) => departamentos.find((d) => d.id === dId)?.nome ?? '';
   const getDepIndex = (dId: string) => departamentos.findIndex((d) => d.id === dId);

@@ -114,33 +114,10 @@ export default function VencimentosFiscaisPage() {
     return () => { cancelado = true; };
   }, [mesCorrente]);
 
-  // Realtime: quando alguém marca/desmarca no checklist (em outra aba ou
-  // outro usuário), atualiza o painel automaticamente sem precisar F5.
-  useEffect(() => {
-    const channel = supabase
-      .channel(`vencimentos-fiscais-checklist-${mesCorrente}`)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'checklist_fiscal', filter: `mes=eq.${mesCorrente}` }, (payload: any) => {
-        const row = payload.new ?? payload.old;
-        if (!row) return;
-        const chave = `${row.empresa_id}|${row.obrigacao}`;
-        setChecklistFeitas((prev) => {
-          const next = new Set(prev);
-          if (payload.eventType === 'DELETE') {
-            next.delete(chave);
-          } else if (row.concluido) {
-            next.add(chave);
-          } else {
-            next.delete(chave);
-          }
-          return next;
-        });
-      })
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [mesCorrente]);
+  // Realtime removido daqui pra economizar mensagens do plano free do Supabase.
+  // O checklist mensal (página /vencimentos-fiscais/checklist) ainda mantém realtime,
+  // que é a tela onde a edição acontece. Aqui no painel de vencimentos as mudanças
+  // aparecem na próxima troca de mês ou refresh.
 
   // Quando a aba volta a ficar visível (ex: usuário trocou de aba e voltou),
   // refaz o fetch do checklist por garantia (caso o realtime tenha perdido evento)

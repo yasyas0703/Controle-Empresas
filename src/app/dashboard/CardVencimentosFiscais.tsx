@@ -89,44 +89,8 @@ export default function CardVencimentosFiscais() {
     return () => { cancelado = true; };
   }, [mes, podeVer]);
 
-  // Realtime: atualiza contadores automaticamente quando marca/desmarca em
-  // outra aba/usuário, sem precisar F5.
-  useEffect(() => {
-    if (!podeVer) return;
-    const channel = supabase
-      .channel(`dashboard-fiscal-checklist-${mes}`)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'checklist_fiscal', filter: `mes=eq.${mes}` }, (payload: any) => {
-        const row = payload.new ?? payload.old;
-        if (!row) return;
-        const chave = `${row.empresa_id}|${row.obrigacao}`;
-        setChecklistMap((prev) => {
-          const next = new Map(prev);
-          if (payload.eventType === 'DELETE') {
-            next.delete(chave);
-          } else {
-            next.set(chave, {
-              id: row.id,
-              empresaId: row.empresa_id,
-              mes: row.mes,
-              obrigacao: row.obrigacao,
-              concluido: !!row.concluido,
-              concluidoPorId: row.concluido_por_id,
-              concluidoPorNome: row.concluido_por_nome ?? undefined,
-              concluidoEm: row.concluido_em ?? undefined,
-              observacao: row.observacao ?? undefined,
-              criadoEm: row.criado_em ?? '',
-              atualizadoEm: row.atualizado_em ?? '',
-            });
-          }
-          return next;
-        });
-      })
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [mes, podeVer]);
+  // Realtime removido (economia plano free Supabase). Contadores atualizam ao trocar
+  // de mês ou refresh; a edição em si acontece em /vencimentos-fiscais/checklist.
 
   // Filtra empresas: admin/gerente vê tudo; usuário do fiscal vê só onde é responsável.
   // Empresas históricas (arquivadas/desligadas/código reciclado) ficam fora —
