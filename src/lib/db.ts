@@ -1772,6 +1772,85 @@ function toChecklistItem(row: ChecklistFiscalRow): ChecklistFiscalItem {
   };
 }
 
+// ─── Empresas × Obrigações habilitadas manualmente ────────────────────────
+// Quando a regra fiscal (cidade/UF) não cobre uma empresa, o usuário pode
+// "forçar" a obrigação pra ela. Vale pra todos os meses até desabilitar.
+
+export interface ObrigacaoHabilitada {
+  empresaId: UUID;
+  obrigacao: string;
+  habilitadaPorId?: UUID | null;
+  habilitadaPorNome?: string | null;
+  habilitadaEm: string;
+}
+
+interface ObrigacaoHabilitadaRow {
+  empresa_id: string;
+  obrigacao: string;
+  habilitada_por_id: string | null;
+  habilitada_por_nome: string | null;
+  habilitada_em: string;
+}
+
+function toObrigacaoHabilitada(row: ObrigacaoHabilitadaRow): ObrigacaoHabilitada {
+  return {
+    empresaId: row.empresa_id,
+    obrigacao: row.obrigacao,
+    habilitadaPorId: row.habilitada_por_id,
+    habilitadaPorNome: row.habilitada_por_nome,
+    habilitadaEm: toIso(row.habilitada_em),
+  };
+}
+
+export async function fetchObrigacoesHabilitadas(): Promise<ObrigacaoHabilitada[]> {
+  const PAGE = 1000;
+  const todas: ObrigacaoHabilitadaRow[] = [];
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('empresa_obrigacoes_habilitadas')
+      .select('*')
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    const lote = (data ?? []) as ObrigacaoHabilitadaRow[];
+    todas.push(...lote);
+    if (lote.length < PAGE) break;
+    offset += PAGE;
+    if (offset > 100_000) break;
+  }
+  return todas.map(toObrigacaoHabilitada);
+}
+
+export async function habilitarObrigacao(payload: {
+  empresaId: UUID;
+  obrigacao: string;
+  porId?: UUID | null;
+  porNome?: string | null;
+}): Promise<ObrigacaoHabilitada> {
+  const row = {
+    empresa_id: payload.empresaId,
+    obrigacao: payload.obrigacao,
+    habilitada_por_id: payload.porId ?? null,
+    habilitada_por_nome: payload.porNome ?? null,
+  };
+  const { data, error } = await supabase
+    .from('empresa_obrigacoes_habilitadas')
+    .upsert(row, { onConflict: 'empresa_id,obrigacao' })
+    .select()
+    .single();
+  if (error) throw error;
+  return toObrigacaoHabilitada(data as ObrigacaoHabilitadaRow);
+}
+
+export async function desabilitarObrigacao(empresaId: UUID, obrigacao: string): Promise<void> {
+  const { error } = await supabase
+    .from('empresa_obrigacoes_habilitadas')
+    .delete()
+    .eq('empresa_id', empresaId)
+    .eq('obrigacao', obrigacao);
+  if (error) throw error;
+}
+
 export async function fetchChecklistFiscalByMes(mes: string): Promise<ChecklistFiscalItem[]> {
   const PAGE = 1000;
   const todas: ChecklistFiscalRow[] = [];

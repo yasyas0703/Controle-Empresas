@@ -65,6 +65,11 @@ export default function ChecklistFiscalPage() {
   const [loading, setLoading] = useState(true);
   const [savingKeys, setSavingKeys] = useState<Set<ChecklistKey>>(new Set());
 
+  // Obrigações habilitadas manualmente por empresa (override da regra geral).
+  // Set de chaves "empresaId|obrigacao". Persiste em empresa_obrigacoes_habilitadas.
+  const [obrigacoesHabilitadas, setObrigacoesHabilitadas] = useState<Set<ChecklistKey>>(new Set());
+  const [togglingHabilitacao, setTogglingHabilitacao] = useState<Set<ChecklistKey>>(new Set());
+
   const [search, setSearch] = useState('');
   const [filtroUsuario, setFiltroUsuario] = useState<string>('');
   const [filtroProgresso, setFiltroProgresso] = useState<'todos' | 'pendentes' | 'concluidas' | 'parciais'>('todos');
@@ -156,11 +161,22 @@ export default function ChecklistFiscalPage() {
   // Lista de obrigações da aba ativa.
   const obrigacoesAba: readonly string[] = aba === 'sn' ? VENCIMENTOS_FISCAIS_SN_NOMES : VENCIMENTOS_FISCAIS_NOMES;
 
-  const aplicaObrigacao = useCallback((obrigacao: string, empresa: Empresa): boolean => {
+  const aplicaPelaRegra = useCallback((obrigacao: string, empresa: Empresa): boolean => {
     return aba === 'sn'
       ? obrigacaoSnAplicaParaEmpresa(obrigacao, empresa.estado, empresa.cidade)
       : obrigacaoAplicaParaEmpresa(obrigacao, empresa.estado, empresa.cidade);
   }, [aba]);
+
+  const aplicaObrigacao = useCallback((obrigacao: string, empresa: Empresa): boolean => {
+    if (aplicaPelaRegra(obrigacao, empresa)) return true;
+    return obrigacoesHabilitadas.has(buildKey(empresa.id, obrigacao));
+  }, [aplicaPelaRegra, obrigacoesHabilitadas]);
+
+  const isHabilitadaManualmente = useCallback((obrigacao: string, empresa: Empresa): boolean => {
+    // Habilitada manualmente = não tem regra automática mas o usuário forçou.
+    if (aplicaPelaRegra(obrigacao, empresa)) return false;
+    return obrigacoesHabilitadas.has(buildKey(empresa.id, obrigacao));
+  }, [aplicaPelaRegra, obrigacoesHabilitadas]);
 
   // Para usuário comum: a aba é forçada conforme seu departamento.
   // Gerente/admin pode alternar livremente.
@@ -200,6 +216,54 @@ export default function ChecklistFiscalPage() {
   useEffect(() => {
     carregar(mes);
   }, [mes, carregar]);
+
+  // Carrega as habilitações manuais (independem do mês — valem pra todos).
+  useEffect(() => {
+    let cancelado = false;
+    db.fetchObrigacoesHabilitadas()
+      .then((lista) => {
+        if (cancelado) return;
+        setObrigacoesHabilitadas(new Set(lista.map((o) => buildKey(o.empresaId, o.obrigacao))));
+      })
+      .catch((err) => {
+        console.error('Erro ao carregar obrigações habilitadas manualmente:', err);
+      });
+    return () => { cancelado = true; };
+  }, []);
+
+  const toggleHabilitacaoObrigacao = useCallback(async (empresa: Empresa, obrigacao: string) => {
+    const key = buildKey(empresa.id, obrigacao);
+    if (togglingHabilitacao.has(key)) return;
+    const habilitada = obrigacoesHabilitadas.has(key);
+    setTogglingHabilitacao((prev) => new Set(prev).add(key));
+    try {
+      if (habilitada) {
+        await db.desabilitarObrigacao(empresa.id, obrigacao);
+        setObrigacoesHabilitadas((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      } else {
+        await db.habilitarObrigacao({
+          empresaId: empresa.id,
+          obrigacao,
+          porId: currentUserId ?? undefined,
+          porNome: currentUser?.nome ?? undefined,
+        });
+        setObrigacoesHabilitadas((prev) => new Set(prev).add(key));
+      }
+    } catch (err) {
+      console.error('Erro ao alterar habilitação da obrigação:', err);
+      mostrarAlertaRef.current('Erro', 'Não foi possível alterar a habilitação. Tente novamente.', 'erro');
+    } finally {
+      setTogglingHabilitacao((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  }, [obrigacoesHabilitadas, togglingHabilitacao, currentUserId, currentUser?.nome]);
 
   // Para usuário comum (não gerente/admin), o filtro "minhas empresas" é FORÇADO
   // — não vê empresas dos outros responsáveis. Gerente/admin: default off, livre p/ alternar.
@@ -1049,14 +1113,30 @@ export default function ChecklistFiscalPage() {
                         </div>
                       </td>
                       {l.cells.map(({ obrigacao, item, aplica }) => {
+                        const canEdit = canManage || (!!currentUserId && l.respId === currentUserId);
+                        const habKey = buildKey(l.empresa.id, obrigacao);
+                        const isTogglingHab = togglingHabilitacao.has(habKey);
+                        const habilitadaManual = isHabilitadaManualmente(obrigacao, l.empresa);
+
                         if (!aplica) {
                           return (
                             <td key={obrigacao} className="border-b border-gray-100 p-1 w-[90px] min-w-[90px] max-w-[90px]">
                               <div
-                                className="rounded-lg border-2 border-dashed border-gray-200 bg-gray-50/60 p-1.5 flex items-center justify-center min-h-[64px]"
+                                className="rounded-lg border-2 border-dashed border-gray-200 bg-gray-50/60 p-1.5 flex flex-col items-center justify-center gap-1 min-h-[64px]"
                                 title={`${obrigacao} não se aplica a esta empresa (sem regra para o estado/cidade dela).`}
                               >
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">N/A</span>
+                                {canEdit && (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleHabilitacaoObrigacao(l.empresa, obrigacao)}
+                                    disabled={isTogglingHab}
+                                    className="text-[9px] font-bold uppercase tracking-wider rounded-md border border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50 px-2 py-0.5 transition disabled:opacity-60"
+                                    title={`Habilitar ${obrigacao} pra esta empresa (vale pra todos os meses)`}
+                                  >
+                                    {isTogglingHab ? <Loader2 size={10} className="animate-spin" /> : '+ Habilitar'}
+                                  </button>
+                                )}
                               </div>
                             </td>
                           );
@@ -1067,7 +1147,6 @@ export default function ChecklistFiscalPage() {
                         const semObr = item?.status === 'sem_obrigacao';
                         const temObs = !!(item?.observacao && item.observacao.trim());
                         const temArquivo = !!item?.arquivoUrl;
-                        const canEdit = canManage || (!!currentUserId && l.respId === currentUserId);
 
                         const handleClickStatus = (alvo: 'feito' | 'sem_obrigacao') => {
                           if (!canEdit || saving) return;
@@ -1087,6 +1166,25 @@ export default function ChecklistFiscalPage() {
                                     : 'bg-gray-50 border-gray-200 hover:border-emerald-300'
                               } ${saving ? 'opacity-60' : ''}`}
                             >
+                              {habilitadaManual && canEdit && (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleHabilitacaoObrigacao(l.empresa, obrigacao)}
+                                  disabled={isTogglingHab}
+                                  className="absolute -top-1 -right-1 z-10 inline-flex items-center justify-center h-4 w-4 rounded-full bg-amber-100 hover:bg-rose-100 text-amber-700 hover:text-rose-700 border border-amber-300 hover:border-rose-300 transition disabled:opacity-60"
+                                  title={`Esta obrigação foi habilitada manualmente pra esta empresa.\nClique pra desabilitar.`}
+                                >
+                                  {isTogglingHab ? <Loader2 size={8} className="animate-spin" /> : <span className="text-[8px] font-black leading-none">★</span>}
+                                </button>
+                              )}
+                              {habilitadaManual && !canEdit && (
+                                <span
+                                  className="absolute -top-1 -right-1 z-10 inline-flex items-center justify-center h-4 w-4 rounded-full bg-amber-100 text-amber-700 border border-amber-300"
+                                  title="Habilitada manualmente"
+                                >
+                                  <span className="text-[8px] font-black leading-none">★</span>
+                                </span>
+                              )}
                               <div className="grid grid-cols-2 gap-1">
                                 <button
                                   type="button"
