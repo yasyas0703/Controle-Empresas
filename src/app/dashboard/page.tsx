@@ -12,7 +12,6 @@ import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
 import ConfirmModal from '@/app/components/ConfirmModal';
-import CardVencimentosFiscais from '@/app/dashboard/CardVencimentosFiscais';
 import { ehEmpresaHistorica } from '@/app/utils/empresaHistorica';
 import { garantirVencimentosFiscaisComRegras } from '@/app/utils/vencimentos';
 import { getDepartamentoSlugDoUsuario } from '@/app/utils/departamento';
@@ -611,9 +610,6 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-
-      {/* Card consolidado de vencimentos fiscais (mês corrente, com checklist) */}
-      <CardVencimentosFiscais />
 
       {/* Filtros */}
       <div className="rounded-2xl bg-white p-5 shadow-sm">
