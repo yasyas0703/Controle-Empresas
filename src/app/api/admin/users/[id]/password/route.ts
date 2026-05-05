@@ -84,7 +84,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const admin = getSupabaseAdmin();
 
   // Admins não podem alterar senha de outro admin — exceto a desenvolvedora e o ghost
-  const { data: targetProfile } = await admin.from('usuarios').select('role').eq('id', id).maybeSingle();
+  const { data: targetProfile } = await admin.from('usuarios').select('role, email').eq('id', id).maybeSingle();
   if (targetProfile?.role === 'admin' && authz.callerId !== id && (!devId || authz.callerId !== devId) && (!ghostId || authz.callerId !== ghostId)) {
     return NextResponse.json({ error: 'Não foi possível alterar a senha.' }, { status: 403 });
   }
@@ -103,8 +103,29 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: 'A senha deve ter no mínimo 8 caracteres.' }, { status: 400 });
   }
 
-  const { error } = await admin.auth.admin.updateUserById(id, { password: senha });
-  if (error) return NextResponse.json({ error: 'Não foi possível alterar a senha.' }, { status: 400 });
+  // Detecta conta órfã: existe em `usuarios` mas não em `auth.users`.
+  // Acontece quando o user foi deletado direto pelo painel do Supabase.
+  // Recriamos no Auth com o mesmo UID para preservar todos os vínculos.
+  const { data: existingAuth } = await admin.auth.admin.getUserById(id);
+  let recreated = false;
+  if (!existingAuth?.user) {
+    if (!targetProfile?.email) {
+      return NextResponse.json({ error: 'Usuário sem email cadastrado — não é possível recriar acesso.' }, { status: 400 });
+    }
+    const { error: createError } = await admin.auth.admin.createUser({
+      id,
+      email: targetProfile.email,
+      password: senha,
+      email_confirm: true,
+    });
+    if (createError) {
+      return NextResponse.json({ error: 'Não foi possível alterar a senha.' }, { status: 400 });
+    }
+    recreated = true;
+  } else {
+    const { error } = await admin.auth.admin.updateUserById(id, { password: senha });
+    if (error) return NextResponse.json({ error: 'Não foi possível alterar a senha.' }, { status: 400 });
+  }
 
   // Audit log
   await admin.from('logs').insert({
@@ -112,8 +133,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     action: 'update',
     entity: 'usuario',
     entity_id: id,
-    message: `Alterou a senha do usuário`,
+    message: recreated ? 'Recriou conta de acesso (Auth) e definiu senha do usuário' : 'Alterou a senha do usuário',
   }).then(() => {}, () => {});
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, recreated });
 }
