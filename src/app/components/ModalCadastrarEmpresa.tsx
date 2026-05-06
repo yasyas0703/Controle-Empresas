@@ -783,6 +783,22 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
             )}
           </div>
 
+          {/* Particularidades da Empresa — logo após Dados Principais
+              pra facilitar achar (antes ficava bem mais embaixo) */}
+          <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
+            <h4 className="font-semibold text-amber-800 mb-2">Particularidades da Empresa</h4>
+            <p className="text-xs text-amber-700/80 mb-3">
+              Anotações livres sobre essa empresa (regime especial, tratamento contábil/fiscal específico, combinados com o cliente, etc.).
+            </p>
+            <textarea
+              value={String(formData.particularidades || '')}
+              onChange={(e) => handleChange('particularidades', e.target.value)}
+              rows={6}
+              placeholder="Descreva aqui as particularidades dessa empresa..."
+              className="w-full px-4 py-3 border border-amber-300 rounded-xl focus:ring-2 focus:ring-amber-500 bg-white text-gray-900 resize-y"
+            />
+          </div>
+
           {/* Serviços */}
           <div className="bg-cyan-50 rounded-xl p-4 border border-cyan-200">
             <h4 className="font-semibold text-cyan-800 mb-4">Serviços contratados</h4>
@@ -1247,21 +1263,6 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                 />
               </div>
             </div>
-          </div>
-
-          {/* Particularidades da Empresa */}
-          <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
-            <h4 className="font-semibold text-amber-800 mb-2">Particularidades da Empresa</h4>
-            <p className="text-xs text-amber-700/80 mb-3">
-              Anotações livres sobre essa empresa (regime especial, tratamento contábil/fiscal específico, combinados com o cliente, etc.).
-            </p>
-            <textarea
-              value={String(formData.particularidades || '')}
-              onChange={(e) => handleChange('particularidades', e.target.value)}
-              rows={6}
-              placeholder="Descreva aqui as particularidades dessa empresa..."
-              className="w-full px-4 py-3 border border-amber-300 rounded-xl focus:ring-2 focus:ring-amber-500 bg-white text-gray-900 resize-y"
-            />
           </div>
 
           {/* Endereço */}

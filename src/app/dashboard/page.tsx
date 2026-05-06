@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { AlertTriangle, Calendar, CalendarClock, FileText, Building2, Clock, Search, MapPin, Briefcase, Eye, Pencil, PowerOff, Trash2, CheckSquare, Square, FileDown, X, Tag, History, FileSpreadsheet, ChevronDown } from 'lucide-react';
+import { AlertTriangle, Calendar, CalendarClock, FileText, Building2, Clock, Search, MapPin, Briefcase, Eye, Pencil, PowerOff, Trash2, CheckSquare, Square, FileDown, X, Tag, History, FileSpreadsheet, ChevronDown, StickyNote } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
 import { detectTipoEstabelecimento, detectTipoInscricao, formatarDocumento, getTipoInscricaoDisplay } from '@/app/utils/validation';
@@ -858,6 +858,14 @@ export default function DashboardPage() {
                         </span>
                       );
                     })}
+                    {e.particularidades && e.particularidades.trim() !== '' && (
+                      <span
+                        className="rounded-md bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 text-[10px] font-bold flex items-center gap-1"
+                        title={e.particularidades}
+                      >
+                        <StickyNote size={10} /> PARTICULARIDADE
+                      </span>
+                    )}
                     {totalRisco > 0 && (
                       <span className="rounded-md bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px] font-bold flex items-center gap-1">
                         <Clock size={10} /> {totalRisco} em risco

@@ -1245,11 +1245,32 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     try {
       await db.updateEmpresa(id, patchPreparado);
       await pushLog({ action: 'update', entity: 'empresa', entityId: id, message: `Atualizou empresa: ${before.codigo}`, diff });
+
+      // Notif quando mexer em campos do cadastro (razao social, regime,
+      // particularidades, endereço, etc). Mudancas em rets/documentos/
+      // vencimentosFiscais/observacoes/responsaveis nao geram notif aqui,
+      // porque ja tem seus proprios fluxos.
+      const CAMPOS_CADASTRO_NOTIFICAVEIS = new Set([
+        'razao_social', 'apelido', 'cnpj', 'codigo', 'particularidades',
+        'regime_federal', 'regime_estadual', 'regime_municipal', 'tributacao',
+        'cliente_desde', 'desligada_em', 'telefone', 'email',
+        'cep', 'logradouro', 'numero', 'bairro', 'cidade', 'estado',
+        'tipoEstabelecimento', 'tipoInscricao', 'inscricao_estadual', 'inscricao_municipal',
+      ]);
+      const mexeNoCadastro = Object.keys(patch).some((k) => CAMPOS_CADASTRO_NOTIFICAVEIS.has(k));
+      if (mexeNoCadastro) {
+        await addNotification(
+          'Empresa atualizada',
+          `${before.codigo} - ${before.razao_social || before.apelido || ''} foi editada por ${currentUser?.nome ?? 'Desconhecido'}`,
+          'aviso',
+          id,
+        );
+      }
+
       setState((prev) => ({
         ...prev,
         empresas: prev.empresas.map((e) => (e.id === id ? after : e)),
       }));
-      return true;
       return true;
     } catch (err) {
       console.error(err);
