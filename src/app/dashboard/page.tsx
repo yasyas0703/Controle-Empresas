@@ -858,14 +858,6 @@ export default function DashboardPage() {
                         </span>
                       );
                     })}
-                    {e.particularidades && e.particularidades.trim() !== '' && (
-                      <span
-                        className="rounded-md bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 text-[10px] font-bold flex items-center gap-1"
-                        title={e.particularidades}
-                      >
-                        <StickyNote size={10} /> PARTICULARIDADE
-                      </span>
-                    )}
                     {totalRisco > 0 && (
                       <span className="rounded-md bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px] font-bold flex items-center gap-1">
                         <Clock size={10} /> {totalRisco} em risco
@@ -1055,6 +1047,21 @@ export default function DashboardPage() {
                   </div>
                 );
               })()}
+
+              {/* Particularidade — bloquinho com o texto inteiro
+                  embaixo dos responsaveis (estilo igual aos chips de dept) */}
+              {e.particularidades && e.particularidades.trim() !== '' && (
+                <div className="mt-3">
+                  <div className="rounded-lg px-2.5 py-1.5 border bg-amber-50 border-amber-300">
+                    <div className="text-[10px] font-bold text-amber-700 uppercase tracking-wide flex items-center gap-1">
+                      <StickyNote size={11} /> Particularidade
+                    </div>
+                    <div className="text-xs text-gray-800 whitespace-pre-wrap mt-0.5">
+                      {e.particularidades}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
