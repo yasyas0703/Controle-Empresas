@@ -95,7 +95,13 @@ function getErrorMessage(err: unknown, fallback: string): string {
 }
 
 export default function HistoricoPage() {
-  const { logs, usuarios, departamentos, canAdmin, isGhost, limparHistorico, removerLogsSelecionados, mostrarAlerta } = useSistema();
+  const { logs, usuarios, departamentos, canAdmin, isGhost, limparHistorico, removerLogsSelecionados, mostrarAlerta, loadLogs } = useSistema();
+  // Logs são pesados (até 1000 linhas com diff JSON) e antes eram puxados a cada
+  // mudança no realtime — agora carregam só ao abrir esta página.
+  useEffect(() => {
+    if (!canAdmin && !isGhost) return;
+    loadLogs();
+  }, [canAdmin, isGhost, loadLogs]);
   const [search, setSearch] = useState('');
   const [filtroAction, setFiltroAction] = useState('');
   const [filtroEntity, setFiltroEntity] = useState('');

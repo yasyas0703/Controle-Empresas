@@ -331,6 +331,35 @@ function filtrarEmpresasPorPermissaoDocumentos(empresas: Empresa[], usuario: Usu
   }));
 }
 
+// Notificações com títulos internos só devem aparecer pra admin.
+const ADMIN_ONLY_NOTIF_TITLES = new Set([
+  'Histórico excluído',
+  'Registros do histórico excluídos',
+  'Exclusão permanente',
+  'Lixeira limpa',
+]);
+
+function filtrarNotificacoesPorPapel(
+  notificacoes: Notificacao[],
+  role: Usuario['role'] | undefined,
+  userId: UUID,
+): Notificacao[] {
+  if (role === 'usuario') {
+    return notificacoes.filter(n =>
+      !ADMIN_ONLY_NOTIF_TITLES.has(n.titulo) &&
+      Array.isArray(n.destinatarios) && n.destinatarios.includes(userId)
+    );
+  }
+  if (role === 'gerente') {
+    return notificacoes.filter(n =>
+      !ADMIN_ONLY_NOTIF_TITLES.has(n.titulo) &&
+      (!n.empresaId || (Array.isArray(n.destinatarios) && n.destinatarios.includes(userId)))
+    );
+  }
+  // admin (ou role indefinido): sem filtro
+  return notificacoes;
+}
+
 type AlertType = 'sucesso' | 'aviso' | 'erro';
 export type AlertItem = { id: UUID; title: string; message: string; type: AlertType };
 
@@ -399,6 +428,10 @@ interface SistemaContextValue extends SistemaState {
   // Histórico
   limparHistorico: () => Promise<void>;
   removerLogsSelecionados: (ids: UUID[]) => Promise<void>;
+
+  // Loaders sob demanda (lazy) — chamar no mount das páginas /historico e /lixeira
+  loadLogs: () => Promise<void>;
+  loadLixeira: () => Promise<void>;
 }
 
 const SistemaContext = createContext<SistemaContextValue | null>(null);
@@ -430,16 +463,18 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       const me = meList[0] ?? null;
       const isManager = !!me && me.ativo && (me.role === 'gerente' || me.role === 'admin');
 
-      const [empresas, departamentos, servicos, tags, notificacoes, logs, lixeira, usuarios] = await Promise.all([
+      // logs e lixeira NÃO são carregados aqui: ambos são pesados (logs tem
+      // até 1000 linhas com diff JSON; lixeira pode ter centenas de itens) e
+      // só são consumidos nas páginas /historico e /lixeira respectivamente.
+      // Cada página chama loadLogs()/loadLixeira() no mount. Isso reduz egress
+      // drasticamente — antes, qualquer UPDATE no realtime forçava todo admin
+      // conectado a re-baixar 1000 logs com diff. Agora só baixa quem abre.
+      const [empresas, departamentos, servicos, tags, notificacoes, usuarios] = await Promise.all([
         db.fetchEmpresas(),
         db.fetchDepartamentos(),
         db.fetchServicos(),
         db.fetchTags(),
         db.fetchNotificacoes(userId),
-        // Logs: só admin/gerente acessa a página de histórico, então só ele precisa
-        // carregar. Pra usuário comum, retorna []. Reduz trafego/saida no plano free.
-        isManager ? db.fetchLogs().catch(() => []) : Promise.resolve([]),
-        isManager ? db.fetchLixeira() : Promise.resolve([]),
         isManager ? db.fetchUsuariosAdmin() : db.fetchUsuariosBasic().catch(() => (me ? [me] : [])),
       ]);
 
@@ -447,33 +482,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       if (isManager) {
         db.purgeLixeiraOlderThan(10).catch(() => {});
       }
-      // -- Filtrar notificações por papel --
-      // Títulos de notificações internas (só admin deve ver)
-      const ADMIN_ONLY_TITLES = new Set([
-        'Histórico excluído',
-        'Registros do histórico excluídos',
-        'Exclusão permanente',
-        'Lixeira limpa',
-      ]);
-
-      let notifsFiltradas = notificacoes;
-      if (me && me.role === 'usuario') {
-        // Usuário: vê notificações onde está nos destinatários (exceto internas)
-        notifsFiltradas = notificacoes.filter(n =>
-          !ADMIN_ONLY_TITLES.has(n.titulo) &&
-          Array.isArray(n.destinatarios) && n.destinatarios.includes(userId)
-        );
-      } else if (me && me.role === 'gerente') {
-        // Gerente: vê notificações relacionadas a empresas ou onde está nos destinatários (exceto internas)
-        notifsFiltradas = notificacoes.filter(n =>
-          !ADMIN_ONLY_TITLES.has(n.titulo) &&
-          (
-            !n.empresaId ||
-            (Array.isArray(n.destinatarios) && n.destinatarios.includes(userId))
-          )
-        );
-      }
-      // Admin: sem filtro (todas)
+      const notifsFiltradas = filtrarNotificacoesPorPapel(notificacoes, me?.role, userId);
 
       // Garante que o próprio usuário logado sempre esteja na lista,
       // mesmo que seja filtrado da lista pública (ex: ghost user).
@@ -482,21 +491,63 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
           ? [me, ...usuarios]
           : usuarios;
 
-      setState({
+      // Preserva logs/lixeira do estado anterior — eles são populados sob
+      // demanda por loadLogs()/loadLixeira() quando o usuário abre as páginas.
+      setState((prev) => ({
         empresas,
         usuarios: usuariosComMe,
         departamentos,
         servicos,
         tags,
-        logs,
-        lixeira,
+        logs: prev.logs,
+        lixeira: prev.lixeira,
         notificacoes: notifsFiltradas,
         currentUserId: userId,
-      });
+      }));
       return me;
     },
     []
   );
+
+  // -- Loaders sob demanda (chamados pelas páginas /historico e /lixeira) --
+  const loadLogs = useCallback(async () => {
+    try {
+      const logs = await db.fetchLogs();
+      setState((prev) => ({ ...prev, logs }));
+    } catch (err) {
+      console.error('Erro ao carregar logs:', err);
+    }
+  }, []);
+
+  const loadLixeira = useCallback(async () => {
+    try {
+      const lixeira = await db.fetchLixeira();
+      setState((prev) => ({ ...prev, lixeira }));
+    } catch (err) {
+      console.error('Erro ao carregar lixeira:', err);
+    }
+  }, []);
+
+  // Ref pro estado atual — usado pelo polling de notificações sem precisar
+  // re-criar o useEffect a cada mudança de state.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  // Notificações: foram tiradas do realtime (geravam refetch geral pra todos
+  // os 21 conectados a cada notificação criada). Substituídas por polling
+  // leve a cada 60s + quando aba ganha foco.
+  const loadNotificacoes = useCallback(async () => {
+    const { currentUserId, usuarios } = stateRef.current;
+    if (!currentUserId) return;
+    try {
+      const me = usuarios.find((u) => u.id === currentUserId);
+      const notificacoes = await db.fetchNotificacoes(currentUserId);
+      const filtradas = filtrarNotificacoesPorPapel(notificacoes, me?.role, currentUserId);
+      setState((prev) => ({ ...prev, notificacoes: filtradas }));
+    } catch (err) {
+      console.error('Erro ao carregar notificações:', err);
+    }
+  }, []);
   // -- Load all data from Supabase --
   const reloadData = useCallback(async () => {
     try {
@@ -507,11 +558,14 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     }
   }, [loadForUser, state.currentUserId]);
   // -- Realtime: sincroniza automaticamente quando outro usuário faz mudanças --
+  // Pausa quando a aba está oculta — usuário com aba minimizada/em background
+  // não precisa receber eventos. Quando volta o foco, refetch + reassina.
   useEffect(() => {
     if (!state.currentUserId) return;
 
     const userId = state.currentUserId;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
 
     const scheduleReload = () => {
       if (debounceTimer) clearTimeout(debounceTimer);
@@ -520,29 +574,88 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       }, 1500);
     };
 
-    // Lista enxuta. Removidas: 'logs' (cresce a cada acao do sistema, era a maior
-    // fonte de mensagens realtime), 'lixeira', 'documentos', 'observacoes', 'rets',
-    // 'responsaveis' — esses sao consultados sob demanda nas telas que precisam.
-    // Quando um usuario quer ver o estado mais novo dessas, basta refresh / re-abrir.
+    // Lista enxuta. Removidas:
+    //  - 'logs', 'lixeira', 'documentos', 'observacoes', 'rets', 'responsaveis':
+    //     consultados sob demanda nas telas que precisam.
+    //  - 'notificacoes': vinha disparando refetch geral toda vez que QUALQUER
+    //     usuário recebia uma notificação (alertas fiscais auto + ações).
+    //     Substituído por polling leve abaixo (1 min + on focus).
     const tables = [
-      'empresas', 'usuarios', 'departamentos', 'servicos', 'tags', 'notificacoes',
+      'empresas', 'usuarios', 'departamentos', 'servicos', 'tags',
     ];
 
-    let channel = supabase.channel(`app-realtime-${userId}`);
-    for (const table of tables) {
-      channel = channel.on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table },
-        scheduleReload
-      );
+    const subscribe = () => {
+      if (channel) return;
+      let ch = supabase.channel(`app-realtime-${userId}`);
+      for (const table of tables) {
+        ch = ch.on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table },
+          scheduleReload
+        );
+      }
+      ch.subscribe();
+      channel = ch;
+    };
+
+    const unsubscribe = () => {
+      if (!channel) return;
+      supabase.removeChannel(channel);
+      channel = null;
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Voltou pro foco: refetch imediato pra pegar o que perdeu, depois reassina.
+        loadForUser(userId as UUID).catch(console.error);
+        subscribe();
+      } else {
+        // Saiu de foco: para de receber mensagens realtime.
+        unsubscribe();
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+          debounceTimer = null;
+        }
+      }
+    };
+
+    // Inicializa de acordo com o estado atual da aba.
+    if (document.visibilityState === 'visible') {
+      subscribe();
     }
-    channel.subscribe();
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       if (debounceTimer) clearTimeout(debounceTimer);
-      supabase.removeChannel(channel);
+      unsubscribe();
     };
   }, [state.currentUserId, loadForUser]);
+
+  // Polling leve de notificações: 60s + quando aba ganha foco.
+  // Substitui o realtime que disparava refetch geral pra todos os conectados
+  // toda vez que QUALQUER notificação era criada (alertas fiscais auto + ações).
+  useEffect(() => {
+    if (!state.currentUserId) return;
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadNotificacoes();
+      }
+    }, 60_000);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadNotificacoes();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [state.currentUserId, loadNotificacoes]);
 
   const fetchPrivileges = useCallback(async (token: string) => {
     try {
@@ -1730,6 +1843,8 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     limparNotificacoes,
     limparHistorico,
     removerLogsSelecionados,
+    loadLogs,
+    loadLixeira,
   };
 
   return <SistemaContext.Provider value={value}>{children}</SistemaContext.Provider>;

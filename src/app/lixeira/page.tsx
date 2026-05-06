@@ -22,7 +22,7 @@ const TIPO_COLORS: Record<LixeiraTipo, { bg: string; text: string; border: strin
 };
 
 export default function LixeiraPage() {
-  const { lixeira, restaurarEmpresa, restaurarItem, excluirDefinitivamente, limparLixeira, canManage } = useSistema();
+  const { lixeira, restaurarEmpresa, restaurarItem, excluirDefinitivamente, limparLixeira, canManage, loadLixeira } = useSistema();
   const [search, setSearch] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<LixeiraTipo | 'todos'>('todos');
   const [empresaView, setEmpresaView] = useState<Empresa | null>(null);
@@ -35,6 +35,13 @@ export default function LixeiraPage() {
     const id = window.setInterval(() => setAgoraMs(Date.now()), 60_000);
     return () => window.clearInterval(id);
   }, []);
+
+  // Lixeira é carregada sob demanda — antes vinha junto do loadForUser e era
+  // re-baixada a cada mudança no realtime. Agora só carrega ao abrir a página.
+  useEffect(() => {
+    if (!canManage) return;
+    loadLixeira();
+  }, [canManage, loadLixeira]);
 
   if (!canManage) {
     return (

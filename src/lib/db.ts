@@ -1310,10 +1310,10 @@ export async function deleteObservacao(obsId: UUID) {
 
 // ─── Logs ───────────────────────────────────────────────────
 
-export async function fetchLogs(limit = 1000): Promise<LogEntry[]> {
+export async function fetchLogs(limit = 200): Promise<LogEntry[]> {
   // Limita os logs carregados pra economizar trafego (plano free Supabase).
-  // 1000 = sobra muito pra exibir o historico recente. Se admin precisar olhar
-  // mais antigo, dá pra implementar paginacao na pagina de historico.
+  // 200 = suficiente pro historico recente (retenção do banco é 3 dias via cron).
+  // Se admin precisar olhar mais antigo, dá pra implementar paginacao na página.
   const hiddenUserIds = getHiddenUserIds();
   const { data, error } = await supabase
     .from('logs')
