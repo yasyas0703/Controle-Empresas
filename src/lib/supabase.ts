@@ -28,9 +28,9 @@ function getAuthStorage(): AuthStorage {
   if (typeof window === 'undefined') return createMemoryStorage();
   try {
     const probeKey = '__controle-triar-auth-probe__';
-    window.sessionStorage.setItem(probeKey, '1');
-    window.sessionStorage.removeItem(probeKey);
-    return window.sessionStorage;
+    window.localStorage.setItem(probeKey, '1');
+    window.localStorage.removeItem(probeKey);
+    return window.localStorage;
   } catch {
     return createMemoryStorage();
   }

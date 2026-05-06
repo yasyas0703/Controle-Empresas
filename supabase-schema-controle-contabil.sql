@@ -46,8 +46,8 @@ drop policy if exists contas_bancarias_write on contas_bancarias;
 create policy contas_bancarias_select on contas_bancarias
   for select using (public.is_active_user());
 create policy contas_bancarias_write on contas_bancarias
-  for all using (public.can_access_empresa(empresa_id))
-  with check (public.can_access_empresa(empresa_id));
+  for all using (public.is_active_user())
+  with check (public.is_active_user());
 
 -- ------------------------------------------------------------
 -- 3. Controle contábil de extratos (status banco × mês)

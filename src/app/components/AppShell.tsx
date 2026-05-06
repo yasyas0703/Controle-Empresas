@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Archive, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, Grid3x3, ListChecks, FileStack } from 'lucide-react';
+import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Archive, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, Grid3x3, ListChecks, FileStack, Eye, EyeOff } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, isRetRenovado } from '@/app/utils/date';
 import { getDepartamentoSlugDoUsuario, type DepartamentoSlug } from '@/app/utils/departamento';
@@ -65,6 +65,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [showLogin, setShowLogin] = useState(false);
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
+  const [showSenha, setShowSenha] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -904,14 +905,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Senha</label>
-                  <input
-                    type="password"
-                    value={senha}
-                    onChange={(e) => setSenha(e.target.value)}
-                    className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
-                    placeholder="Senha"
-                    onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                  />
+                  <div className="relative">
+                    <input
+                      type={showSenha ? 'text' : 'password'}
+                      value={senha}
+                      onChange={(e) => setSenha(e.target.value)}
+                      className="w-full rounded-xl bg-gray-50 px-4 py-3 pr-12 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                      placeholder="Senha"
+                      onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSenha((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 p-1"
+                      aria-label={showSenha ? 'Ocultar senha' : 'Mostrar senha'}
+                      tabIndex={-1}
+                    >
+                      {showSenha ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </div>
                 <button
                   onClick={handleLogin}
