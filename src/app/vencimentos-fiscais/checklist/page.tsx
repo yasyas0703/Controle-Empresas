@@ -641,20 +641,20 @@ export default function ChecklistFiscalPage() {
         if ((apenasMinhas || !canManage) && currentUserId) {
           if (l.respId !== currentUserId) return false;
         }
-        // Filtro por obrigacao especifica: mostra SO as empresas que
-        // marcaram algo nessa obrigacao (check verde OU xizinho vermelho).
-        // Empresas com a celula em branco (pendentes) NAO aparecem aqui —
-        // o ponto eh ver o que ja foi mexido.
+        // Filtro por obrigacao especifica: o filtro de progresso passa a olhar
+        // APENAS a celula daquela obrigacao (e nao mais o agregado da empresa).
+        // Assim "nao iniciadas" + ICMS = empresas com ICMS em branco;
+        // "concluidas" + ICMS = empresas com ICMS marcado verde;
+        // "em andamento" + ICMS = empresas com ICMS marcado como sem obrigacao.
         if (filtroObrigacao) {
           const cell = l.cells.find((c) => c.obrigacao === filtroObrigacao);
           if (!cell || !cell.aplica) return false;
           const concluida = !!cell.item?.concluido;
           const semObrigacao = cell.item?.status === 'sem_obrigacao';
-          const temAlgumaMarca = concluida || semObrigacao;
-          if (!temAlgumaMarca) return false;
-          // Filtro de progresso refinado: 'concluidas' so check verde.
-          // 'pendentes'/'parciais' nao se aplicam aqui (ja excluimos vazias).
+          const naoIniciada = !concluida && !semObrigacao;
+          if (filtroProgresso === 'pendentes' && !naoIniciada) return false;
           if (filtroProgresso === 'concluidas' && !concluida) return false;
+          if (filtroProgresso === 'parciais' && !semObrigacao) return false;
         } else {
           if (filtroProgresso === 'pendentes' && l.feitas > 0) return false;
           if (filtroProgresso === 'concluidas' && l.feitas !== l.total) return false;
