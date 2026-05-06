@@ -3,17 +3,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Shield, Search, Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
-  FileText, CalendarClock, Filter, XCircle, Eye, User, Settings, CheckCircle2,
+  FileText, CalendarClock, Filter, XCircle, Eye, User, Settings,
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
-import type { ChecklistFiscalItem, HistoricoVencimentoItem, UUID, Limiares } from '@/app/types';
+import type { HistoricoVencimentoItem, UUID, Limiares } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import ModalLimiares from '@/app/components/ModalLimiares';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
-import { garantirVencimentosFiscaisComRegras } from '@/app/utils/vencimentos';
-import { fetchChecklistFiscalByMes } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
 
@@ -29,7 +27,7 @@ interface VencimentoItem {
   itemId: UUID;
   empresaCodigo: string;
   empresaNome: string;
-  tipo: 'Documento' | 'RET' | 'Fiscal';
+  tipo: 'Documento' | 'RET';
   nome: string;
   vencimento: string;
   dias: number;
@@ -92,26 +90,8 @@ export default function VencimentosPage() {
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useLocalStorageState<number>('triar-vencimentos-per-page', 50);
 
-  // Checklist fiscal do mês corrente — usado pra marcar com ✓ as obrigações
-  // que a usuária já marcou como feitas no checklist.
-  const [checklistFeitas, setChecklistFeitas] = useState<Set<string>>(new Set());
-  const mesCorrente = mesAtualKey();
-  useEffect(() => {
-    let cancelado = false;
-    fetchChecklistFiscalByMes(mesCorrente)
-      .then((lista: ChecklistFiscalItem[]) => {
-        if (cancelado) return;
-        const feitas = new Set<string>();
-        for (const it of lista) if (it.concluido) feitas.add(`${it.empresaId}|${it.obrigacao}`);
-        setChecklistFeitas(feitas);
-      })
-      .catch(() => undefined);
-    return () => { cancelado = true; };
-  }, [mesCorrente]);
-
-  // Realtime removido daqui (economia do plano free Supabase). O ✓ verde aparece
-  // após troca de mês ou refresh — quem edita a marcação é o /vencimentos-fiscais/checklist
-  // que mantém realtime ativo.
+  // Vencimentos fiscais foram removidos desta aba — vivem agora só em
+  // /vencimentos-fiscais. Aqui ficou só Documento + RET por empresa.
 
   const getDepName = (dId: string) => departamentos.find((d) => d.id === dId)?.nome ?? '';
   const getDepIndex = (dId: string) => departamentos.findIndex((d) => d.id === dId);
@@ -159,25 +139,6 @@ export default function VencimentosPage() {
           status: renovado ? 'renovado' : getStatus(dias, limiares),
           tagVencimento: r.tagVencimento,
           historicoVencimento: r.historicoVencimento,
-          responsaveis: e.responsaveis,
-          departamentosIds: [],
-        });
-      }
-      for (const f of e.vencimentosFiscais ?? []) {
-        const dias = daysUntil(f.vencimento);
-        if (dias === null) continue;
-        items.push({
-          empresaId: e.id,
-          itemId: f.id,
-          empresaCodigo: e.codigo,
-          empresaNome: e.razao_social || e.apelido || '-',
-          tipo: 'Fiscal',
-          nome: f.nome,
-          vencimento: f.vencimento,
-          dias,
-          status: getStatus(dias, limiares),
-          tagVencimento: f.tagVencimento,
-          historicoVencimento: f.historicoVencimento,
           responsaveis: e.responsaveis,
           departamentosIds: [],
         });
@@ -278,7 +239,6 @@ export default function VencimentosPage() {
     empresaCodigo: string;
     empresaNome: string;
     items: VencimentoItem[];
-    obrigacoesFeitasNoChecklist: string[];
     diasMaisUrgente: number;
     piorStatus: StatusVenc;
     responsaveis: Record<string, string | null>;
@@ -294,7 +254,6 @@ export default function VencimentosPage() {
           empresaCodigo: item.empresaCodigo,
           empresaNome: item.empresaNome,
           items: [],
-          obrigacoesFeitasNoChecklist: [],
           diasMaisUrgente: Number.POSITIVE_INFINITY,
           piorStatus: 'ok',
           responsaveis: item.responsaveis,
@@ -304,17 +263,6 @@ export default function VencimentosPage() {
       g.items.push(item);
       if (item.dias < g.diasMaisUrgente) g.diasMaisUrgente = item.dias;
       if (STATUS_RANK[item.status] < STATUS_RANK[g.piorStatus]) g.piorStatus = item.status;
-    }
-
-    // Adiciona ✓ pras obrigações fiscais marcadas no checklist (mesmo que NÃO
-    // estejam no `filtered` — pode ter sido filtrada como "em dia").
-    for (const empresa of empresas) {
-      const fiscaisDaEmpresa = (empresa.vencimentosFiscais ?? [])
-        .filter((f) => checklistFeitas.has(`${empresa.id}|${f.nome}`))
-        .map((f) => f.nome);
-      if (fiscaisDaEmpresa.length === 0) continue;
-      const g = mapa.get(empresa.id);
-      if (g) g.obrigacoesFeitasNoChecklist = fiscaisDaEmpresa;
     }
 
     // Ordena items dentro de cada grupo pela mesma regra global de orderBy/orderDir
@@ -336,7 +284,7 @@ export default function VencimentosPage() {
       if (a.diasMaisUrgente !== b.diasMaisUrgente) return a.diasMaisUrgente - b.diasMaisUrgente;
       return a.empresaCodigo.localeCompare(b.empresaCodigo);
     });
-  }, [filtered, empresas, checklistFeitas, orderBy, orderDir]);
+  }, [filtered, orderBy, orderDir]);
 
   // Reseta pra página 1 quando filtros/ordem/perPage mudam
   useEffect(() => {
@@ -376,7 +324,6 @@ export default function VencimentosPage() {
   };
 
   const hasFilters = search || filtroStatus !== 'todos-risco' || filtroDep || filtroResp || filtroTipo || filtroTag || meusVencimentos;
-  const atalhoFiscaisVencidosAtivo = filtroTipo === 'Fiscal' && filtroStatus === 'vencido';
 
   const canEditHistoricoItem = (item: VencimentoItem | null) => {
     if (!item) return false;
@@ -394,20 +341,6 @@ export default function VencimentosPage() {
     try {
       if (historicoItem.tipo === 'Documento') {
         const ok = await atualizarDocumento(historicoItem.empresaId, historicoItem.itemId, payload);
-        if (ok === false) return;
-      } else if (historicoItem.tipo === 'Fiscal') {
-        const empresa = empresas.find((item) => item.id === historicoItem.empresaId);
-        if (!empresa) {
-          mostrarAlerta('Empresa não encontrada', 'Não foi possível localizar a empresa desse vencimento fiscal.', 'erro');
-          return;
-        }
-        const fiscaisAtuais = garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado, empresa.cidade);
-        const vencimentosFiscais = fiscaisAtuais.map((f) =>
-          f.id === historicoItem.itemId
-            ? { ...f, tagVencimento: payload.tagVencimento, historicoVencimento: payload.historicoVencimento }
-            : f
-        );
-        const ok = await atualizarEmpresa(empresa.id, { vencimentosFiscais });
         if (ok === false) return;
       } else {
         const empresa = empresas.find((item) => item.id === historicoItem.empresaId);
@@ -488,7 +421,6 @@ export default function VencimentosPage() {
 
     const header = [['Status', 'Dias', 'Código', 'Empresa', 'Tipo', 'Nome', 'Vencimento', 'Responsáveis']];
     const rows = buildExportRows(filtered);
-    const fiscaisRows = buildExportRows(filtered.filter((item) => item.tipo === 'Fiscal'));
     const _unusedRows = filtered.map((item) => {
       const responsaveis = sortResponsaveisByNome(
         Object.entries(item.responsaveis)
@@ -539,35 +471,6 @@ export default function VencimentosPage() {
       },
     });
 
-    if (fiscaisRows.length > 0) {
-      doc.addPage('a4', 'landscape');
-      doc.setFontSize(16);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Relatorio Fiscal', 14, 15);
-
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`Total de fiscais: ${fiscaisRows.length}`, 14, 21);
-      doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')} Ã s ${new Date().toLocaleTimeString('pt-BR')}`, 14, 26);
-
-      autoTable(doc, {
-        head: header,
-        body: fiscaisRows,
-        startY: 30,
-        styles: { fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [127, 29, 29], textColor: 255, fontStyle: 'bold' },
-        columnStyles: {
-          0: { cellWidth: 22 },
-          1: { cellWidth: 18, halign: 'center' },
-          2: { cellWidth: 20 },
-          3: { cellWidth: 45 },
-          4: { cellWidth: 18 },
-          5: { cellWidth: 58 },
-          6: { cellWidth: 25 },
-          7: { cellWidth: 55 },
-        },
-      });
-    }
 
     doc.save(`vencimentos_${new Date().toISOString().split('T')[0]}.pdf`);
   };
@@ -583,7 +486,7 @@ export default function VencimentosPage() {
             </div>
             <div>
               <div className="text-xl sm:text-2xl font-bold text-gray-900">Controle de Vencimentos</div>
-              <div className="text-sm text-gray-500">Monitoramento completo de documentos, RETs e fiscais com prazos</div>
+              <div className="text-sm text-gray-500">Monitoramento de documentos e RETs com prazos</div>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -597,26 +500,6 @@ export default function VencimentosPage() {
                 <span className="hidden sm:inline">Limiares</span>
               </button>
             )}
-            <button
-              onClick={() => {
-                if (atalhoFiscaisVencidosAtivo) {
-                  setFiltroTipo('');
-                  setFiltroStatus('todos-risco');
-                  return;
-                }
-                setFiltroTipo('Fiscal');
-                setFiltroStatus('vencido');
-              }}
-              className={`inline-flex items-center gap-2 rounded-xl border-2 px-3 sm:px-4 py-2 sm:py-2.5 font-bold transition ${
-                atalhoFiscaisVencidosAtivo
-                  ? 'border-red-500 bg-red-50 text-red-700'
-                  : 'border-red-200 text-red-700 hover:bg-red-50'
-              }`}
-              title="Filtrar apenas fiscais vencidos"
-            >
-              <CalendarClock size={18} />
-              <span>So fiscais vencidos</span>
-            </button>
             <button
               onClick={exportPDF}
               className="inline-flex items-center gap-2 rounded-xl border-2 border-red-200 text-red-700 px-3 sm:px-4 py-2 sm:py-2.5 font-bold hover:bg-red-50 transition"
@@ -698,10 +581,9 @@ export default function VencimentosPage() {
             {responsaveisOptions.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
           </select>
           <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
-            <option value="">Doc, RET & Fiscal</option>
+            <option value="">Doc & RET</option>
             <option value="Documento">Documentos</option>
             <option value="RET">RETs</option>
-            <option value="Fiscal">Fiscais</option>
           </select>
           {allTags.length > 0 && (
             <select value={filtroTag} onChange={(e) => setFiltroTag(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-violet-400">
@@ -793,9 +675,7 @@ export default function VencimentosPage() {
                   {g.items.map((item) => {
                     const tipoCor = item.tipo === 'Documento'
                       ? 'border-blue-300 bg-blue-50 text-blue-800'
-                      : item.tipo === 'Fiscal'
-                        ? 'border-red-300 bg-red-50 text-red-800'
-                        : 'border-emerald-300 bg-emerald-50 text-emerald-800';
+                      : 'border-emerald-300 bg-emerald-50 text-emerald-800';
                     const corUrg = item.dias < 0
                       ? 'ring-2 ring-red-400'
                       : item.dias === 0
@@ -819,17 +699,6 @@ export default function VencimentosPage() {
                       </button>
                     );
                   })}
-                  {/* ✓ Verde: obrigações fiscais já marcadas no checklist do mês */}
-                  {g.obrigacoesFeitasNoChecklist.map((nome) => (
-                    <span
-                      key={`feito-${nome}`}
-                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-700"
-                      title={`${nome} já marcado como feito no checklist fiscal deste mês`}
-                    >
-                      <CheckCircle2 size={11} strokeWidth={3} />
-                      {nome}
-                    </span>
-                  ))}
                 </div>
               </li>
             );

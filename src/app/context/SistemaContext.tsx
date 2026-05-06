@@ -578,10 +578,12 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     //  - 'logs', 'lixeira', 'documentos', 'observacoes', 'rets', 'responsaveis':
     //     consultados sob demanda nas telas que precisam.
     //  - 'notificacoes': vinha disparando refetch geral toda vez que QUALQUER
-    //     usuário recebia uma notificação (alertas fiscais auto + ações).
-    //     Substituído por polling leve abaixo (1 min + on focus).
+    //     usuário recebia uma notificação. Substituído por polling 60s + on focus.
+    //  - 'usuarios', 'departamentos', 'servicos', 'tags': mudam raramente
+    //     (só admin cadastra) — não vale gastar realtime. Quem cadastrar dá F5.
+    // Mantida só 'empresas' — entidade principal, todo mundo trabalha em cima.
     const tables = [
-      'empresas', 'usuarios', 'departamentos', 'servicos', 'tags',
+      'empresas',
     ];
 
     const subscribe = () => {
