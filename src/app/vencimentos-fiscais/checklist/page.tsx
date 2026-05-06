@@ -666,10 +666,14 @@ export default function ChecklistFiscalPage() {
       });
 
     return list.sort((a, b) => {
-      // Ordem: parciais primeiro (in progress), depois pendentes, depois concluídas
-      const stateA = a.feitas === 0 ? 1 : a.feitas === a.total ? 2 : 0;
-      const stateB = b.feitas === 0 ? 1 : b.feitas === b.total ? 2 : 0;
+      // Empresas com QUALQUER marca aparecem primeiro (parciais e concluidas
+      // juntas no topo); intocadas vao pro fim. Antes a ordem era
+      // parciais → pendentes → concluidas, mas no SN com poucas obrigacoes
+      // bastava marcar 1 pra empresa "completar" e ir pro fim, atrapalhando.
+      const stateA = a.feitas === 0 ? 1 : 0;
+      const stateB = b.feitas === 0 ? 1 : 0;
       if (stateA !== stateB) return stateA - stateB;
+      // Dentro do mesmo grupo: maior progresso primeiro, depois codigo
       if (a.progresso !== b.progresso) return b.progresso - a.progresso;
       return a.empresa.codigo.localeCompare(b.empresa.codigo);
     });
