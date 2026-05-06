@@ -127,33 +127,28 @@ export default function ChecklistFiscalPage() {
   // comum, a aba é forçada para o seu próprio departamento (ver useEffect abaixo).
   const deptAtivo = aba === 'sn' ? fiscalSnDept : fiscalDept;
 
-  // Lookup: id do usuário → set de TODOS os deps dele (principal + extras).
-  // Permite que um gerente seja responsavel/visualizar em mais de um dep.
-  const userDeptsById = useMemo(() => {
-    const m = new Map<UUID, Set<UUID>>();
-    for (const u of usuarios) {
-      const set = new Set<UUID>();
-      if (u.departamentoId) set.add(u.departamentoId);
-      for (const extra of u.departamentosExtrasIds ?? []) {
-        if (extra) set.add(extra);
-      }
-      m.set(u.id, set);
-    }
+  // Lookup: id do usuário → seu departamento PRINCIPAL.
+  // OBS: aqui usamos apenas o principal, pois eh ele que define em que aba
+  // a empresa do responsavel aparece. Extras (multi-dep) servem so pra
+  // permissao de menu / acesso, nao mudam a "casa" da empresa no checklist.
+  const userDeptById = useMemo(() => {
+    const m = new Map<UUID, UUID | null>();
+    for (const u of usuarios) m.set(u.id, u.departamentoId);
     return m;
   }, [usuarios]);
 
-  // Verifica se o usuário pertence à aba ativa.
-  // Aba SN → tem fiscal-SN entre seus deps (principal ou extras).
-  // Aba Fiscal → tem fiscal entre seus deps; OU nao tem fiscal-SN entre seus deps
-  //   (compatibilidade: alguem responsavel sem dep fiscal explicito ainda aparece).
+  // Verifica se a empresa do responsavel pertence a aba ativa.
+  // Usa SO o departamento principal do responsavel — mesmo que ele tenha
+  // acesso a outras abas via extras, a empresa dele "mora" na aba do
+  // departamento principal.
+  // Aba SN → so usuarios com depto principal = fiscalSnDept.
+  // Aba Fiscal → usuarios SEM depto principal fiscal-SN.
   const usuarioPertenceAba = useCallback((userId: UUID | null | undefined): boolean => {
     if (!userId) return false;
-    const deps = userDeptsById.get(userId) ?? new Set<UUID>();
-    if (aba === 'sn') return !!fiscalSnDept && deps.has(fiscalSnDept.id);
-    // Aba Fiscal: tem o fiscal entre os deps, OU (compat) nao tem fiscal-SN
-    if (fiscalDept && deps.has(fiscalDept.id)) return true;
-    return !(fiscalSnDept && deps.has(fiscalSnDept.id) && deps.size === 1);
-  }, [aba, fiscalDept, fiscalSnDept, userDeptsById]);
+    const depId = userDeptById.get(userId) ?? null;
+    if (aba === 'sn') return !!fiscalSnDept && depId === fiscalSnDept.id;
+    return !(fiscalSnDept && depId === fiscalSnDept.id);
+  }, [aba, fiscalSnDept, userDeptById]);
 
   // Pega o id do responsável fiscal da empresa, olhando em ambas as keys
   // (fiscal e fiscal-sn). Retorna o primeiro encontrado — uma empresa só
