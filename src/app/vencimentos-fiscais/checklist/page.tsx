@@ -88,6 +88,8 @@ export default function ChecklistFiscalPage() {
   // Filtro por obrigacao especifica (ICMS, SPED, REINF, etc).
   // Quando setado, o filtro de progresso considera APENAS essa obrigacao.
   const [filtroObrigacao, setFiltroObrigacao] = useState<string>('');
+  // Filtro por UF do endereco da empresa.
+  const [filtroEstado, setFiltroEstado] = useState<string>('');
   // Reseta o filtro de obrigacao quando a aba muda (Fiscal x SN tem listas
   // diferentes — uma obrigacao da aba antiga pode nao existir na nova).
   // Tem que vir DEPOIS de declarar `aba`, esta abaixo.
@@ -633,6 +635,10 @@ export default function ChecklistFiscalPage() {
           const hay = `${l.empresa.codigo} ${l.empresa.razao_social ?? ''} ${l.empresa.apelido ?? ''}`.toLowerCase();
           if (!hay.includes(q)) return false;
         }
+        if (filtroEstado) {
+          const uf = (l.empresa.estado ?? '').trim().toUpperCase();
+          if (uf !== filtroEstado) return false;
+        }
         // Filtro de usuário só para gerentes (não-gerentes não enxergam outros)
         if (canManage && filtroUsuario) {
           if (l.respId !== filtroUsuario) return false;
@@ -675,7 +681,7 @@ export default function ChecklistFiscalPage() {
       if (a.progresso !== b.progresso) return b.progresso - a.progresso;
       return a.empresa.codigo.localeCompare(b.empresa.codigo);
     });
-  }, [empresas, items, search, filtroUsuario, apenasMinhas, currentUserId, canManage, filtroProgresso, filtroObrigacao, getResponsavelFiscal, obrigacoesAba, aplicaObrigacao, usuarioPertenceAba]);
+  }, [empresas, items, search, filtroUsuario, apenasMinhas, currentUserId, canManage, filtroProgresso, filtroObrigacao, filtroEstado, getResponsavelFiscal, obrigacoesAba, aplicaObrigacao, usuarioPertenceAba]);
 
   // Stats
   const stats = useMemo(() => {
@@ -712,7 +718,22 @@ export default function ChecklistFiscalPage() {
     return map;
   }, [fiscalUsers, linhas]);
 
-  const hasFilters = !!search || !!filtroUsuario || filtroProgresso !== 'todos' || apenasMinhas || !!filtroObrigacao;
+  // UFs disponiveis no dropdown — so estados que tem empresa visivel na aba.
+  // Usa empresas cadastradas + responsavel da aba ativa, ignora demais filtros
+  // (assim a lista nao "some" quando o usuario seleciona outras combinacoes).
+  const estadosDisponiveis = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of empresas) {
+      if (e.cadastrada === false) continue;
+      const respId = getResponsavelFiscal(e);
+      if (!respId || !usuarioPertenceAba(respId)) continue;
+      const uf = (e.estado ?? '').trim().toUpperCase();
+      if (uf) set.add(uf);
+    }
+    return Array.from(set).sort();
+  }, [empresas, getResponsavelFiscal, usuarioPertenceAba]);
+
+  const hasFilters = !!search || !!filtroUsuario || filtroProgresso !== 'todos' || apenasMinhas || !!filtroObrigacao || !!filtroEstado;
 
   // Exportar CSV do mês atual filtrado
   const exportCSV = () => {
@@ -975,7 +996,7 @@ export default function ChecklistFiscalPage() {
           </div>
           {hasFilters && (
             <button
-              onClick={() => { setSearch(''); setFiltroUsuario(''); setFiltroProgresso('todos'); setApenasMinhas(false); setFiltroObrigacao(''); }}
+              onClick={() => { setSearch(''); setFiltroUsuario(''); setFiltroProgresso('todos'); setApenasMinhas(false); setFiltroObrigacao(''); setFiltroEstado(''); }}
               className="inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-bold"
             >
               <XCircle size={14} />
@@ -983,7 +1004,7 @@ export default function ChecklistFiscalPage() {
             </button>
           )}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
@@ -1023,6 +1044,18 @@ export default function ChecklistFiscalPage() {
             <option value="">Todos os impostos</option>
             {obrigacoesAba.map((o) => (
               <option key={o} value={o}>{o}</option>
+            ))}
+          </select>
+          <select
+            value={filtroEstado}
+            onChange={(e) => setFiltroEstado(e.target.value)}
+            className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-emerald-400"
+            title="Filtrar por estado (UF) da empresa"
+            disabled={estadosDisponiveis.length === 0}
+          >
+            <option value="">Todos os estados</option>
+            {estadosDisponiveis.map((uf) => (
+              <option key={uf} value={uf}>{uf}</option>
             ))}
           </select>
           {canManage && (
