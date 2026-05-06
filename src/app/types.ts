@@ -17,6 +17,10 @@ export interface Usuario {
   senha?: string;
   role: Role;
   departamentoId: UUID | null;
+  // Departamentos extras (alem do principal). Permite ex: gerente do Fiscal
+  // que tambem gerencia Fiscal - SN. Pra todos os efeitos de visibilidade
+  // (menu, abas do checklist, permissoes), vale principal + extras.
+  departamentosExtrasIds?: UUID[];
   ativo: boolean;
   criadoEm: string; // ISO
   atualizadoEm: string; // ISO

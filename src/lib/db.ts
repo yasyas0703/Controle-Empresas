@@ -446,6 +446,7 @@ export async function fetchUsuarioById(id: UUID): Promise<Usuario[]> {
       email: data.email,
       role: data.role as Usuario['role'],
       departamentoId: data.departamento_id,
+      departamentosExtrasIds: Array.isArray(data.departamentos_extras_ids) ? data.departamentos_extras_ids : [],
       ativo: data.ativo,
       criadoEm: toIso(data.criado_em),
       atualizadoEm: toIso(data.atualizado_em),
@@ -457,7 +458,7 @@ export async function fetchUsuariosBasic(): Promise<Usuario[]> {
   const hiddenUserIds = getHiddenUserIds();
   const { data, error } = await supabase
     .from('usuarios')
-    .select('id, nome, email, role, departamento_id, ativo, criado_em, atualizado_em')
+    .select('id, nome, email, role, departamento_id, departamentos_extras_ids, ativo, criado_em, atualizado_em')
     .order('criado_em', { ascending: false });
   if (error) throw error;
   return (data ?? [])
@@ -468,6 +469,9 @@ export async function fetchUsuariosBasic(): Promise<Usuario[]> {
       email: u.email,
       role: u.role as Usuario['role'],
       departamentoId: u.departamento_id,
+      departamentosExtrasIds: Array.isArray((u as { departamentos_extras_ids?: unknown }).departamentos_extras_ids)
+        ? ((u as { departamentos_extras_ids?: string[] }).departamentos_extras_ids ?? [])
+        : [],
       ativo: u.ativo,
       criadoEm: toIso(u.criado_em),
       atualizadoEm: toIso(u.atualizado_em),
@@ -493,6 +497,9 @@ export async function fetchUsuariosAdmin(): Promise<Usuario[]> {
       email: String(u.email ?? ''),
       role: String(u.role ?? 'usuario') as Usuario['role'],
       departamentoId: u.departamentoId ? String(u.departamentoId) : null,
+      departamentosExtrasIds: Array.isArray(u.departamentosExtrasIds)
+        ? (u.departamentosExtrasIds as unknown[]).map((x) => String(x))
+        : [],
       ativo: Boolean(u.ativo),
       criadoEm: toIso(String(u.criadoEm ?? '')),
       atualizadoEm: toIso(String(u.atualizadoEm ?? '')),
@@ -517,6 +524,7 @@ export async function insertUsuario(payload: Omit<Usuario, 'id' | 'criadoEm' | '
     email: json.email,
     role: json.role,
     departamentoId: json.departamentoId,
+    departamentosExtrasIds: Array.isArray(json.departamentosExtrasIds) ? json.departamentosExtrasIds : [],
     ativo: json.ativo,
     criadoEm: toIso(json.criadoEm),
     atualizadoEm: toIso(json.atualizadoEm),
@@ -570,6 +578,7 @@ export async function updateUsuario(id: UUID, patch: Partial<Usuario>) {
   if (patch.email !== undefined) profilePatch.email = patch.email;
   if (patch.role !== undefined) profilePatch.role = patch.role;
   if (patch.departamentoId !== undefined) profilePatch.departamentoId = patch.departamentoId;
+  if (patch.departamentosExtrasIds !== undefined) profilePatch.departamentosExtrasIds = patch.departamentosExtrasIds;
   if (patch.ativo !== undefined) profilePatch.ativo = patch.ativo;
 
   // password change goes through admin API (auth)

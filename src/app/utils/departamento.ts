@@ -1,4 +1,4 @@
-import type { Departamento, Usuario } from '@/app/types';
+import type { Departamento, Usuario, UUID } from '@/app/types';
 
 export type DepartamentoSlug = 'fiscal' | 'pessoal' | 'contabil' | 'cadastro';
 
@@ -32,6 +32,39 @@ export function getDepartamentoSlugDoUsuario(
   return normalizarNomeDepartamento(dep?.nome);
 }
 
+// Retorna o slug do departamento principal + extras (sem duplicatas).
+// Usado em todos os filtros de visibilidade (menu, abas do checklist, etc).
+export function getDepartamentoSlugsDoUsuario(
+  usuario: Usuario | null | undefined,
+  departamentos: Departamento[],
+): DepartamentoSlug[] {
+  if (!usuario) return [];
+  const slugs = new Set<DepartamentoSlug>();
+  const principal = getDepartamentoSlugDoUsuario(usuario, departamentos);
+  if (principal) slugs.add(principal);
+  for (const extraId of usuario.departamentosExtrasIds ?? []) {
+    const dep = departamentos.find((d) => d.id === extraId);
+    const slug = normalizarNomeDepartamento(dep?.nome);
+    if (slug) slugs.add(slug);
+  }
+  return Array.from(slugs);
+}
+
+// Retorna true se o usuario tem acesso ao departamento (principal OU extras).
+// Tambem retorna o id do departamento (uuid) — util pra checklist que filtra
+// por id especifico (Fiscal vs Fiscal - SN sao deps diferentes mas mesmo slug).
+export function getDepartamentoIdsDoUsuario(
+  usuario: Usuario | null | undefined,
+): UUID[] {
+  if (!usuario) return [];
+  const ids = new Set<UUID>();
+  if (usuario.departamentoId) ids.add(usuario.departamentoId);
+  for (const extra of usuario.departamentosExtrasIds ?? []) {
+    if (extra) ids.add(extra);
+  }
+  return Array.from(ids);
+}
+
 export function podeVerDepartamento(
   slug: DepartamentoSlug,
   usuario: Usuario | null | undefined,
@@ -39,5 +72,5 @@ export function podeVerDepartamento(
 ): boolean {
   if (!usuario) return false;
   if (usuario.role === 'admin') return true;
-  return getDepartamentoSlugDoUsuario(usuario, departamentos) === slug;
+  return getDepartamentoSlugsDoUsuario(usuario, departamentos).includes(slug);
 }

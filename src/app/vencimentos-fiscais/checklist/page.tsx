@@ -85,6 +85,12 @@ export default function ChecklistFiscalPage() {
   const [search, setSearch] = useState('');
   const [filtroUsuario, setFiltroUsuario] = useState<string>('');
   const [filtroProgresso, setFiltroProgresso] = useState<'todos' | 'pendentes' | 'concluidas' | 'parciais'>('todos');
+  // Filtro por obrigacao especifica (ICMS, SPED, REINF, etc).
+  // Quando setado, o filtro de progresso considera APENAS essa obrigacao.
+  const [filtroObrigacao, setFiltroObrigacao] = useState<string>('');
+  // Reseta o filtro de obrigacao quando a aba muda (Fiscal x SN tem listas
+  // diferentes — uma obrigacao da aba antiga pode nao existir na nova).
+  // Tem que vir DEPOIS de declarar `aba`, esta abaixo.
   const [apenasMinhas, setApenasMinhas] = useState(false);
   const apenasMinhasInitRef = useRef(false);
 
@@ -121,23 +127,33 @@ export default function ChecklistFiscalPage() {
   // comum, a aba é forçada para o seu próprio departamento (ver useEffect abaixo).
   const deptAtivo = aba === 'sn' ? fiscalSnDept : fiscalDept;
 
-  // Lookup: id do usuário → seu departamentoId
-  const userDeptById = useMemo(() => {
-    const m = new Map<UUID, UUID | null>();
-    for (const u of usuarios) m.set(u.id, u.departamentoId);
+  // Lookup: id do usuário → set de TODOS os deps dele (principal + extras).
+  // Permite que um gerente seja responsavel/visualizar em mais de um dep.
+  const userDeptsById = useMemo(() => {
+    const m = new Map<UUID, Set<UUID>>();
+    for (const u of usuarios) {
+      const set = new Set<UUID>();
+      if (u.departamentoId) set.add(u.departamentoId);
+      for (const extra of u.departamentosExtrasIds ?? []) {
+        if (extra) set.add(extra);
+      }
+      m.set(u.id, set);
+    }
     return m;
   }, [usuarios]);
 
-  // Verifica se o usuário pertence à aba ativa (pelo departamentoId dele).
-  // Aba SN → só usuários com depto = fiscalSnDept.
-  // Aba Fiscal → usuários SEM depto fiscal-SN (ou seja, fiscal regular ou qualquer outro depto que esteja como responsavel).
+  // Verifica se o usuário pertence à aba ativa.
+  // Aba SN → tem fiscal-SN entre seus deps (principal ou extras).
+  // Aba Fiscal → tem fiscal entre seus deps; OU nao tem fiscal-SN entre seus deps
+  //   (compatibilidade: alguem responsavel sem dep fiscal explicito ainda aparece).
   const usuarioPertenceAba = useCallback((userId: UUID | null | undefined): boolean => {
     if (!userId) return false;
-    const depId = userDeptById.get(userId) ?? null;
-    if (aba === 'sn') return !!fiscalSnDept && depId === fiscalSnDept.id;
-    // Aba Fiscal: tudo que NÃO é fiscal-SN
-    return !(fiscalSnDept && depId === fiscalSnDept.id);
-  }, [aba, fiscalSnDept, userDeptById]);
+    const deps = userDeptsById.get(userId) ?? new Set<UUID>();
+    if (aba === 'sn') return !!fiscalSnDept && deps.has(fiscalSnDept.id);
+    // Aba Fiscal: tem o fiscal entre os deps, OU (compat) nao tem fiscal-SN
+    if (fiscalDept && deps.has(fiscalDept.id)) return true;
+    return !(fiscalSnDept && deps.has(fiscalSnDept.id) && deps.size === 1);
+  }, [aba, fiscalDept, fiscalSnDept, userDeptsById]);
 
   // Pega o id do responsável fiscal da empresa, olhando em ambas as keys
   // (fiscal e fiscal-sn). Retorna o primeiro encontrado — uma empresa só
@@ -172,6 +188,11 @@ export default function ChecklistFiscalPage() {
 
   // Lista de obrigações da aba ativa.
   const obrigacoesAba: readonly string[] = aba === 'sn' ? VENCIMENTOS_FISCAIS_SN_NOMES : VENCIMENTOS_FISCAIS_NOMES;
+
+  // Reseta filtro de obrigacao quando muda de aba (listas sao diferentes).
+  useEffect(() => {
+    setFiltroObrigacao('');
+  }, [aba]);
 
   const aplicaPelaRegra = useCallback((obrigacao: string, empresa: Empresa): boolean => {
     return aba === 'sn'
@@ -625,9 +646,22 @@ export default function ChecklistFiscalPage() {
         if ((apenasMinhas || !canManage) && currentUserId) {
           if (l.respId !== currentUserId) return false;
         }
-        if (filtroProgresso === 'pendentes' && l.feitas > 0) return false;
-        if (filtroProgresso === 'concluidas' && l.feitas !== l.total) return false;
-        if (filtroProgresso === 'parciais' && (l.feitas === 0 || l.feitas === l.total)) return false;
+        // Filtro por obrigacao especifica: a empresa precisa ter essa
+        // obrigacao aplicavel, e o filtro de progresso passa a considerar
+        // SO essa coluna (ex: "ICMS + Concluidas" = empresas com ICMS feito).
+        if (filtroObrigacao) {
+          const cell = l.cells.find((c) => c.obrigacao === filtroObrigacao);
+          if (!cell || !cell.aplica) return false;
+          if (cell.item?.status === 'sem_obrigacao') return false;
+          const concluida = !!cell.item?.concluido;
+          if (filtroProgresso === 'pendentes' && concluida) return false;
+          if (filtroProgresso === 'concluidas' && !concluida) return false;
+          // 'parciais' nao se aplica a uma unica obrigacao, ignora
+        } else {
+          if (filtroProgresso === 'pendentes' && l.feitas > 0) return false;
+          if (filtroProgresso === 'concluidas' && l.feitas !== l.total) return false;
+          if (filtroProgresso === 'parciais' && (l.feitas === 0 || l.feitas === l.total)) return false;
+        }
         return true;
       });
 
@@ -639,7 +673,7 @@ export default function ChecklistFiscalPage() {
       if (a.progresso !== b.progresso) return b.progresso - a.progresso;
       return a.empresa.codigo.localeCompare(b.empresa.codigo);
     });
-  }, [empresas, items, search, filtroUsuario, apenasMinhas, currentUserId, canManage, filtroProgresso, getResponsavelFiscal, obrigacoesAba, aplicaObrigacao, usuarioPertenceAba]);
+  }, [empresas, items, search, filtroUsuario, apenasMinhas, currentUserId, canManage, filtroProgresso, filtroObrigacao, getResponsavelFiscal, obrigacoesAba, aplicaObrigacao, usuarioPertenceAba]);
 
   // Stats
   const stats = useMemo(() => {
@@ -676,7 +710,7 @@ export default function ChecklistFiscalPage() {
     return map;
   }, [fiscalUsers, linhas]);
 
-  const hasFilters = !!search || !!filtroUsuario || filtroProgresso !== 'todos' || apenasMinhas;
+  const hasFilters = !!search || !!filtroUsuario || filtroProgresso !== 'todos' || apenasMinhas || !!filtroObrigacao;
 
   // Exportar CSV do mês atual filtrado
   const exportCSV = () => {
@@ -939,7 +973,7 @@ export default function ChecklistFiscalPage() {
           </div>
           {hasFilters && (
             <button
-              onClick={() => { setSearch(''); setFiltroUsuario(''); setFiltroProgresso('todos'); setApenasMinhas(false); }}
+              onClick={() => { setSearch(''); setFiltroUsuario(''); setFiltroProgresso('todos'); setApenasMinhas(false); setFiltroObrigacao(''); }}
               className="inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-bold"
             >
               <XCircle size={14} />
@@ -977,6 +1011,17 @@ export default function ChecklistFiscalPage() {
             <option value="pendentes">Só não iniciadas</option>
             <option value="parciais">Só em andamento</option>
             <option value="concluidas">Só 100% concluídas</option>
+          </select>
+          <select
+            value={filtroObrigacao}
+            onChange={(e) => setFiltroObrigacao(e.target.value)}
+            className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-emerald-400"
+            title="Filtrar por imposto/obrigação específica"
+          >
+            <option value="">Todos os impostos</option>
+            {obrigacoesAba.map((o) => (
+              <option key={o} value={o}>{o}</option>
+            ))}
           </select>
           {canManage && (
             <button

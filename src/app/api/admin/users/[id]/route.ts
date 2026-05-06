@@ -53,6 +53,7 @@ type PatchBody = {
   email?: string;
   role?: 'gerente' | 'usuario';
   departamentoId?: string | null;
+  departamentosExtrasIds?: string[];
   ativo?: boolean;
 };
 
@@ -136,6 +137,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (body.email !== undefined) row.email = String(body.email).trim();
   if (body.role !== undefined) row.role = body.role;
   if (body.departamentoId !== undefined) row.departamento_id = body.departamentoId;
+  if (body.departamentosExtrasIds !== undefined) {
+    row.departamentos_extras_ids = Array.isArray(body.departamentosExtrasIds) ? body.departamentosExtrasIds : [];
+  }
   if (body.ativo !== undefined) row.ativo = body.ativo;
 
   const { data: updated, error: updateError } = await admin.from('usuarios').update(row).eq('id', id).select('*').single();
@@ -161,6 +165,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     email: updated.email,
     role: updated.role,
     departamentoId: updated.departamento_id,
+    departamentosExtrasIds: Array.isArray(updated.departamentos_extras_ids) ? updated.departamentos_extras_ids : [],
     ativo: updated.ativo,
     criadoEm: updated.criado_em,
     atualizadoEm: updated.atualizado_em,

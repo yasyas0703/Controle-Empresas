@@ -36,6 +36,7 @@ export default function UsuariosPage() {
   const [senha, setSenha] = useState('');
   const [role, setRole] = useState<Role>('usuario');
   const [depId, setDepId] = useState<string>('');
+  const [depExtras, setDepExtras] = useState<string[]>([]);
 
   const [editUser, setEditUser] = useState<Usuario | null>(null);
   const [editNome, setEditNome] = useState('');
@@ -43,6 +44,7 @@ export default function UsuariosPage() {
   const [editSenha, setEditSenha] = useState('');
   const [editRole, setEditRole] = useState<Role>('usuario');
   const [editDepId, setEditDepId] = useState<string>('');
+  const [editDepExtras, setEditDepExtras] = useState<string[]>([]);
   const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<string | null>(null);
 
   const deps = useMemo(() => departamentos, [departamentos]);
@@ -64,6 +66,7 @@ export default function UsuariosPage() {
     setEditSenha('');
     setEditRole(u.role);
     setEditDepId(u.departamentoId || '');
+    setEditDepExtras(Array.isArray(u.departamentosExtrasIds) ? u.departamentosExtrasIds : []);
   };
 
   const handleEditSave = async () => {
@@ -81,6 +84,13 @@ export default function UsuariosPage() {
     if (editRole !== editUser.role) patch.role = editRole;
     const nextDepId = editDepId || null;
     if ((editUser.departamentoId ?? null) !== nextDepId) patch.departamentoId = nextDepId;
+    // Departamentos extras (compara por conteudo)
+    const currentExtras = editUser.departamentosExtrasIds ?? [];
+    const nextExtras = editDepExtras.filter((id) => id && id !== nextDepId);
+    const extrasMudaram =
+      currentExtras.length !== nextExtras.length ||
+      [...currentExtras].sort().join(',') !== [...nextExtras].sort().join(',');
+    if (extrasMudaram) patch.departamentosExtrasIds = nextExtras;
     if (editSenha.trim()) {
       patch.senha = editSenha.trim();
     }
@@ -176,6 +186,31 @@ export default function UsuariosPage() {
               )}
             </div>
           </div>
+          {role !== 'admin' && deps.length > 1 && (
+            <div className="mt-4">
+              <Field label="Também tem acesso a (opcional)">
+                <div className="rounded-xl bg-white px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {deps.filter((d) => d.id !== depId).map((d) => {
+                    const checked = depExtras.includes(d.id);
+                    return (
+                      <label key={d.id} className="inline-flex items-center gap-2 cursor-pointer text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setDepExtras((prev) => checked ? prev.filter((x) => x !== d.id) : [...prev, d.id])}
+                          className="h-4 w-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-400"
+                        />
+                        {d.nome}
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="mt-1 text-[11px] text-gray-500">
+                  Marque outros departamentos onde a pessoa também atua (ex: gerente do Fiscal e do Fiscal - SN).
+                </div>
+              </Field>
+            </div>
+          )}
 
           <button
             onClick={async () => {
@@ -190,6 +225,7 @@ export default function UsuariosPage() {
                   senha,
                   role,
                   departamentoId: depId || null,
+                  departamentosExtrasIds: depExtras.filter((id) => id && id !== depId),
                   ativo: true,
                 });
                 setNome('');
@@ -197,6 +233,7 @@ export default function UsuariosPage() {
                 setSenha('');
                 setRole('usuario');
                 setDepId('');
+                setDepExtras([]);
                 mostrarAlerta('Usuário criado', 'Usuário criado com sucesso.', 'sucesso');
               } catch (err: unknown) {
                 mostrarAlerta('Erro ao criar usuário', getErrorMessage(err, 'Nao foi possivel criar o usuario.'), 'erro');
@@ -333,6 +370,30 @@ export default function UsuariosPage() {
                   </Field>
                 )}
               </div>
+
+              {editRole !== 'admin' && deps.length > 1 && (
+                <Field label="Também tem acesso a (opcional)">
+                  <div className="rounded-xl bg-gray-50 px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {deps.filter((d) => d.id !== editDepId).map((d) => {
+                      const checked = editDepExtras.includes(d.id);
+                      return (
+                        <label key={d.id} className="inline-flex items-center gap-2 cursor-pointer text-sm text-gray-800">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => setEditDepExtras((prev) => checked ? prev.filter((x) => x !== d.id) : [...prev, d.id])}
+                            className="h-4 w-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-400"
+                          />
+                          {d.nome}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-1 text-[11px] text-gray-500">
+                    Marque outros departamentos onde a pessoa também atua (ex: gerente do Fiscal e do Fiscal - SN).
+                  </div>
+                </Field>
+              )}
 
               <div className="flex gap-3 pt-2">
                 <button

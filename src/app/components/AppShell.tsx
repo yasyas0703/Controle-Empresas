@@ -7,7 +7,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Archive, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, Grid3x3, ListChecks, FileStack, Eye, EyeOff } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, isRetRenovado } from '@/app/utils/date';
-import { getDepartamentoSlugDoUsuario, type DepartamentoSlug } from '@/app/utils/departamento';
+import { getDepartamentoSlugDoUsuario, getDepartamentoSlugsDoUsuario, type DepartamentoSlug } from '@/app/utils/departamento';
 import AutoBackup from '@/app/components/AutoBackup';
 import BotaoTarefas from '@/app/components/BotaoTarefas';
 import ThemeToggle from '@/app/components/ThemeToggle';
@@ -380,6 +380,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const userDepartamentoSlug = getDepartamentoSlugDoUsuario(currentUser, departamentos);
+  const userDepartamentoSlugs = getDepartamentoSlugsDoUsuario(currentUser, departamentos);
   const navItems = nav.filter((i) => {
     if (i.emailOnly) return currentUser?.email?.toLowerCase() === i.emailOnly.toLowerCase();
     if (i.ghostOnly) return isGhost;
@@ -389,20 +390,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     // departamento cadastro. Os demais usam o dashboard pra consultar.
     if (i.href === '/empresas') {
       if (canAdmin || isPrivileged || canManage) return true;
-      return userDepartamentoSlug === 'cadastro';
+      return userDepartamentoSlugs.includes('cadastro');
     }
     // Aba "Vencimentos" geral: usuarios e gerentes do contabil nao precisam
     // (eles tem o "Controle Contabil" especifico). Admin/privileged ve.
     if (i.href === '/vencimentos') {
       if (canAdmin || isPrivileged) return true;
-      return userDepartamentoSlug !== 'contabil';
+      return !userDepartamentoSlugs.includes('contabil');
     }
     if (i.department) {
       if (canAdmin || isPrivileged) return true;
-      return i.department === userDepartamentoSlug;
+      return userDepartamentoSlugs.includes(i.department);
     }
     return true;
   });
+  // Usado em outros pontos da pagina (notificacoes etc) que ja consumiam o
+  // singular. Mantemos a variavel pra nao quebrar referencias abaixo.
+  void userDepartamentoSlug;
 
   const notifPanel = (
     <div className="overflow-hidden rounded-2xl bg-white shadow-2xl border border-gray-200">

@@ -8,6 +8,7 @@ type CreateUserBody = {
   senha: string;
   role: 'gerente' | 'usuario';
   departamentoId: string | null;
+  departamentosExtrasIds?: string[];
   ativo: boolean;
 };
 
@@ -91,6 +92,7 @@ export async function GET(req: Request) {
         email: u.email,
         role: u.role,
         departamentoId: u.departamento_id,
+        departamentosExtrasIds: Array.isArray(u.departamentos_extras_ids) ? u.departamentos_extras_ids : [],
         ativo: u.ativo,
         criadoEm: u.criado_em,
         atualizadoEm: u.atualizado_em,
@@ -147,6 +149,7 @@ export async function POST(req: Request) {
           email: body.email.trim(),
           role: body.role ?? 'usuario',
           departamento_id: body.departamentoId,
+          departamentos_extras_ids: Array.isArray(body.departamentosExtrasIds) ? body.departamentosExtrasIds : [],
           ativo: body.ativo ?? true,
         },
         { onConflict: 'id' }
@@ -216,6 +219,7 @@ export async function POST(req: Request) {
     email: profile.email,
     role: profile.role,
     departamentoId: profile.departamento_id,
+    departamentosExtrasIds: Array.isArray(profile.departamentos_extras_ids) ? profile.departamentos_extras_ids : [],
     ativo: profile.ativo,
     criadoEm: profile.criado_em,
     atualizadoEm: profile.atualizado_em,
