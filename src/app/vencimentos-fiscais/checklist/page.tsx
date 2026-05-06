@@ -29,6 +29,16 @@ function currentMonth(): string {
   return monthKey(new Date());
 }
 
+// Mes padrao do checklist = MES ANTERIOR ao atual.
+// Motivo: o procedimento das meninas eh fazer o checklist de cada mes
+// no mes seguinte (ex: em maio, marcam o que foi feito em abril). Antes
+// o sistema abria no mes corrente e elas marcavam errado.
+function defaultMonth(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  return monthKey(d);
+}
+
 function parseMonth(mes: string): Date {
   const [y, m] = mes.split('-').map((x) => Number(x));
   return new Date(y, (m || 1) - 1, 1);
@@ -59,7 +69,7 @@ function userInitials(nome: string): string {
 export default function ChecklistFiscalPage() {
   const { empresas, departamentos, usuarios, currentUser, currentUserId, canManage, mostrarAlerta } = useSistema();
 
-  const [mes, setMes] = useState<string>(() => currentMonth());
+  const [mes, setMes] = useState<string>(() => defaultMonth());
   const [aba, setAba] = useState<RegimeAba>('fiscal');
   const [items, setItems] = useState<Map<ChecklistKey, ChecklistFiscalItem>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -187,7 +197,9 @@ export default function ChecklistFiscalPage() {
     }
   }, [canManage, currentUser?.departamentoId, fiscalSnDept]);
 
-  const isHoje = mes === currentMonth();
+  // "Hoje" aqui = mes padrao do checklist (que eh o mes ANTERIOR ao atual).
+  // Mantido nome 'isHoje' pra nao quebrar referencias abaixo.
+  const isHoje = mes === defaultMonth();
 
   // mostrarAlerta vem do contexto e não é estável (recriado a cada render).
   // Sem ref, `carregar` é recriado a cada render e o useEffect entra em loop
@@ -840,11 +852,11 @@ export default function ChecklistFiscalPage() {
             </button>
             {!isHoje && (
               <button
-                onClick={() => setMes(currentMonth())}
+                onClick={() => setMes(defaultMonth())}
                 className="hidden sm:inline-flex items-center gap-1 text-xs text-emerald-700 font-bold hover:text-emerald-800 px-2"
-                title="Voltar para o mês atual"
+                title="Voltar para o mês anterior (padrão do checklist)"
               >
-                Voltar ao mês atual
+                Voltar ao mês anterior
               </button>
             )}
           </div>
@@ -860,7 +872,11 @@ export default function ChecklistFiscalPage() {
                     : 'bg-white text-gray-700 hover:bg-emerald-50 shadow-sm'
                 }`}
               >
-                {m === currentMonth() ? 'Este mês' : monthLabel(m).slice(0, 3) + '/' + m.slice(2, 4)}
+                {m === defaultMonth()
+                  ? 'Mês anterior'
+                  : m === currentMonth()
+                    ? 'Este mês'
+                    : monthLabel(m).slice(0, 3) + '/' + m.slice(2, 4)}
               </button>
             ))}
           </div>
