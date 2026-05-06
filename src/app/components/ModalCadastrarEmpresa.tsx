@@ -799,6 +799,47 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
             />
           </div>
 
+          {/* Forma de Envio — logo abaixo de Particularidades */}
+          <div className="bg-teal-50 rounded-xl p-4 border border-teal-200">
+            <h4 className="font-semibold text-teal-800 mb-2">Forma de Envio</h4>
+            <p className="text-xs text-teal-700 mb-3">
+              Como os documentos, guias e avisos devem ser enviados para esse cliente. Você pode marcar mais de uma opção.
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {FORMAS_ENVIO.map((opt) => {
+                const selected = formasEnvioSelecionadas.includes(opt.value);
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => handleChange(
+                      'formaEnvio',
+                      selected
+                        ? formasEnvioSelecionadas.filter((item) => item !== opt.value)
+                        : [...formasEnvioSelecionadas, opt.value]
+                    )}
+                    className={`rounded-xl border-2 px-3 py-3 font-bold text-sm transition ${
+                      selected
+                        ? 'bg-teal-100 border-teal-500 text-teal-800'
+                        : 'bg-white border-gray-200 text-gray-600 hover:border-teal-300 hover:bg-teal-50'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            {formasEnvioSelecionadas.length > 0 && (
+              <button
+                type="button"
+                onClick={() => handleChange('formaEnvio', [] as FormaEnvio[])}
+                className="mt-2 text-xs text-teal-700 font-semibold hover:text-teal-900"
+              >
+                Limpar seleções
+              </button>
+            )}
+          </div>
+
           {/* Serviços */}
           <div className="bg-cyan-50 rounded-xl p-4 border border-cyan-200">
             <h4 className="font-semibold text-cyan-800 mb-4">Serviços contratados</h4>
@@ -1125,47 +1166,6 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                 );
               })}
             </div>
-          </div>
-
-          {/* Forma de Envio */}
-          <div className="bg-teal-50 rounded-xl p-4 border border-teal-200">
-            <h4 className="font-semibold text-teal-800 mb-2">Forma de Envio</h4>
-            <p className="text-xs text-teal-700 mb-3">
-              Como os documentos, guias e avisos devem ser enviados para esse cliente. Você pode marcar mais de uma opção.
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              {FORMAS_ENVIO.map((opt) => {
-                const selected = formasEnvioSelecionadas.includes(opt.value);
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => handleChange(
-                      'formaEnvio',
-                      selected
-                        ? formasEnvioSelecionadas.filter((item) => item !== opt.value)
-                        : [...formasEnvioSelecionadas, opt.value]
-                    )}
-                    className={`rounded-xl border-2 px-3 py-3 font-bold text-sm transition ${
-                      selected
-                        ? 'bg-teal-100 border-teal-500 text-teal-800'
-                        : 'bg-white border-gray-200 text-gray-600 hover:border-teal-300 hover:bg-teal-50'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-            {formasEnvioSelecionadas.length > 0 && (
-              <button
-                type="button"
-                onClick={() => handleChange('formaEnvio', [] as FormaEnvio[])}
-                className="mt-2 text-xs text-teal-700 font-semibold hover:text-teal-900"
-              >
-                Limpar seleções
-              </button>
-            )}
           </div>
 
           {/* Responsáveis */}

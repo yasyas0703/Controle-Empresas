@@ -6,7 +6,7 @@ import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
 import { detectTipoEstabelecimento, detectTipoInscricao, formatarDocumento, getTipoInscricaoDisplay } from '@/app/utils/validation';
 import type { Empresa, UUID, Limiares, HistoricoVencimentoItem } from '@/app/types';
-import { LIMIARES_DEFAULTS } from '@/app/types';
+import { LIMIARES_DEFAULTS, FORMAS_ENVIO } from '@/app/types';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
@@ -1058,6 +1058,31 @@ export default function DashboardPage() {
                     </div>
                     <div className="text-xs text-gray-800 whitespace-pre-wrap mt-0.5">
                       {e.particularidades}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Forma de Envio — abaixo de Particularidade. Mostra as opcoes
+                  marcadas (whatsapp/email/onvio/protocolo) com label legivel. */}
+              {Array.isArray(e.formaEnvio) && e.formaEnvio.length > 0 && (
+                <div className="mt-2">
+                  <div className="rounded-lg px-2.5 py-1.5 border bg-teal-50 border-teal-300">
+                    <div className="text-[10px] font-bold text-teal-700 uppercase tracking-wide">
+                      Forma de Envio
+                    </div>
+                    <div className="text-xs text-gray-800 mt-0.5 flex flex-wrap gap-1.5">
+                      {e.formaEnvio.map((fe) => {
+                        const opt = FORMAS_ENVIO.find((o) => o.value === fe);
+                        return (
+                          <span
+                            key={fe}
+                            className="inline-flex items-center rounded-md bg-white border border-teal-200 px-2 py-0.5 text-[11px] font-semibold text-teal-800"
+                          >
+                            {opt?.label ?? fe}
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
