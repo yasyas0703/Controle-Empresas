@@ -385,6 +385,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (i.ghostOnly) return isGhost;
     if (i.href === '/usuarios' || i.href === '/backup' || i.href === '/historico') return canAdmin;
     if (['/departamentos', '/servicos', '/tags', '/lixeira'].includes(i.href)) return canManage;
+    // Aba "Vencimentos" geral: usuarios e gerentes do contabil nao precisam
+    // (eles tem o "Controle Contabil" especifico). Admin/privileged ve.
+    if (i.href === '/vencimentos') {
+      if (canAdmin || isPrivileged) return true;
+      return userDepartamentoSlug !== 'contabil';
+    }
     if (i.department) {
       if (canAdmin || isPrivileged) return true;
       return i.department === userDepartamentoSlug;

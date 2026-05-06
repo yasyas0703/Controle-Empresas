@@ -12,6 +12,7 @@ import {
 } from '@/app/components/DepartamentoPlaceholder';
 import { normalizarNomeDepartamento } from '@/app/utils/departamento';
 import { sortByPtBr } from '@/lib/sort';
+import { detectTipoEstabelecimento } from '@/app/utils/validation';
 import {
   fetchContasBancarias,
   fetchControleContabilByAno,
@@ -280,6 +281,12 @@ export default function ControleContabilPage() {
         // (a UI mostra "Nenhum banco cadastrado" + botão de adicionar), pra propagar
         // o cadastro pra essa view sem o usuário precisar criar um banco antes.
         if (l.bancos.length === 0 && !l.respId) return false;
+        // Só matrizes: filiais ficam de fora pra evitar duplicar a matriz no contábil.
+        // Detecta pelo CNPJ (posições 9-12 = '0001' = matriz). Se já tem
+        // tipoEstabelecimento salvo, prefere esse. CPF e empresas sem CNPJ ficam
+        // (ainda podem ser cliente contábil legítimo).
+        const tipoEfetivo = detectTipoEstabelecimento(l.empresa.cnpj || '') || l.empresa.tipoEstabelecimento;
+        if (tipoEfetivo === 'filial') return false;
         if (!mostrarArquivadas && isArquivada(l.empresa)) return false;
         if (q) {
           const hay = `${l.empresa.codigo} ${l.empresa.razao_social ?? ''} ${l.empresa.apelido ?? ''}`.toLowerCase();
