@@ -4,7 +4,6 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import type {
   DocumentoEmpresa,
   Empresa,
-  Limiares,
   LogEntry,
   Notificacao,
   RetItem,
@@ -13,17 +12,10 @@ import type {
   UUID,
   VencimentoFiscal,
 } from '@/app/types';
-import { LIMIARES_DEFAULTS } from '@/app/types';
 import { daysUntil, formatBR, isoNow } from '@/app/utils/date';
 import { criarHistoricoVencimentoItem, garantirVencimentosFiscais, garantirVencimentosFiscaisComRegras, limparTagVencimento, normalizarHistoricoVencimento } from '@/app/utils/vencimentos';
 import * as db from '@/lib/db';
 import { supabase } from '@/lib/supabase';
-
-const FISCAL_ALERT_LIMIARES: Limiares = LIMIARES_DEFAULTS;
-const FISCAL_ALERT_TITLES = {
-  vencido: 'Vencimento fiscal vencido',
-  critico: 'Vencimento fiscal critico',
-} as const;
 
 function newId(): UUID {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
@@ -244,33 +236,6 @@ function enriquecerVencimentosFiscaisComHistorico(
       historicoVencimento: historico,
     };
   });
-}
-
-function buildFiscalAlertNotification(empresa: Empresa, fiscal: VencimentoFiscal) {
-  const dias = daysUntil(fiscal.vencimento);
-  if (dias === null) return null;
-
-  const status = dias < 0
-    ? 'vencido'
-    : dias <= FISCAL_ALERT_LIMIARES.critico
-      ? 'critico'
-      : null;
-
-  if (!status) return null;
-
-  const empresaNome = empresa.razao_social || empresa.apelido || '-';
-  const diasLabel = dias < 0
-    ? `${Math.abs(dias)} dia(s) em atraso`
-    : dias === 0
-      ? 'vence hoje'
-      : `vence em ${dias} dia(s)`;
-
-  return {
-    key: `${empresa.id}:${fiscal.id}:${status}:${fiscal.vencimento}`,
-    titulo: FISCAL_ALERT_TITLES[status],
-    mensagem: `${empresa.codigo} - ${empresaNome}: ${fiscal.nome} com vencimento em ${formatBR(fiscal.vencimento)} (${diasLabel}). Abra o sininho e marque como lida quando estiver ciente.`,
-    tipo: status === 'vencido' ? 'erro' as const : 'aviso' as const,
-  };
 }
 
 function dedupeIds(ids?: UUID[] | null): UUID[] {
@@ -896,47 +861,17 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  useEffect(() => {
-    if (!state.currentUserId || !canManage) return;
-
-    const pendentes = state.empresas.flatMap((empresa) =>
-      garantirVencimentosFiscaisComRegras(empresa.vencimentosFiscais, empresa.estado, empresa.cidade).flatMap((fiscal) => {
-        const alerta = buildFiscalAlertNotification(empresa, fiscal);
-        if (!alerta) return [];
-
-        const jaExiste = state.notificacoes.some((notificacao) =>
-          notificacao.empresaId === empresa.id &&
-          notificacao.titulo === alerta.titulo &&
-          notificacao.mensagem === alerta.mensagem
-        );
-
-        if (jaExiste || fiscalAlertQueueRef.current.has(alerta.key)) return [];
-
-        return [{ ...alerta, empresaId: empresa.id }];
-      })
-    );
-
-    if (pendentes.length === 0) return;
-
-    let ativo = true;
-
-    void (async () => {
-      for (const alerta of pendentes) {
-        if (!ativo) break;
-
-        fiscalAlertQueueRef.current.add(alerta.key);
-        try {
-          await addNotification(alerta.titulo, alerta.mensagem, alerta.tipo, alerta.empresaId);
-        } finally {
-          fiscalAlertQueueRef.current.delete(alerta.key);
-        }
-      }
-    })();
-
-    return () => {
-      ativo = false;
-    };
-  }, [addNotification, canManage, state.currentUserId, state.empresas, state.notificacoes]);
+  // [REMOVIDO 2026-05-06] Gerador automático de notificações de vencimento fiscal.
+  //
+  // Esse useEffect tinha state.notificacoes como dependência e inseria notificações
+  // dentro do efeito — isso criava um loop: insere -> state muda -> efeito roda
+  // de novo -> insere de novo. Em poucos meses encheu a tabela 'notificacoes'
+  // com 2.5 MILHÕES de linhas (1.5 GB no banco free do Supabase).
+  //
+  // O usuário já vê o status fiscal na página /vencimentos-fiscais (status
+  // colorido, cards "Vencidos / Críticos / Atenção"). Notificação no sino era
+  // redundante. Se um dia precisar reativar, faça com cron de DB (não no
+  // frontend) e respeite uma chave de deduplicação por (empresa+fiscal+data).
 
   // -- Auth --
 
