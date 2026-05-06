@@ -81,7 +81,15 @@ begin
     null as autor_id,
     'Sistema' as autor_nome,
     e.id as empresa_id,
-    null as destinatarios,
+    -- destinatarios: lista de usuarios responsaveis pela empresa,
+    -- pra gerentes/usuarios comuns verem suas empresas. Se nao tem
+    -- responsavel cadastrado, vai array vazio (so admin ve).
+    coalesce(
+      (select array_agg(distinct resp.usuario_id)
+       from responsaveis resp
+       where resp.empresa_id = e.id and resp.usuario_id is not null),
+      '{}'::uuid[]
+    ) as destinatarios,
     false as lida,
     now() as criado_em
   from rets r
