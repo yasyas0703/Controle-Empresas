@@ -108,6 +108,16 @@ export const VENCIMENTOS_FISCAIS_NOMES = [
 export type VencimentoFiscalNome = (typeof VENCIMENTOS_FISCAIS_NOMES)[number];
 
 /**
+ * Colunas EXTRA do checklist mensal Fiscal — controles internos do escritório
+ * (livros, demonstrativos). Não viram vencimento na aba principal porque não
+ * têm dia fixo: são marcadas conforme a equipe finaliza no mês.
+ */
+export const OBRIGACOES_FISCAIS_CHECKLIST_EXTRAS = [
+  'LIVROS FISCAIS',
+  'DEMONSTR. APURAÇÃO',
+] as const;
+
+/**
  * Obrigações fiscais específicas de empresas no regime Simples Nacional.
  * Vencimentos definidos pela gerente do Fiscal — Yasmin / 2026.
  * Dia 0 (Declaração DAS) significa último dia do mês.

@@ -285,8 +285,9 @@ export default function ControleContabilPage() {
         // Detecta pelo CNPJ (posições 9-12 = '0001' = matriz). Se já tem
         // tipoEstabelecimento salvo, prefere esse. CPF e empresas sem CNPJ ficam
         // (ainda podem ser cliente contábil legítimo).
+        // Exceção: empresa 478 (Andrea Izula) — filial mas deve aparecer no contábil.
         const tipoEfetivo = detectTipoEstabelecimento(l.empresa.cnpj || '') || l.empresa.tipoEstabelecimento;
-        if (tipoEfetivo === 'filial') return false;
+        if (tipoEfetivo === 'filial' && l.empresa.codigo !== '478') return false;
         if (!mostrarArquivadas && isArquivada(l.empresa)) return false;
         if (q) {
           const hay = `${l.empresa.codigo} ${l.empresa.razao_social ?? ''} ${l.empresa.apelido ?? ''}`.toLowerCase();

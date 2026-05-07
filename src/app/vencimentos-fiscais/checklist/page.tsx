@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import type { ChecklistFiscalItem, Empresa, UUID, Usuario } from '@/app/types';
-import { VENCIMENTOS_FISCAIS_NOMES, VENCIMENTOS_FISCAIS_SN_NOMES, FISCAL_DEPT_NOME, FISCAL_SN_DEPT_NOME } from '@/app/types';
+import { VENCIMENTOS_FISCAIS_NOMES, VENCIMENTOS_FISCAIS_SN_NOMES, OBRIGACOES_FISCAIS_CHECKLIST_EXTRAS, FISCAL_DEPT_NOME, FISCAL_SN_DEPT_NOME } from '@/app/types';
 import * as db from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { sortByPtBr } from '@/lib/sort';
@@ -184,7 +184,11 @@ export default function ChecklistFiscalPage() {
   }, [deptAtivo, empresas, usuarios, getResponsavelFiscal, usuarioPertenceAba]);
 
   // Lista de obrigações da aba ativa.
-  const obrigacoesAba: readonly string[] = aba === 'sn' ? VENCIMENTOS_FISCAIS_SN_NOMES : VENCIMENTOS_FISCAIS_NOMES;
+  // Aba Fiscal ganha colunas extras de controle interno (livros, demonstrativos).
+  // Aba SN segue só com a lista oficial.
+  const obrigacoesAba: readonly string[] = aba === 'sn'
+    ? VENCIMENTOS_FISCAIS_SN_NOMES
+    : [...VENCIMENTOS_FISCAIS_NOMES, ...OBRIGACOES_FISCAIS_CHECKLIST_EXTRAS];
 
   // Reseta filtro de obrigacao quando muda de aba (listas sao diferentes).
   useEffect(() => {
