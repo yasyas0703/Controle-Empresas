@@ -8,7 +8,10 @@ import {
   FlaskConical, Wand2, Link2, Unlink, Upload,
 } from 'lucide-react';
 
-const OBRIGACOES_ALLOWED_EMAIL = 'yasjean07@gmail.com';
+const OBRIGACOES_ALLOWED_EMAILS = [
+  'yasjean07@gmail.com',
+  'yasmin@triarcontabilidade.com.br',
+];
 
 function extrairMensagemErro(err: unknown): string {
   if (!err) return 'Erro desconhecido.';
@@ -148,7 +151,7 @@ function obrigacaoVazia(): Obrigacao {
 
 export default function ObrigacoesPage() {
   const { mostrarAlerta, empresas, currentUser } = useSistema();
-  const podeAcessar = currentUser?.email?.toLowerCase() === OBRIGACOES_ALLOWED_EMAIL;
+  const podeAcessar = !!currentUser?.email && OBRIGACOES_ALLOWED_EMAILS.includes(currentUser.email.toLowerCase());
   const [obrigacoes, setObrigacoes] = useState<Obrigacao[]>([]);
   const [carregando, setCarregando] = useState(true);
 
