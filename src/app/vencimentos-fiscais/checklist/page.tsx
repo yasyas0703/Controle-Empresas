@@ -476,21 +476,25 @@ export default function ChecklistFiscalPage() {
       setArqPreview(false);
       setArqSignedUrl(null);
 
-      // 3. Tenta enviar por email
+      // 3. Tenta enviar por email — passa checklistId pra habilitar pixel de tracking
       const env = await db.enviarAnexoChecklist({
         empresaId: arqTarget.empresa.id,
         mes,
         obrigacao: arqTarget.obrigacao,
         arquivoPath: result.arquivoUrl,
         arquivoNome: result.arquivoNome,
+        checklistId: result.item.id,
       });
 
-      // 4. Registra evento (sucesso/erro) e marca como feito apenas se enviou
+      // 4. Registra evento (sucesso/erro) e marca como feito apenas se enviou.
+      //    Reusa envioId gerado no servidor pra que o pixel embedado no email
+      //    referencie o mesmo evento que estamos persistindo agora.
       const reg = await db.registrarEnvioChecklist({
         empresaId: arqTarget.empresa.id,
         mes,
         obrigacao: arqTarget.obrigacao,
         evento: {
+          id: env.ok ? env.envioId : undefined,
           enviadoEm: env.ok ? env.enviadoEm : new Date().toISOString(),
           enviadoPorId: currentUserId,
           enviadoPorNome: currentUser?.nome,
@@ -606,12 +610,14 @@ export default function ChecklistFiscalPage() {
         obrigacao: arqTarget.obrigacao,
         arquivoPath: atual.arquivoUrl,
         arquivoNome: atual.arquivoNome,
+        checklistId: atual.id,
       });
       const reg = await db.registrarEnvioChecklist({
         empresaId: arqTarget.empresa.id,
         mes,
         obrigacao: arqTarget.obrigacao,
         evento: {
+          id: env.ok ? env.envioId : undefined,
           enviadoEm: env.ok ? env.enviadoEm : new Date().toISOString(),
           enviadoPorId: currentUserId,
           enviadoPorNome: currentUser?.nome,
@@ -620,6 +626,9 @@ export default function ChecklistFiscalPage() {
           arquivoNome: atual.arquivoNome,
           sucesso: env.ok,
           erro: env.ok ? undefined : env.mensagem,
+          gmailMessageId: env.ok ? env.gmailMessageId : undefined,
+          gmailThreadId: env.ok ? env.gmailThreadId : undefined,
+          entregaStatus: env.ok ? 'pendente' : undefined,
         },
         marcarComoFeito: env.ok,
         autor: { autorId: currentUserId, autorNome: currentUser?.nome },
@@ -1872,6 +1881,23 @@ export default function ChecklistFiscalPage() {
                                           <Clock size={9} /> Aguardando confirmação
                                         </span>
                                       )}
+                                      {/* Tracking de abertura (pixel). Só faz sentido se entrega não bounceou. */}
+                                      {ev.entregaStatus !== 'bounced' && (ev.aberturas ?? 0) > 0 && (
+                                        <span
+                                          className="inline-flex items-center gap-0.5 rounded-full bg-sky-500 px-1.5 py-0.5 text-[9px] font-bold text-white"
+                                          title={`Email aberto ${ev.aberturas}× — última vez em ${ev.abertoEmUltimo ? new Date(ev.abertoEmUltimo).toLocaleString('pt-BR') : '?'}. Atenção: alguns clientes (Apple Mail) pré-carregam imagens automaticamente, então pode haver falso positivo.`}
+                                        >
+                                          <Eye size={9} /> Visualizado{(ev.aberturas ?? 0) > 1 ? ` (${ev.aberturas}×)` : ''}
+                                        </span>
+                                      )}
+                                      {ev.entregaStatus === 'entregue' && (ev.aberturas ?? 0) === 0 && (
+                                        <span
+                                          className="inline-flex items-center gap-0.5 rounded-full bg-gray-100 border border-gray-300 px-1.5 py-0.5 text-[9px] font-bold text-gray-600"
+                                          title="Nenhuma abertura registrada. Atenção: Gmail/Outlook bloqueiam imagens por padrão, então o cliente pode ter aberto sem disparar o tracker."
+                                        >
+                                          <Eye size={9} /> Não visualizado
+                                        </span>
+                                      )}
                                     </>
                                   )}
                                   <span className="ml-auto text-[10px] text-gray-500 whitespace-nowrap">{dataFmt}</span>
@@ -1905,6 +1931,14 @@ export default function ChecklistFiscalPage() {
                                 {ev.entregaVerificadaEm && (
                                   <div className="text-[9px] text-gray-400 mt-0.5">
                                     Verificado em {new Date(ev.entregaVerificadaEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                )}
+                                {(ev.aberturas ?? 0) > 0 && ev.abertoEmUltimo && (
+                                  <div className="text-[9px] text-sky-600 mt-0.5">
+                                    Aberto em {new Date(ev.abertoEmUltimo).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                    {ev.abertoEm && ev.abertoEm !== ev.abertoEmUltimo && (
+                                      <span className="text-gray-400"> · 1ª: {new Date(ev.abertoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                                    )}
                                   </div>
                                 )}
                               </div>

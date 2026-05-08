@@ -167,6 +167,15 @@ export interface ChecklistEnvioEvento {
   entregaVerificadaEm?: string; // ISO — última vez que a verificação rodou
   bounceMotivo?: string;        // mensagem extraída do NDR
   bounceDestinatarios?: string[]; // quais dos destinatarios bounceram (pode ser parcial)
+  // ─── Tracking de abertura (pixel 1x1) ───
+  // Preenchido pela rota pública /api/checklist-fiscal/track-open/[checklistId]/[envioId].
+  // Atenção: indício, não prova — Apple Mail pré-carrega imagens (falso positivo)
+  // e Gmail/Outlook bloqueiam por padrão (falso negativo). Ver supabase-schema-checklist-fiscal-open-tracking.sql.
+  abertoEm?: string;            // ISO — primeira abertura registrada
+  abertoEmUltimo?: string;      // ISO — última abertura registrada
+  aberturas?: number;           // contador de hits no pixel
+  abertoUserAgent?: string;     // UA da última abertura
+  abertoIp?: string;            // IP da última abertura
 }
 
 export interface ChecklistFiscalItem {

@@ -1,12 +1,22 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { google } from 'googleapis';
+import { randomUUID } from 'node:crypto';
 import { getOAuthClient, decryptToken } from '@/lib/googleOAuth';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
 
 const BUCKET = 'documentos';
+
+function resolveBaseUrl(req: Request): string | null {
+  const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/\/+$/, '');
+  const proto = req.headers.get('x-forwarded-proto') ?? 'https';
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host');
+  if (!host) return null;
+  return `${proto}://${host}`;
+}
 
 function getBearerToken(req: Request): string | null {
   const header = req.headers.get('authorization') || req.headers.get('Authorization');
@@ -21,6 +31,10 @@ interface SendPayload {
   obrigacao: string;  // ex: "ICMS", "SPED ICMS/IPI", "EMISSÃO GUIA DAS"
   arquivoPath: string;
   arquivoNome: string;
+  // Id da linha em `checklist_fiscal`. Se vier, embedamos pixel de tracking
+  // de abertura no HTML. Se não vier, o email é enviado sem rastreamento
+  // (degradação graciosa — primeiro envio antes do upload, por exemplo).
+  checklistId?: string;
 }
 
 function formatComp(iso?: string | null): string {
@@ -207,7 +221,18 @@ export async function POST(req: Request) {
       `Qualquer dúvida, estamos à disposição.\n\n` +
       `Atenciosamente.`;
     const escapeHtml = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
-    const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(bodyText)}</div>`;
+
+    // Pixel de tracking de abertura (1x1 transparente). Só embeda se temos
+    // checklistId — sem ele a rota de tracking não consegue achar o evento.
+    const envioId = randomUUID();
+    const baseUrl = resolveBaseUrl(req);
+    const pixelTag = (body.checklistId && baseUrl)
+      ? `<img src="${baseUrl}/api/checklist-fiscal/track-open/${body.checklistId}/${envioId}.gif" width="1" height="1" alt="" style="display:none;border:0;outline:none;text-decoration:none;" />`
+      : '';
+
+    const bodyHtml =
+      `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(bodyText)}</div>` +
+      pixelTag;
 
     // 5. Renova access token e envia
     const oauth2 = getOAuthClient();
@@ -254,6 +279,8 @@ export async function POST(req: Request) {
       enviadoEm: nowIso,
       gmailMessageId,
       gmailThreadId,
+      envioId,
+      pixelEmbedado: pixelTag !== '',
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro inesperado';

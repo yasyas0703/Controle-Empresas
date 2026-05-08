@@ -1,0 +1,44 @@
+-- ============================================================
+-- Migração: rastreamento de abertura de email (pixel tracking)
+-- ============================================================
+-- Estende a forma de cada item dentro do JSONB
+-- `checklist_fiscal.envios_historico` com campos preenchidos pela
+-- rota pública `/api/checklist-fiscal/track-open/[checklistId]/[envioId]`,
+-- que serve um GIF 1x1 transparente e registra a requisição.
+--
+-- Não há mudança de DDL — a coluna já é JSONB. Esse arquivo só
+-- documenta os campos novos pra manter o schema rastreável no git.
+--
+-- Forma estendida de cada item (JSONB):
+-- {
+--   "id": "uuid",
+--   "enviado_em": "...",
+--   "destinatarios": [...],
+--   "sucesso": true,
+--   "gmail_message_id": "...",
+--   "gmail_thread_id": "...",
+--   ...
+--   -- ─── Tracking de abertura (novos) ───
+--   "aberto_em":          "2026-05-08T15:10:22.000Z" | null,  -- 1ª abertura
+--   "aberto_em_ultimo":   "2026-05-08T18:42:01.000Z" | null,  -- última abertura
+--   "aberturas":          3,                                   -- contador
+--   "aberto_user_agent":  "Mozilla/5.0 ...",                   -- UA da última
+--   "aberto_ip":          "201.10.x.x"                         -- IP da última
+-- }
+--
+-- Limitações conhecidas (são da técnica em si, não do código):
+--   - Gmail/Outlook bloqueiam imagens remotas por padrão → abertura
+--     real do cliente pode não ser registrada.
+--   - Apple Mail Privacy Protection pré-carrega TODAS as imagens via
+--     proxy assim que o email chega → marca como aberto sem o cliente
+--     ter aberto (falso positivo). Hoje é a maior parte do tráfego
+--     em iPhone. O `aberto_user_agent` ajuda a identificar (geralmente
+--     contém "GoogleImageProxy" ou similar).
+--   - Email em texto puro não dispara nada.
+--   - Antivírus corporativo às vezes pré-busca imagens também.
+--
+-- Por isso o histórico é "indício forte", não auditoria jurídica.
+-- ============================================================
+
+-- (Sem DDL — apenas documentação. A coluna `envios_historico` já é JSONB
+-- e aceita campos arbitrários.)

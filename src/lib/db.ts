@@ -1799,6 +1799,11 @@ function normalizarEnviosHistorico(raw: unknown): ChecklistEnvioEvento[] {
           : Array.isArray(e.bounceDestinatarios)
             ? e.bounceDestinatarios.filter((x: unknown) => typeof x === 'string')
             : undefined,
+        abertoEm: typeof e.aberto_em === 'string' ? e.aberto_em : (typeof e.abertoEm === 'string' ? e.abertoEm : undefined),
+        abertoEmUltimo: typeof e.aberto_em_ultimo === 'string' ? e.aberto_em_ultimo : (typeof e.abertoEmUltimo === 'string' ? e.abertoEmUltimo : undefined),
+        aberturas: typeof e.aberturas === 'number' ? e.aberturas : undefined,
+        abertoUserAgent: typeof e.aberto_user_agent === 'string' ? e.aberto_user_agent : (typeof e.abertoUserAgent === 'string' ? e.abertoUserAgent : undefined),
+        abertoIp: typeof e.aberto_ip === 'string' ? e.aberto_ip : (typeof e.abertoIp === 'string' ? e.abertoIp : undefined),
       };
     });
 }
@@ -2280,6 +2285,8 @@ export interface EnviarAnexoChecklistInput {
   obrigacao: string;  // ex: "ICMS"
   arquivoPath: string;
   arquivoNome: string;
+  /** Id da linha de checklist_fiscal — habilita pixel de tracking de abertura. */
+  checklistId?: UUID;
 }
 
 export interface EnviarAnexoChecklistResultado {
@@ -2289,6 +2296,10 @@ export interface EnviarAnexoChecklistResultado {
   enviadoEm: string;
   gmailMessageId?: string;
   gmailThreadId?: string;
+  /** Id pré-gerado pelo servidor — usar como `evento.id` em registrarEnvioChecklist. */
+  envioId?: UUID;
+  /** Indica se o pixel de tracking foi de fato embedado no email. */
+  pixelEmbedado?: boolean;
 }
 
 export interface EnviarAnexoChecklistFalha {
@@ -2327,6 +2338,8 @@ export async function enviarAnexoChecklist(
     enviadoEm: typeof json.enviadoEm === 'string' ? json.enviadoEm : new Date().toISOString(),
     gmailMessageId: typeof json.gmailMessageId === 'string' ? json.gmailMessageId : undefined,
     gmailThreadId: typeof json.gmailThreadId === 'string' ? json.gmailThreadId : undefined,
+    envioId: typeof json.envioId === 'string' ? json.envioId : undefined,
+    pixelEmbedado: json.pixelEmbedado === true,
   };
 }
 
@@ -2334,7 +2347,12 @@ export interface RegistrarEnvioInput {
   empresaId: UUID;
   mes: string;
   obrigacao: string;
-  evento: Omit<ChecklistEnvioEvento, 'id'>;
+  /**
+   * Evento a registrar. `id` é opcional: se vier, é usado como id do evento
+   * (importante quando o servidor já gerou esse id pra embedar no pixel de
+   * tracking). Se não vier, geramos um aqui.
+   */
+  evento: Omit<ChecklistEnvioEvento, 'id'> & { id?: UUID };
   /** Se true e o evento for sucesso, marca a tarefa como concluída/feito. */
   marcarComoFeito?: boolean;
   autor?: AutorAcao;
@@ -2351,8 +2369,8 @@ export async function registrarEnvioChecklist(input: RegistrarEnvioInput): Promi
     atual?.envios_historico ?? []
   );
   const novoEvento: ChecklistEnvioEvento = {
-    id: newUUID(),
     ...input.evento,
+    id: input.evento.id ?? newUUID(),
   };
 
   // Persistência usa snake_case pra alinhar com o resto do JSONB
@@ -2372,6 +2390,11 @@ export async function registrarEnvioChecklist(input: RegistrarEnvioInput): Promi
     entrega_verificada_em: e.entregaVerificadaEm ?? null,
     bounce_motivo: e.bounceMotivo ?? null,
     bounce_destinatarios: e.bounceDestinatarios ?? null,
+    aberto_em: e.abertoEm ?? null,
+    aberto_em_ultimo: e.abertoEmUltimo ?? null,
+    aberturas: e.aberturas ?? 0,
+    aberto_user_agent: e.abertoUserAgent ?? null,
+    aberto_ip: e.abertoIp ?? null,
   });
 
   const novoEventoPersistido = persistirEvento(novoEvento);
