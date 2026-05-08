@@ -5,6 +5,7 @@ import {
   ListChecks, Search, XCircle, Filter, Users, ChevronLeft, ChevronRight,
   Check, Calendar, AlertTriangle, TrendingUp, Award, Download, Clock,
   MessageSquare, History, User as UserIcon, Sparkles, Paperclip, Upload, Trash2, Eye, Loader2,
+  Send, MailCheck, MailX,
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import type { ChecklistFiscalItem, Empresa, UUID, Usuario } from '@/app/types';
@@ -14,6 +15,7 @@ import { supabase } from '@/lib/supabase';
 import { sortByPtBr } from '@/lib/sort';
 import { obrigacaoAplicaParaEmpresa, obrigacaoSnAplicaParaEmpresa } from '@/app/utils/regrasVencimentosFiscais';
 import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
+import PainelConectarGmail from '@/app/components/PainelConectarGmail';
 
 type RegimeAba = 'fiscal' | 'sn';
 
@@ -109,6 +111,7 @@ export default function ChecklistFiscalPage() {
   const [arqLoadingAcao, setArqLoadingAcao] = useState<'view' | 'download' | 'open' | null>(null);
   const [arqPreview, setArqPreview] = useState<boolean>(false);
   const [arqSignedUrl, setArqSignedUrl] = useState<string | null>(null);
+  const [verificandoEntregas, setVerificandoEntregas] = useState(false);
 
   const fiscalDept = useMemo(
     () => departamentos.find((d) => d.nome.trim().toLowerCase() === FISCAL_DEPT_NOME)
@@ -449,6 +452,14 @@ export default function ChecklistFiscalPage() {
     if (!arqTarget) return;
     setArqUploading(true);
     try {
+      // 1. Pré-checks: Gmail conectado + empresa com email cliente
+      const pre = await db.prepararEnvioChecklist(arqTarget.empresa.id);
+      if (!pre.ok) {
+        mostrarAlerta('Não foi possível anexar', pre.mensagem, 'erro');
+        return;
+      }
+
+      // 2. Upload do arquivo
       const result = await db.uploadChecklistArquivo(
         arqTarget.empresa.id,
         mes,
@@ -462,14 +473,175 @@ export default function ChecklistFiscalPage() {
         next.set(key, result.item);
         return next;
       });
-      // Reseta preview/url do arquivo anterior
       setArqPreview(false);
       setArqSignedUrl(null);
-      mostrarAlerta('Arquivo anexado', `${result.arquivoNome} foi salvo neste checklist.`, 'sucesso');
+
+      // 3. Tenta enviar por email
+      const env = await db.enviarAnexoChecklist({
+        empresaId: arqTarget.empresa.id,
+        mes,
+        obrigacao: arqTarget.obrigacao,
+        arquivoPath: result.arquivoUrl,
+        arquivoNome: result.arquivoNome,
+      });
+
+      // 4. Registra evento (sucesso/erro) e marca como feito apenas se enviou
+      const reg = await db.registrarEnvioChecklist({
+        empresaId: arqTarget.empresa.id,
+        mes,
+        obrigacao: arqTarget.obrigacao,
+        evento: {
+          enviadoEm: env.ok ? env.enviadoEm : new Date().toISOString(),
+          enviadoPorId: currentUserId,
+          enviadoPorNome: currentUser?.nome,
+          remetenteEmail: env.ok ? env.de : pre.remetenteEmail,
+          destinatarios: env.ok ? env.enviadoPara : pre.destinatarios,
+          arquivoNome: result.arquivoNome,
+          sucesso: env.ok,
+          erro: env.ok ? undefined : env.mensagem,
+          gmailMessageId: env.ok ? env.gmailMessageId : undefined,
+          gmailThreadId: env.ok ? env.gmailThreadId : undefined,
+          entregaStatus: env.ok ? 'pendente' : undefined,
+        },
+        marcarComoFeito: env.ok,
+        autor: { autorId: currentUserId, autorNome: currentUser?.nome },
+      });
+      setItems((prev) => {
+        const next = new Map(prev);
+        next.set(key, reg);
+        return next;
+      });
+
+      if (env.ok) {
+        mostrarAlerta(
+          'Enviado!',
+          `Arquivo enviado para ${env.enviadoPara.join(', ')}. Tarefa marcada como feita.`,
+          'sucesso',
+        );
+      } else {
+        mostrarAlerta(
+          'Anexado, mas falhou ao enviar',
+          `${env.mensagem}\n\nO arquivo está salvo no checklist. Use o botão "Reenviar" no modal para tentar de novo.`,
+          'erro',
+        );
+      }
     } catch (err) {
       console.error(err);
       const msg = err instanceof Error ? err.message : 'Erro desconhecido';
       mostrarAlerta('Erro ao anexar', msg, 'erro');
+    } finally {
+      setArqUploading(false);
+    }
+  };
+
+  // Pode ser chamado manualmente (botão no modal) ou silenciosamente
+  // (auto-trigger ao abrir a página). Se `silencioso=true`, não mostra alerta
+  // de "0 verificados" — fica só no console.
+  const verificarEntregas = useCallback(async (silencioso = false) => {
+    if (verificandoEntregas) return;
+    setVerificandoEntregas(true);
+    try {
+      const r = await db.verificarEntregasChecklist();
+      if (!r.ok) {
+        if (r.reconexaoNecessaria) {
+          mostrarAlerta('Reconectar Gmail', r.mensagem, 'aviso');
+        } else if (!silencioso) {
+          mostrarAlerta('Não foi possível verificar', r.mensagem, 'erro');
+        } else {
+          console.warn('[checklist] Falha silenciosa em verificarEntregas:', r.mensagem);
+        }
+        return;
+      }
+      // Recarrega items pro mês atual pra refletir entrega/bounce no modal
+      if (r.entregues > 0 || r.bounced > 0) {
+        await carregar(mes);
+      }
+      if (!silencioso) {
+        if (r.verificados === 0) {
+          mostrarAlerta('Tudo em dia', 'Nenhum envio pendente para verificar.', 'sucesso');
+        } else {
+          const partes: string[] = [];
+          if (r.entregues > 0) partes.push(`${r.entregues} entregue(s)`);
+          if (r.bounced > 0) partes.push(`${r.bounced} não entregue(s)`);
+          if (partes.length === 0) partes.push('aguardando confirmação');
+          mostrarAlerta('Verificação concluída', `${r.verificados} envio(s) verificados — ${partes.join(', ')}.`, 'sucesso');
+        }
+      }
+    } catch (err) {
+      console.error('[checklist] Erro em verificarEntregas:', err);
+      if (!silencioso) {
+        const msg = err instanceof Error ? err.message : 'Erro inesperado';
+        mostrarAlerta('Erro', msg, 'erro');
+      }
+    } finally {
+      setVerificandoEntregas(false);
+    }
+  }, [verificandoEntregas, mostrarAlerta, carregar, mes]);
+
+  // Auto-check silencioso ao abrir o checklist (uma vez por carregamento de mês)
+  useEffect(() => {
+    if (loading) return;
+    void verificarEntregas(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mes, loading]);
+
+  const reenviarAnexoChecklist = async () => {
+    if (!arqTarget) return;
+    const key = buildKey(arqTarget.empresa.id, arqTarget.obrigacao);
+    const atual = items.get(key);
+    if (!atual?.arquivoUrl || !atual?.arquivoNome) {
+      mostrarAlerta('Sem arquivo', 'Nenhum arquivo anexado para reenviar.', 'erro');
+      return;
+    }
+    setArqUploading(true);
+    try {
+      const pre = await db.prepararEnvioChecklist(arqTarget.empresa.id);
+      if (!pre.ok) {
+        mostrarAlerta('Não foi possível enviar', pre.mensagem, 'erro');
+        return;
+      }
+      const env = await db.enviarAnexoChecklist({
+        empresaId: arqTarget.empresa.id,
+        mes,
+        obrigacao: arqTarget.obrigacao,
+        arquivoPath: atual.arquivoUrl,
+        arquivoNome: atual.arquivoNome,
+      });
+      const reg = await db.registrarEnvioChecklist({
+        empresaId: arqTarget.empresa.id,
+        mes,
+        obrigacao: arqTarget.obrigacao,
+        evento: {
+          enviadoEm: env.ok ? env.enviadoEm : new Date().toISOString(),
+          enviadoPorId: currentUserId,
+          enviadoPorNome: currentUser?.nome,
+          remetenteEmail: env.ok ? env.de : pre.remetenteEmail,
+          destinatarios: env.ok ? env.enviadoPara : pre.destinatarios,
+          arquivoNome: atual.arquivoNome,
+          sucesso: env.ok,
+          erro: env.ok ? undefined : env.mensagem,
+        },
+        marcarComoFeito: env.ok,
+        autor: { autorId: currentUserId, autorNome: currentUser?.nome },
+      });
+      setItems((prev) => {
+        const next = new Map(prev);
+        next.set(key, reg);
+        return next;
+      });
+      if (env.ok) {
+        mostrarAlerta(
+          'Enviado!',
+          `Arquivo reenviado para ${env.enviadoPara.join(', ')}. Tarefa marcada como feita.`,
+          'sucesso',
+        );
+      } else {
+        mostrarAlerta('Falha no envio', env.mensagem, 'erro');
+      }
+    } catch (err) {
+      console.error(err);
+      const msg = err instanceof Error ? err.message : 'Erro desconhecido';
+      mostrarAlerta('Erro', msg, 'erro');
     } finally {
       setArqUploading(false);
     }
@@ -823,6 +995,16 @@ export default function ChecklistFiscalPage() {
   return (
     <div className="space-y-4 sm:space-y-6 min-w-0 max-w-full">
       <FiscalTabs />
+
+      {/* Painel: conectar Gmail (sempre visível). Variante `compacto` —
+          quando NÃO conectado fica em destaque amarelo com botão "Conectar
+          agora"; quando conectado, vira só uma linha confirmando a conta +
+          botão pra desconectar. As usuárias não acessam /obrigacoes, então
+          este é o único ponto onde elas conectam o Gmail delas. */}
+      <PainelConectarGmail
+        returnTo="/vencimentos-fiscais/checklist"
+        compacto
+      />
 
       {/* Header */}
       <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
@@ -1443,6 +1625,8 @@ export default function ChecklistFiscalPage() {
         const temArq = !!arquivoUrl;
         const arquivoHistorico = itemAtual?.arquivoHistorico ?? [];
         const temHistArquivo = arquivoHistorico.length > 0;
+        const enviosHistorico = itemAtual?.enviosHistorico ?? [];
+        const temHistEnvios = enviosHistorico.length > 0;
         const podeEditar = canManage || (!!currentUserId && (() => {
           const respId = arqTarget.empresa.responsaveis?.[deptAtivo?.id ?? ''];
           return respId === currentUserId;
@@ -1528,6 +1712,20 @@ export default function ChecklistFiscalPage() {
                         </button>
                         {podeEditar && (
                           <button
+                            onClick={() => void reenviarAnexoChecklist()}
+                            disabled={arqUploading}
+                            className="rounded-xl border border-emerald-200 bg-white p-2 hover:bg-emerald-50 transition"
+                            title="Reenviar por email para o cliente"
+                          >
+                            {arqUploading ? (
+                              <Loader2 className="text-emerald-600 animate-spin" size={16} />
+                            ) : (
+                              <Send className="text-emerald-600" size={16} />
+                            )}
+                          </button>
+                        )}
+                        {podeEditar && (
+                          <button
                             onClick={removerArquivoChecklist}
                             disabled={arqUploading}
                             className="rounded-xl border border-red-200 bg-white p-2 hover:bg-red-50 transition"
@@ -1605,6 +1803,116 @@ export default function ChecklistFiscalPage() {
                   <div className="rounded-xl bg-gray-50 border border-gray-200 p-6 text-center text-sm text-gray-500">
                     Nenhum arquivo anexado.<br />
                     <span className="text-[11px]">Apenas o responsável fiscal ou gerente pode anexar.</span>
+                  </div>
+                )}
+
+                {/* Histórico de envios por email (sucesso / falha + entrega) */}
+                {temHistEnvios && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3">
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-700 mb-2">
+                      <Send size={12} className="text-emerald-600" />
+                      Histórico de envios
+                      <span className="rounded-full bg-emerald-200 px-1.5 py-0.5 text-[9px] font-black text-emerald-800">
+                        {enviosHistorico.length}
+                      </span>
+                      <button
+                        onClick={() => void verificarEntregas()}
+                        disabled={verificandoEntregas}
+                        className="ml-auto inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-white px-2 py-0.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                        title="Consulta a inbox Gmail procurando bounces e atualiza o status de entrega"
+                      >
+                        {verificandoEntregas ? (
+                          <Loader2 size={10} className="animate-spin" />
+                        ) : (
+                          <MailCheck size={10} />
+                        )}
+                        {verificandoEntregas ? 'Verificando…' : 'Verificar entregas'}
+                      </button>
+                    </div>
+                    <ol className="space-y-1.5">
+                      {enviosHistorico.map((ev) => {
+                        // Cor base: vermelho se envio falhou OU bounce; emerald se sucesso; cinza se pendente
+                        let cor = ev.sucesso
+                          ? { bg: 'bg-emerald-50', border: 'border-emerald-200', txt: 'text-emerald-700', dot: 'bg-emerald-500' }
+                          : { bg: 'bg-red-50', border: 'border-red-200', txt: 'text-red-700', dot: 'bg-red-500' };
+                        if (ev.sucesso && ev.entregaStatus === 'bounced') {
+                          cor = { bg: 'bg-red-50', border: 'border-red-200', txt: 'text-red-700', dot: 'bg-red-500' };
+                        }
+                        const dataFmt = ev.enviadoEm
+                          ? new Date(ev.enviadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                          : '';
+                        return (
+                          <li key={ev.id} className={`rounded-lg border ${cor.border} ${cor.bg} px-2.5 py-1.5`}>
+                            <div className="flex items-start gap-2">
+                              <span className={`mt-1 h-2 w-2 rounded-full shrink-0 ${cor.dot}`} />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                  <span className={`inline-flex items-center gap-1 text-[11px] font-bold ${cor.txt}`}>
+                                    {ev.sucesso ? (
+                                      <><MailCheck size={11} /> Enviado</>
+                                    ) : (
+                                      <><MailX size={11} /> Falhou</>
+                                    )}
+                                  </span>
+                                  {/* Status de entrega só faz sentido se o envio em si foi sucesso */}
+                                  {ev.sucesso && (
+                                    <>
+                                      {ev.entregaStatus === 'entregue' && (
+                                        <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                                          <Check size={9} strokeWidth={3} /> Entregue
+                                        </span>
+                                      )}
+                                      {ev.entregaStatus === 'bounced' && (
+                                        <span className="inline-flex items-center gap-0.5 rounded-full bg-red-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                                          <MailX size={9} /> Não entregue
+                                        </span>
+                                      )}
+                                      {(ev.entregaStatus === 'pendente' || !ev.entregaStatus) && (
+                                        <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 border border-amber-300 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
+                                          <Clock size={9} /> Aguardando confirmação
+                                        </span>
+                                      )}
+                                    </>
+                                  )}
+                                  <span className="ml-auto text-[10px] text-gray-500 whitespace-nowrap">{dataFmt}</span>
+                                </div>
+                                {ev.enviadoPorNome && (
+                                  <div className="text-[10px] text-gray-600">
+                                    por <span className="font-semibold">{ev.enviadoPorNome}</span>
+                                    {ev.remetenteEmail && (
+                                      <span className="text-gray-400"> · {ev.remetenteEmail}</span>
+                                    )}
+                                  </div>
+                                )}
+                                {ev.destinatarios.length > 0 && (
+                                  <div className="text-[10px] text-gray-600 truncate" title={ev.destinatarios.join(', ')}>
+                                    para <span className="font-medium">{ev.destinatarios.join(', ')}</span>
+                                  </div>
+                                )}
+                                {ev.erro && (
+                                  <div className="mt-1 rounded bg-red-100 border border-red-200 px-1.5 py-1 text-[10px] text-red-700">
+                                    {ev.erro}
+                                  </div>
+                                )}
+                                {ev.entregaStatus === 'bounced' && (ev.bounceMotivo || (ev.bounceDestinatarios?.length ?? 0) > 0) && (
+                                  <div className="mt-1 rounded bg-red-100 border border-red-200 px-1.5 py-1 text-[10px] text-red-700">
+                                    {ev.bounceMotivo && <div className="font-semibold">{ev.bounceMotivo}</div>}
+                                    {(ev.bounceDestinatarios?.length ?? 0) > 0 && (
+                                      <div>Endereços com falha: {ev.bounceDestinatarios?.join(', ')}</div>
+                                    )}
+                                  </div>
+                                )}
+                                {ev.entregaVerificadaEm && (
+                                  <div className="text-[9px] text-gray-400 mt-0.5">
+                                    Verificado em {new Date(ev.entregaVerificadaEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ol>
                   </div>
                 )}
 

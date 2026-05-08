@@ -11,6 +11,7 @@ import type {
   ObrigacaoTarefa,
   ObrigacaoTarefaStatus,
   ObrigacaoTipoData,
+  ChecklistEnvioEvento,
   ChecklistFiscalItem,
   ContaBancaria,
   ControleContabilExtrato,
@@ -1763,9 +1764,44 @@ type ChecklistFiscalRow = {
   arquivo_url: string | null;
   arquivo_nome: string | null;
   arquivo_historico: unknown;
+  envios_historico: unknown;
   criado_em: string;
   atualizado_em: string;
 };
+
+function normalizarEnviosHistorico(raw: unknown): ChecklistEnvioEvento[] {
+  if (!Array.isArray(raw)) return [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (raw as any[])
+    .filter((e) => e && typeof e === 'object')
+    .map((e) => {
+      const entregaRaw = e.entrega_status ?? e.entregaStatus;
+      const entregaStatus = entregaRaw === 'entregue' || entregaRaw === 'bounced' || entregaRaw === 'pendente'
+        ? (entregaRaw as 'entregue' | 'bounced' | 'pendente')
+        : undefined;
+      return {
+        id: String(e.id ?? newUUID()),
+        enviadoEm: typeof e.enviado_em === 'string' ? e.enviado_em : (typeof e.enviadoEm === 'string' ? e.enviadoEm : new Date().toISOString()),
+        enviadoPorId: e.enviado_por_id ?? e.enviadoPorId ?? null,
+        enviadoPorNome: e.enviado_por_nome ?? e.enviadoPorNome ?? undefined,
+        remetenteEmail: e.remetente_email ?? e.remetenteEmail ?? undefined,
+        destinatarios: Array.isArray(e.destinatarios) ? e.destinatarios.filter((x: unknown) => typeof x === 'string') : [],
+        arquivoNome: e.arquivo_nome ?? e.arquivoNome ?? undefined,
+        sucesso: e.sucesso === true,
+        erro: e.erro ?? undefined,
+        gmailMessageId: e.gmail_message_id ?? e.gmailMessageId ?? undefined,
+        gmailThreadId: e.gmail_thread_id ?? e.gmailThreadId ?? undefined,
+        entregaStatus,
+        entregaVerificadaEm: e.entrega_verificada_em ?? e.entregaVerificadaEm ?? undefined,
+        bounceMotivo: e.bounce_motivo ?? e.bounceMotivo ?? undefined,
+        bounceDestinatarios: Array.isArray(e.bounce_destinatarios)
+          ? e.bounce_destinatarios.filter((x: unknown) => typeof x === 'string')
+          : Array.isArray(e.bounceDestinatarios)
+            ? e.bounceDestinatarios.filter((x: unknown) => typeof x === 'string')
+            : undefined,
+      };
+    });
+}
 
 function toChecklistItem(row: ChecklistFiscalRow): ChecklistFiscalItem {
   const statusVal = row.status === 'feito' || row.status === 'sem_obrigacao' ? row.status : null;
@@ -1785,6 +1821,7 @@ function toChecklistItem(row: ChecklistFiscalRow): ChecklistFiscalItem {
     arquivoHistorico: normalizarHistoricoVencimento(
       Array.isArray(row.arquivo_historico) ? (row.arquivo_historico as HistoricoVencimentoItem[]) : []
     ),
+    enviosHistorico: normalizarEnviosHistorico(row.envios_historico),
     criadoEm: toIso(row.criado_em),
     atualizadoEm: toIso(row.atualizado_em),
   };
@@ -2177,6 +2214,268 @@ export async function removeChecklistArquivo(
 
 export async function getChecklistArquivoSignedUrl(arquivoUrl: string): Promise<string> {
   return getDocumentoSignedUrl(arquivoUrl);
+}
+
+// ─── Checklist Fiscal — envio do anexo por email (Gmail OAuth) ─────────────
+
+/** Erros previsíveis no preparo do envio. A UI mostra mensagem específica. */
+export type PrepararEnvioErro = 'gmail_nao_conectado' | 'sem_emails_cliente';
+
+export interface PrepararEnvioResultado {
+  ok: true;
+  remetenteEmail: string;
+  destinatarios: string[];
+}
+
+export interface PrepararEnvioFalha {
+  ok: false;
+  erro: PrepararEnvioErro;
+  mensagem: string;
+}
+
+/**
+ * Verifica os pré-requisitos pro envio do anexo:
+ *   1. Usuário logado tem token Gmail conectado e não revogado
+ *   2. Empresa tem pelo menos um email cliente ativo
+ * Retorna remetente + destinatários quando tudo OK; senão um erro tipado.
+ */
+export async function prepararEnvioChecklist(empresaId: UUID): Promise<PrepararEnvioResultado | PrepararEnvioFalha> {
+  const token = await getAccessToken();
+
+  // 1. Status Gmail
+  const statusRes = await fetch('/api/auth/google/status', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const statusJson = await statusRes.json().catch(() => ({}));
+  if (!statusRes.ok || !statusJson?.connected || !statusJson?.email) {
+    return {
+      ok: false,
+      erro: 'gmail_nao_conectado',
+      mensagem: 'Gmail não conectado. Conecte sua conta Gmail na página de Obrigações antes de enviar anexos.',
+    };
+  }
+
+  // 2. Emails ativos da empresa
+  const { data: emailRows, error: emailErr } = await supabase
+    .from('empresa_emails_cliente')
+    .select('email')
+    .eq('empresa_id', empresaId)
+    .eq('ativo', true);
+  if (emailErr) throw emailErr;
+  const destinatarios = ((emailRows ?? []) as { email: string }[]).map((r) => r.email).filter(Boolean);
+  if (destinatarios.length === 0) {
+    return {
+      ok: false,
+      erro: 'sem_emails_cliente',
+      mensagem: 'Esta empresa não tem emails cadastrados. Cadastre um email do cliente em Empresas antes de anexar.',
+    };
+  }
+
+  return { ok: true, remetenteEmail: statusJson.email as string, destinatarios };
+}
+
+export interface EnviarAnexoChecklistInput {
+  empresaId: UUID;
+  mes: string;        // YYYY-MM
+  obrigacao: string;  // ex: "ICMS"
+  arquivoPath: string;
+  arquivoNome: string;
+}
+
+export interface EnviarAnexoChecklistResultado {
+  ok: true;
+  enviadoPara: string[];
+  de: string;
+  enviadoEm: string;
+  gmailMessageId?: string;
+  gmailThreadId?: string;
+}
+
+export interface EnviarAnexoChecklistFalha {
+  ok: false;
+  mensagem: string;
+}
+
+/**
+ * Chama a rota `/api/checklist-fiscal/enviar-anexo` que envia o anexo por
+ * Gmail OAuth. Retorna o resultado normalizado — não atualiza histórico
+ * nem status (chame `registrarEnvioChecklist` separado pra isso, atomicamente).
+ */
+export async function enviarAnexoChecklist(
+  input: EnviarAnexoChecklistInput,
+): Promise<EnviarAnexoChecklistResultado | EnviarAnexoChecklistFalha> {
+  const token = await getAccessToken();
+  const res = await fetch('/api/checklist-fiscal/enviar-anexo', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(input),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.ok) {
+    const mensagem = typeof json?.error === 'string' && json.error
+      ? json.error
+      : `Falha ao enviar (HTTP ${res.status}).`;
+    return { ok: false, mensagem };
+  }
+  return {
+    ok: true,
+    enviadoPara: Array.isArray(json.enviadoPara) ? json.enviadoPara : [],
+    de: typeof json.de === 'string' ? json.de : '',
+    enviadoEm: typeof json.enviadoEm === 'string' ? json.enviadoEm : new Date().toISOString(),
+    gmailMessageId: typeof json.gmailMessageId === 'string' ? json.gmailMessageId : undefined,
+    gmailThreadId: typeof json.gmailThreadId === 'string' ? json.gmailThreadId : undefined,
+  };
+}
+
+export interface RegistrarEnvioInput {
+  empresaId: UUID;
+  mes: string;
+  obrigacao: string;
+  evento: Omit<ChecklistEnvioEvento, 'id'>;
+  /** Se true e o evento for sucesso, marca a tarefa como concluída/feito. */
+  marcarComoFeito?: boolean;
+  autor?: AutorAcao;
+}
+
+/**
+ * Adiciona um evento ao histórico de envios do checklist e, opcionalmente,
+ * marca a tarefa como feita (status='feito', concluido=true). Tudo em um
+ * único upsert para manter consistência.
+ */
+export async function registrarEnvioChecklist(input: RegistrarEnvioInput): Promise<ChecklistFiscalItem> {
+  const atual = await lerChecklistAtual(input.empresaId, input.mes, input.obrigacao);
+  const enviosAnteriores = normalizarEnviosHistorico(
+    atual?.envios_historico ?? []
+  );
+  const novoEvento: ChecklistEnvioEvento = {
+    id: newUUID(),
+    ...input.evento,
+  };
+
+  // Persistência usa snake_case pra alinhar com o resto do JSONB
+  const persistirEvento = (e: ChecklistEnvioEvento) => ({
+    id: e.id,
+    enviado_em: e.enviadoEm,
+    enviado_por_id: e.enviadoPorId ?? null,
+    enviado_por_nome: e.enviadoPorNome ?? null,
+    remetente_email: e.remetenteEmail ?? null,
+    destinatarios: e.destinatarios,
+    arquivo_nome: e.arquivoNome ?? null,
+    sucesso: e.sucesso,
+    erro: e.erro ?? null,
+    gmail_message_id: e.gmailMessageId ?? null,
+    gmail_thread_id: e.gmailThreadId ?? null,
+    entrega_status: e.entregaStatus ?? (e.sucesso ? 'pendente' : null),
+    entrega_verificada_em: e.entregaVerificadaEm ?? null,
+    bounce_motivo: e.bounceMotivo ?? null,
+    bounce_destinatarios: e.bounceDestinatarios ?? null,
+  });
+
+  const novoEventoPersistido = persistirEvento(novoEvento);
+  const enviosAnterioresPersistidos = enviosAnteriores.map(persistirEvento);
+
+  const enviosNovos = [novoEventoPersistido, ...enviosAnterioresPersistidos];
+
+  const now = new Date().toISOString();
+  const deveMarcarFeito = input.marcarComoFeito === true && novoEvento.sucesso === true;
+
+  const payloadCompleto: Record<string, unknown> = {
+    empresa_id: input.empresaId,
+    mes: input.mes,
+    obrigacao: input.obrigacao,
+    envios_historico: enviosNovos,
+    atualizado_em: now,
+  };
+  if (deveMarcarFeito) {
+    payloadCompleto.concluido = true;
+    payloadCompleto.status = 'feito';
+    payloadCompleto.concluido_por_id = input.autor?.autorId ?? input.evento.enviadoPorId ?? null;
+    payloadCompleto.concluido_por_nome = input.autor?.autorNome ?? input.evento.enviadoPorNome ?? null;
+    payloadCompleto.concluido_em = now;
+  }
+
+  let { data, error } = await supabase
+    .from('checklist_fiscal')
+    .upsert(payloadCompleto, { onConflict: 'empresa_id,mes,obrigacao' })
+    .select()
+    .single();
+
+  // Fallback: se a coluna `envios_historico` ainda não existir (migration
+  // pendente), salva o resto sem quebrar o fluxo.
+  if (error && isErroColunaEnviosFaltando(error)) {
+    console.warn(
+      '[checklist] Coluna envios_historico não existe — rode a migration ' +
+      'supabase-schema-checklist-fiscal-envios.sql. Salvando sem histórico de envios.'
+    );
+    const { envios_historico: _omit, ...semHistorico } = payloadCompleto;
+    void _omit;
+    const retry = await supabase
+      .from('checklist_fiscal')
+      .upsert(semHistorico, { onConflict: 'empresa_id,mes,obrigacao' })
+      .select()
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error) throw error;
+  return toChecklistItem(data as ChecklistFiscalRow);
+}
+
+function isErroColunaEnviosFaltando(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const msg = String((err as any).message ?? '').toLowerCase();
+  return msg.includes('envios_historico') || (msg.includes('column') && msg.includes('does not exist'));
+}
+
+export interface VerificarEntregasResultado {
+  ok: true;
+  verificados: number;
+  entregues: number;
+  bounced: number;
+}
+
+export interface VerificarEntregasFalha {
+  ok: false;
+  mensagem: string;
+  reconexaoNecessaria?: boolean;
+}
+
+/**
+ * Chama o endpoint que varre a inbox Gmail da usuária procurando bounces
+ * e atualiza o status de entrega dos envios pendentes. Idempotente — pode
+ * ser chamado várias vezes sem efeito colateral.
+ */
+export async function verificarEntregasChecklist(): Promise<VerificarEntregasResultado | VerificarEntregasFalha> {
+  const token = await getAccessToken();
+  const res = await fetch('/api/checklist-fiscal/verificar-entregas', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.ok) {
+    if (json?.error === 'reconexao_necessaria') {
+      return {
+        ok: false,
+        mensagem: typeof json.mensagem === 'string' ? json.mensagem : 'Reconecte sua conta Gmail.',
+        reconexaoNecessaria: true,
+      };
+    }
+    return {
+      ok: false,
+      mensagem: typeof json?.error === 'string' ? json.error : `Falha (HTTP ${res.status}).`,
+    };
+  }
+  return {
+    ok: true,
+    verificados: Number(json.verificados ?? 0),
+    entregues: Number(json.entregues ?? 0),
+    bounced: Number(json.bounced ?? 0),
+  };
 }
 
 // ─── Controle Contábil — Extratos Bancários ─────────────────

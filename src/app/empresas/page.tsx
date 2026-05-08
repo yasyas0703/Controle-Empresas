@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Building2, Plus, Search, Pencil, Trash2, Eye, FileText, CalendarClock, Upload, Users, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { AlertTriangle, Building2, Plus, Search, Pencil, Trash2, Eye, FileText, CalendarClock, Upload, Users, Clock, ChevronLeft, ChevronRight, ScanSearch } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import type { Empresa, UUID, Limiares } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
@@ -11,6 +11,7 @@ import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import ModalImportarPlanilha from '@/app/components/ModalImportarPlanilha';
 import ModalImportarResponsabilidadesPorDep from '@/app/components/ModalImportarResponsabilidadesPorDep';
+import ModalEncontrarCnpjs from '@/app/components/ModalEncontrarCnpjs';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import { sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
@@ -60,6 +61,7 @@ export default function EmpresasPage() {
   const [empresaEdit, setEmpresaEdit] = useState<Empresa | null>(null);
   const [empresaView, setEmpresaView] = useState<Empresa | null>(null);
   const [modalImportPorDep, setModalImportPorDep] = useState(false);
+  const [modalEncontrarCnpjs, setModalEncontrarCnpjs] = useState(false);
 
   const [selectedIds, setSelectedIds] = useState<UUID[]>([]);
   const selectAllRef = useRef<HTMLInputElement | null>(null);
@@ -167,6 +169,16 @@ export default function EmpresasPage() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            {canManage && (
+              <button
+                onClick={() => setModalEncontrarCnpjs(true)}
+                className="inline-flex items-center gap-2 rounded-xl border-2 border-violet-200 text-violet-700 px-3 sm:px-4 py-2 sm:py-2.5 text-sm font-bold hover:bg-violet-50 transition"
+                title="Consulta a Receita e preenche os dados das empresas com CNPJ"
+              >
+                <ScanSearch size={18} />
+                <span className="hidden sm:inline">Encontrar</span> CNPJs
+              </button>
+            )}
             {canManage && (
               <button
                 onClick={() => setModalImportPorDep(true)}
@@ -519,6 +531,7 @@ export default function EmpresasPage() {
       {empresaEdit && <ModalCadastrarEmpresa empresa={empresaEdit} onClose={() => setEmpresaEdit(null)} />}
       {empresaView && <ModalDetalhesEmpresa empresa={empresaView} onClose={() => setEmpresaView(null)} />}
       {modalImportPorDep && <ModalImportarResponsabilidadesPorDep onClose={() => setModalImportPorDep(false)} />}
+      {modalEncontrarCnpjs && <ModalEncontrarCnpjs onClose={() => setModalEncontrarCnpjs(false)} />}
 
       <ConfirmModal
         open={!!confirmDelete}

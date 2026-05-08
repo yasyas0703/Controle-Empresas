@@ -141,6 +141,34 @@ export const FISCAL_SN_DEPT_NOME = 'fiscal - sn';
 
 export type ChecklistFiscalStatus = 'feito' | 'sem_obrigacao' | null;
 
+/**
+ * Status de entrega rastreado via polling da inbox Gmail da remetente.
+ *   'pendente' = enviado, ainda não verificamos se entregou ou bounceou
+ *   'entregue' = nenhum bounce encontrado após X horas → presumimos entregue
+ *   'bounced'  = encontramos NDR (Mail Delivery Failure) na caixa da remetente
+ */
+export type ChecklistEntregaStatus = 'pendente' | 'entregue' | 'bounced';
+
+/** Evento gravado em `checklist_fiscal.envios_historico` quando o anexo é enviado por email. */
+export interface ChecklistEnvioEvento {
+  id: UUID;
+  enviadoEm: string;            // ISO
+  enviadoPorId?: UUID | null;
+  enviadoPorNome?: string;
+  remetenteEmail?: string;      // conta Gmail da usuária que enviou
+  destinatarios: string[];
+  arquivoNome?: string;
+  sucesso: boolean;
+  erro?: string;
+  // ─── Tracking de entrega (preenchido pela rotina de verificação) ───
+  gmailMessageId?: string;      // id retornado por gmail.users.messages.send
+  gmailThreadId?: string;       // threadId — usado pra fazer match com bounces
+  entregaStatus?: ChecklistEntregaStatus;
+  entregaVerificadaEm?: string; // ISO — última vez que a verificação rodou
+  bounceMotivo?: string;        // mensagem extraída do NDR
+  bounceDestinatarios?: string[]; // quais dos destinatarios bounceram (pode ser parcial)
+}
+
 export interface ChecklistFiscalItem {
   id: UUID;
   empresaId: UUID;
@@ -155,6 +183,7 @@ export interface ChecklistFiscalItem {
   arquivoUrl?: string;   // caminho no Storage (bucket "documentos")
   arquivoNome?: string;  // nome original do arquivo
   arquivoHistorico?: HistoricoVencimentoItem[]; // eventos: anexar / substituir / remover
+  enviosHistorico?: ChecklistEnvioEvento[];     // eventos: envio do anexo por email
   criadoEm: string;
   atualizadoEm: string;
 }

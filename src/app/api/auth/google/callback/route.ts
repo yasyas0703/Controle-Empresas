@@ -17,14 +17,17 @@ export async function GET(req: Request) {
   const state = url.searchParams.get('state');
   const oauthError = url.searchParams.get('error');
 
+  // Pré-extrai o returnTo do state pra usar nos redirects de erro também.
+  // Se state for inválido, cai no fallback /obrigacoes.
+  const verified = state ? verifyState(state) : null;
+  const target = verified?.returnTo ?? '/obrigacoes';
+
   if (oauthError) {
-    return redirectTo('/obrigacoes', { gmail: 'error', reason: oauthError });
+    return redirectTo(target, { gmail: 'error', reason: oauthError });
   }
   if (!code || !state) {
-    return redirectTo('/obrigacoes', { gmail: 'error', reason: 'missing_params' });
+    return redirectTo(target, { gmail: 'error', reason: 'missing_params' });
   }
-
-  const verified = verifyState(state);
   if (!verified) {
     return redirectTo('/obrigacoes', { gmail: 'error', reason: 'invalid_state' });
   }
@@ -36,14 +39,14 @@ export async function GET(req: Request) {
       // Usuário já havia autorizado antes — Google só manda refresh na primeira vez.
       // Solução: o consent com prompt=consent força a re-emissão. Se chegou aqui sem refresh,
       // significa algo deu errado no prompt.
-      return redirectTo('/obrigacoes', { gmail: 'error', reason: 'no_refresh_token' });
+      return redirectTo(target, { gmail: 'error', reason: 'no_refresh_token' });
     }
 
     oauth2.setCredentials(tokens);
     const oauth2api = google.oauth2({ version: 'v2', auth: oauth2 });
     const { data: userInfo } = await oauth2api.userinfo.get();
     if (!userInfo.email) {
-      return redirectTo('/obrigacoes', { gmail: 'error', reason: 'no_email' });
+      return redirectTo(target, { gmail: 'error', reason: 'no_email' });
     }
 
     const admin = getSupabaseAdmin();
@@ -66,12 +69,12 @@ export async function GET(req: Request) {
       );
 
     if (error) {
-      return redirectTo('/obrigacoes', { gmail: 'error', reason: 'db_error' });
+      return redirectTo(target, { gmail: 'error', reason: 'db_error' });
     }
 
-    return redirectTo('/obrigacoes', { gmail: 'connected', email: userInfo.email });
+    return redirectTo(target, { gmail: 'connected', email: userInfo.email });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'unknown';
-    return redirectTo('/obrigacoes', { gmail: 'error', reason: 'exchange_failed', detail: message.slice(0, 100) });
+    return redirectTo(target, { gmail: 'error', reason: 'exchange_failed', detail: message.slice(0, 100) });
   }
 }

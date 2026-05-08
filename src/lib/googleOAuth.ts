@@ -8,6 +8,11 @@ const ENC_KEY_HEX = process.env.GMAIL_TOKEN_ENCRYPTION_KEY;
 
 export const GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.send',
+  // Necessário pra detecção de bounces — lemos a inbox procurando por
+  // emails de mailer-daemon que correspondem a envios feitos pelo sistema.
+  // A leitura é feita só com query restrita (`from:mailer-daemon` + thread
+  // de envios nossos), não acessa correspondência pessoal.
+  'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
 ];
@@ -55,15 +60,26 @@ export function decryptToken(payload: string): string {
   return pt.toString('utf8');
 }
 
-export function signState(userId: string, ttlSeconds = 600): string {
+/**
+ * `returnTo` é o caminho relativo (ex: '/vencimentos-fiscais/checklist') pro
+ * qual o callback do OAuth deve redirecionar após sucesso/erro. Vai assinado
+ * no state, então não dá pra forjar. Validado no connect (deve ser path
+ * relativo iniciando em '/').
+ */
+export function signState(userId: string, ttlSeconds = 600, returnTo?: string): string {
   const key = getEncKey();
-  const payload = { u: userId, n: crypto.randomBytes(8).toString('hex'), e: Math.floor(Date.now() / 1000) + ttlSeconds };
+  const payload: Record<string, unknown> = {
+    u: userId,
+    n: crypto.randomBytes(8).toString('hex'),
+    e: Math.floor(Date.now() / 1000) + ttlSeconds,
+  };
+  if (returnTo && /^\/[A-Za-z0-9_\-/]*$/.test(returnTo)) payload.r = returnTo;
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const sig = crypto.createHmac('sha256', key).update(body).digest('base64url');
   return `${body}.${sig}`;
 }
 
-export function verifyState(state: string): { userId: string } | null {
+export function verifyState(state: string): { userId: string; returnTo?: string } | null {
   try {
     const key = getEncKey();
     const [body, sig] = state.split('.');
@@ -75,7 +91,10 @@ export function verifyState(state: string): { userId: string } | null {
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
     if (!payload.u || typeof payload.u !== 'string') return null;
     if (typeof payload.e !== 'number' || payload.e < Math.floor(Date.now() / 1000)) return null;
-    return { userId: payload.u };
+    const returnTo = typeof payload.r === 'string' && /^\/[A-Za-z0-9_\-/]*$/.test(payload.r)
+      ? payload.r
+      : undefined;
+    return { userId: payload.u, returnTo };
   } catch {
     return null;
   }

@@ -32,8 +32,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
     }
 
+    // Aceita opcionalmente um `returnTo` (path relativo) que será respeitado
+    // pelo callback após a autorização. Sem isso, o callback cai em /obrigacoes.
+    const body = await req.json().catch(() => null) as { returnTo?: string } | null;
+    const returnTo = typeof body?.returnTo === 'string' && /^\/[A-Za-z0-9_\-/]*$/.test(body.returnTo)
+      ? body.returnTo
+      : undefined;
+
     const oauth2 = getOAuthClient();
-    const state = signState(data.user.id);
+    const state = signState(data.user.id, 600, returnTo);
     const authUrl = oauth2.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
