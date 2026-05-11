@@ -3,8 +3,10 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { Clock, LogOut, User } from 'lucide-react';
+import { Clock, LogOut, Moon, Sun, User } from 'lucide-react';
 import { usePortal } from '@/app/portal/PortalContext';
+import { useTheme } from '@/app/context/ThemeContext';
+import { useEffect, useState } from 'react';
 
 type Props = {
   /** Mostrar link "Voltar" no canto esquerdo em vez do logo (páginas internas) */
@@ -14,6 +16,11 @@ type Props = {
 export default function PortalHeader({ backHref }: Props) {
   const router = useRouter();
   const { cliente, empresa, logout } = usePortal();
+  const { theme, toggleTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+  const isDark = mounted && theme === 'dark';
 
   const displayName = empresa?.apelido || empresa?.razaoSocial || 'sua empresa';
 
@@ -28,21 +35,35 @@ export default function PortalHeader({ backHref }: Props) {
         {backHref ? (
           <Link
             href={backHref}
-            className="text-sm font-medium text-emerald-700 hover:underline dark:text-emerald-400"
+            className="text-sm font-medium text-cyan-700 hover:underline dark:text-cyan-400"
           >
             ← Voltar
           </Link>
         ) : (
           <Link href="/portal" className="flex items-center gap-2">
-            <Image src="/triar.png" alt="Triar" width={32} height={32} className="rounded" />
+            <Image src="/triar.png" alt="Triar" width={32} height={32} className="rounded-full" />
             <div className="leading-tight">
-              <p className="text-[10px] uppercase tracking-wide text-slate-500">Portal do Cliente</p>
+              <p className="text-[10px] uppercase tracking-wide text-cyan-600 dark:text-cyan-400">Portal do Cliente</p>
               <p className="text-sm font-semibold">{displayName}</p>
             </div>
           </Link>
         )}
 
         <div className="flex items-center gap-1">
+          <button
+            onClick={toggleTheme}
+            className="flex items-center justify-center rounded-md p-2 text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+            title={isDark ? 'Tema claro' : 'Tema escuro'}
+            aria-label={isDark ? 'Ativar tema claro' : 'Ativar tema escuro'}
+          >
+            {!mounted ? (
+              <span className="inline-block h-4 w-4" />
+            ) : isDark ? (
+              <Sun size={16} className="text-yellow-300" />
+            ) : (
+              <Moon size={16} className="text-cyan-600" />
+            )}
+          </button>
           <Link
             href="/portal/historico"
             className="flex items-center gap-1 rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"

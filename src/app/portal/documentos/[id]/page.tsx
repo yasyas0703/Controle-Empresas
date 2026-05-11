@@ -212,8 +212,8 @@ export default function DocumentoDetalhePage() {
       <main className="mx-auto max-w-3xl px-4 py-6">
         <section className="rounded-lg border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-start gap-3">
-            <div className="rounded-md bg-emerald-50 p-3 dark:bg-emerald-900/30">
-              <FileText size={24} className="text-emerald-700 dark:text-emerald-400" />
+            <div className="rounded-md bg-cyan-50 p-3 dark:bg-cyan-900/30">
+              <FileText size={24} className="text-cyan-700 dark:text-cyan-400" />
             </div>
             <div className="min-w-0 flex-1">
               <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{doc.obrigacao_nome}</h1>
@@ -239,7 +239,7 @@ export default function DocumentoDetalhePage() {
             <button
               onClick={handleBaixar}
               disabled={baixando}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-emerald-700 disabled:opacity-60"
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-cyan-600 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-cyan-700 disabled:opacity-60"
             >
               {baixando ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Baixar guia
             </button>

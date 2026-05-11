@@ -222,7 +222,7 @@ function FiltroTab({ ativo, onClick, children }: { ativo: boolean; onClick: () =
       onClick={onClick}
       className={`flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
         ativo
-          ? 'bg-emerald-600 text-white shadow-sm hover:bg-emerald-700'
+          ? 'bg-cyan-600 text-white shadow-sm hover:bg-cyan-700'
           : 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
       } border border-slate-200 dark:border-slate-800`}
     >
@@ -238,7 +238,7 @@ function DocumentoCard({ doc }: { doc: Documento }) {
   return (
     <Link
       href={`/portal/documentos/${doc.id}`}
-      className="block rounded-lg border border-slate-200 bg-white p-4 transition hover:border-emerald-300 hover:shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:hover:border-emerald-700"
+      className="block rounded-lg border border-slate-200 bg-white p-4 transition hover:border-cyan-300 hover:shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:hover:border-cyan-700"
     >
       <div className="flex items-start gap-3">
         <div className="mt-0.5 rounded-md bg-slate-100 p-2 dark:bg-slate-800">

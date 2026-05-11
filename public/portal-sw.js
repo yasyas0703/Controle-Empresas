@@ -4,7 +4,7 @@
 //   - Exibir notificação quando uma push chega
 //   - Abrir a guia certa quando o usuário clica na notificação
 
-const SW_VERSION = 'portal-v1';
+const SW_VERSION = 'portal-v2';
 
 self.addEventListener('install', () => {
   // Ativa o novo SW imediatamente, sem esperar a aba fechar
@@ -27,10 +27,15 @@ self.addEventListener('push', (event) => {
   }
 
   const title = data.title || 'Triar Contabilidade';
+  // Caminhos absolutos para o Android renderizar de forma confiável
+  const origin = self.location.origin;
+  const iconUrl = data.icon ? new URL(data.icon, origin).toString() : `${origin}/triar.png`;
   const options = {
     body: data.body || 'Nova atualização disponível.',
-    icon: data.icon || '/triar.png',
-    badge: '/triar.png',
+    icon: iconUrl,
+    // Badge na status bar — Android usa só o canal alpha (silhueta).
+    // Sem PNG monocromático separado, reusamos o ícone normal.
+    badge: iconUrl,
     tag: data.tag,
     data: {
       url: data.url || '/portal',

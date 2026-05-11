@@ -121,26 +121,26 @@ export default function InstallPrompt() {
 
   // Android / Chrome desktop com beforeinstallprompt disponível
   return (
-    <div className="mx-4 mt-4 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm dark:border-indigo-900 dark:bg-indigo-950/40">
+    <div className="mx-4 mt-4 rounded-lg border border-cyan-200 bg-cyan-50 p-3 text-sm dark:border-cyan-900 dark:bg-cyan-950/40">
       <div className="flex items-start gap-3">
-        <Download size={18} className="mt-0.5 shrink-0 text-indigo-600" />
+        <Download size={18} className="mt-0.5 shrink-0 text-cyan-600" />
         <div className="flex-1">
-          <p className="font-medium text-indigo-900 dark:text-indigo-200">
+          <p className="font-medium text-cyan-900 dark:text-cyan-200">
             Instalar o app no celular
           </p>
-          <p className="mt-0.5 text-xs text-indigo-800 dark:text-indigo-300">
+          <p className="mt-0.5 text-xs text-cyan-800 dark:text-cyan-300">
             Acesse o portal direto da tela inicial e receba avisos sem abrir o navegador.
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               onClick={instalarAndroid}
-              className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+              className="rounded-md bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-cyan-700"
             >
               Instalar app
             </button>
             <button
               onClick={dispensar}
-              className="rounded-md px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:text-indigo-300 dark:hover:bg-indigo-900/50"
+              className="rounded-md px-3 py-1.5 text-xs font-medium text-cyan-700 hover:bg-cyan-100 dark:text-cyan-300 dark:hover:bg-cyan-900/50"
             >
               Agora não
             </button>

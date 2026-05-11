@@ -147,19 +147,19 @@ export default function PushPrompt() {
   async function garantirSubscription() {
     let reg: ServiceWorkerRegistration;
     try {
-      setPassoAtual('1/4 Registrando service worker...');
+      setPassoAtual('Etapa 1 de 4');
       reg = await comTimeout(
         navigator.serviceWorker.register('/portal-sw.js', { scope: '/portal/' }),
         15000,
         'register',
       );
-      setPassoAtual('2/4 Esperando SW ativar...');
+      setPassoAtual('Etapa 2 de 4');
       await comTimeout(esperarAtivacao(reg), 15000, 'ativação');
     } catch (err) {
       throw new Error(`SW falhou: ${(err as Error)?.message ?? 'desconhecido'}`);
     }
 
-    setPassoAtual('3/4 Subscrevendo no push (pode demorar)...');
+    setPassoAtual('Etapa 3 de 4');
     let sub = await reg.pushManager.getSubscription();
     if (!sub) {
       try {
@@ -176,7 +176,7 @@ export default function PushPrompt() {
       }
     }
 
-    setPassoAtual('4/4 Salvando inscrição no servidor...');
+    setPassoAtual('Etapa 4 de 4');
     const { data: session } = await supabasePortal.auth.getSession();
     const token = session.session?.access_token;
     if (!token) throw new Error('Sessão sem token — faça login de novo.');
@@ -205,7 +205,7 @@ export default function PushPrompt() {
     setErroVisivel(null);
     setPassoAtual(null);
     try {
-      setPassoAtual('Pedindo permissão...');
+      setPassoAtual('Conferindo permissão...');
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') {
         setErroVisivel(`Permissão: ${perm}. Habilite nas configs do navegador.`);
@@ -258,18 +258,18 @@ export default function PushPrompt() {
   }
 
   return (
-    <div className="mx-4 mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900 dark:bg-emerald-950/40">
+    <div className="mx-4 mt-4 rounded-lg border border-cyan-200 bg-cyan-50 p-3 text-sm dark:border-cyan-900 dark:bg-cyan-950/40">
       <div className="flex items-start gap-3">
-        <Bell size={18} className="mt-0.5 shrink-0 text-emerald-600" />
+        <Bell size={18} className="mt-0.5 shrink-0 text-cyan-600" />
         <div className="flex-1">
-          <p className="font-medium text-emerald-900 dark:text-emerald-200">
+          <p className="font-medium text-cyan-900 dark:text-cyan-200">
             Quer receber avisos quando chegar uma guia nova?
           </p>
-          <p className="mt-0.5 text-xs text-emerald-800 dark:text-emerald-300">
+          <p className="mt-0.5 text-xs text-cyan-800 dark:text-cyan-300">
             A gente te avisa direto no celular — sem precisar abrir email.
           </p>
           {passoAtual && !erroVisivel && (
-            <div className="mt-2 rounded-md border border-emerald-300 bg-white p-2 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-slate-900 dark:text-emerald-200">
+            <div className="mt-2 rounded-md border border-cyan-300 bg-white p-2 text-xs text-cyan-800 dark:border-cyan-800 dark:bg-slate-900 dark:text-cyan-200">
               <strong>Em andamento:</strong> {passoAtual}
             </div>
           )}
@@ -282,13 +282,13 @@ export default function PushPrompt() {
             <button
               onClick={aceitar}
               disabled={enviando}
-              className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+              className="rounded-md bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-cyan-700 disabled:opacity-60"
             >
               {enviando ? 'Ativando...' : erroVisivel ? 'Tentar de novo' : 'Ativar notificações'}
             </button>
             <button
               onClick={dispensar}
-              className="rounded-md px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 dark:text-emerald-300 dark:hover:bg-emerald-900/50"
+              className="rounded-md px-3 py-1.5 text-xs font-medium text-cyan-700 hover:bg-cyan-100 dark:text-cyan-300 dark:hover:bg-cyan-900/50"
             >
               {erroVisivel ? 'Fechar' : 'Agora não'}
             </button>

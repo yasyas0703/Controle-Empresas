@@ -194,7 +194,7 @@ function FiltroChip({ ativo, onClick, children }: { ativo: boolean; onClick: () 
       onClick={onClick}
       className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition ${
         ativo
-          ? 'border-emerald-600 bg-emerald-600 text-white'
+          ? 'border-cyan-600 bg-cyan-600 text-white'
           : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
       }`}
     >
@@ -209,7 +209,7 @@ function EventoItem({ acesso }: { acesso: Acesso }) {
   const hora = new Date(acesso.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
   const conteudo = (
-    <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 transition hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-emerald-700">
+    <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 transition hover:border-cyan-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-cyan-700">
       <div className={`mt-0.5 rounded-md bg-slate-100 p-2 dark:bg-slate-800 ${info.cor}`}>
         <Icon size={16} />
       </div>
