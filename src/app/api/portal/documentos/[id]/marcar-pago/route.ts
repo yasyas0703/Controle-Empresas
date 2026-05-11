@@ -85,7 +85,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     // Log
-    void admin.from('portal_acessos').insert({
+    await admin.from('portal_acessos').insert({
       cliente_id: userId,
       documento_id: documentoId,
       acao: body.acao === 'marcar' ? 'marcou_pago' : 'desmarcou_pago',

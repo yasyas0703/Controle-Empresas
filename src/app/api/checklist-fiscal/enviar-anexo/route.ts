@@ -330,7 +330,7 @@ export async function POST(req: Request) {
 
             if (clienteRow?.id) {
               const competenciaLabel = formatComp(body.mes);
-              void sendPushToCliente(clienteRow.id, {
+              await sendPushToCliente(clienteRow.id, {
                 title: `Nova guia: ${body.obrigacao}`,
                 body: `Competência ${competenciaLabel}. Toque para abrir.`,
                 url: `/portal/documentos/${portalDocumentoId}`,
