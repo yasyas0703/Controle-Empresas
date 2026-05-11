@@ -15,8 +15,10 @@ function getBearerToken(req: Request): string | null {
 
 /** Tempo mínimo (ms) entre o envio e a confirmação automática de "entregue".
  *  Damos esse buffer pra que bounces atrasados (que podem chegar até alguns
- *  minutos depois do envio) não sejam erroneamente marcados como entregues. */
-const ENTREGA_GRACE_MS = 15 * 60 * 1000; // 15 minutos
+ *  minutos depois do envio) não sejam erroneamente marcados como entregues.
+ *  3 min cobre a maioria dos bounces do Gmail (que voltam em segundos) sem
+ *  deixar o "Aguardando confirmação" preso por muito tempo. */
+const ENTREGA_GRACE_MS = 3 * 60 * 1000; // 3 minutos
 
 /** Quantos dias pra trás varremos a inbox em busca de bounces. */
 const SCAN_LOOKBACK_DAYS = 14;

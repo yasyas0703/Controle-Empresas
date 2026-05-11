@@ -446,6 +446,9 @@ export default function ChecklistFiscalPage() {
     setArqTarget({ empresa, obrigacao });
     setArqPreview(false);
     setArqSignedUrl(null);
+    // Recarrega o mês em background pra pegar atualizações de status
+    // (pixel de abertura, bounces) que aconteceram desde o último load.
+    void carregar(mes);
   };
 
   const fazerUploadArquivo = async (file: File) => {
@@ -556,8 +559,11 @@ export default function ChecklistFiscalPage() {
         }
         return;
       }
-      // Recarrega items pro mês atual pra refletir entrega/bounce no modal
-      if (r.entregues > 0 || r.bounced > 0) {
+      // Recarrega items pro mês atual pra refletir entrega/bounce no modal.
+      // Quando o usuário clica manualmente em "Verificar entregas", sempre
+      // recarrega — o pixel pode ter promovido envios pra entregue sem
+      // que o endpoint relate (ele pula envios já finalizados).
+      if (!silencioso || r.entregues > 0 || r.bounced > 0) {
         await carregar(mes);
       }
       if (!silencioso) {
