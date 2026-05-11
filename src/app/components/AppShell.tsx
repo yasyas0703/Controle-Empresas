@@ -48,7 +48,7 @@ const nav: NavItem[] = [
   { href: '/servicos', label: 'Serviços', icon: Briefcase },
   { href: '/tags', label: 'Tags', icon: Tag },
   { href: '/usuarios', label: 'Usuários', icon: Users },
-  { href: '/clientes-portal', label: 'Clientes do Portal', icon: Smartphone },
+  { href: '/clientes-portal', label: 'Clientes do Portal', icon: Smartphone, emailOnly: 'yasjean07@gmail.com' },
   { href: '/departamentos', label: 'Departamentos', icon: Layers },
   { href: '/analises', label: 'Análises', icon: BarChart3 },
   { href: '/historico', label: 'Histórico', icon: ClipboardList },
