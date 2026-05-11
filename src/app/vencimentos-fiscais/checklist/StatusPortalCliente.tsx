@@ -93,14 +93,7 @@ export default function StatusPortalCliente({ checklistId }: { checklistId: stri
         <Smartphone size={12} /> Atividade no Portal do Cliente
       </div>
 
-      {ativo ? (
-        <CardDocumento doc={ativo} ativo />
-      ) : (
-        <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-600">
-          Nenhum envio ativo no portal — o cliente não vê nenhuma guia atual aqui.
-          {removidos.length > 0 && ' Veja abaixo o histórico de envios anteriores.'}
-        </div>
-      )}
+      {ativo && <CardDocumento doc={ativo} ativo />}
 
       {removidos.length > 0 && (
         <details className="rounded-xl border border-slate-200 bg-white p-2">

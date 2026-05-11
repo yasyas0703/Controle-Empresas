@@ -896,6 +896,12 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     // Login bem-sucedido -- limpar tentativas
     loginAttemptsRef.current = [];
 
+    // Cookie de "passe interno" pra middleware liberar paths do admin
+    if (typeof document !== 'undefined') {
+      const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+      document.cookie = `triar-staff=1; path=/; max-age=2592000; SameSite=Lax${secure}`;
+    }
+
     const userId = data.session.user.id;
     setLoading(true);
     let me: { nome?: string } | null = null;
@@ -919,6 +925,10 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     pushLog({ action: 'logout', entity: 'usuario', entityId: state.currentUserId, message: `Logout` });
     supabase.auth.signOut().catch((err) => console.error('Erro ao sair:', err));
+    // Limpa o cookie de passe interno (volta a ficar atrás da middleware)
+    if (typeof document !== 'undefined') {
+      document.cookie = 'triar-staff=; path=/; max-age=0; SameSite=Lax';
+    }
     setState((prev) => ({ ...prev, currentUserId: null }));
   };
   // -- Serviços --
