@@ -44,6 +44,7 @@ export default function PushPrompt() {
     | 'dispensado'
   >('loading');
   const [enviando, setEnviando] = useState(false);
+  const [erroVisivel, setErroVisivel] = useState<string | null>(null);
 
   useEffect(() => {
     // Suporte do browser
@@ -89,23 +90,32 @@ export default function PushPrompt() {
   }, []);
 
   async function garantirSubscription() {
-    const reg = await navigator.serviceWorker.register('/portal-sw.js', { scope: '/portal/' });
-    await navigator.serviceWorker.ready;
+    let reg: ServiceWorkerRegistration;
+    try {
+      reg = await navigator.serviceWorker.register('/portal-sw.js', { scope: '/portal/' });
+      await navigator.serviceWorker.ready;
+    } catch (err) {
+      throw new Error(`SW falhou: ${(err as Error)?.message ?? 'desconhecido'}`);
+    }
 
     let sub = await reg.pushManager.getSubscription();
     if (!sub) {
-      sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC),
-      });
+      try {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC),
+        });
+      } catch (err) {
+        throw new Error(`subscribe falhou: ${(err as Error)?.message ?? 'VAPID inválido?'}`);
+      }
     }
 
     const { data: session } = await supabasePortal.auth.getSession();
     const token = session.session?.access_token;
-    if (!token) return;
+    if (!token) throw new Error('Sessão sem token — faça login de novo.');
 
     const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
-    await fetch('/api/portal/push/subscribe', {
+    const res = await fetch('/api/portal/push/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
@@ -113,20 +123,29 @@ export default function PushPrompt() {
         keys: { p256dh: json.keys?.p256dh, auth: json.keys?.auth },
       }),
     });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({} as { error?: string }));
+      throw new Error(`API ${res.status}: ${errBody.error ?? 'falha ao salvar.'}`);
+    }
   }
 
   async function aceitar() {
     setEnviando(true);
+    setErroVisivel(null);
     try {
       const perm = await Notification.requestPermission();
-      if (perm === 'granted') {
-        await garantirSubscription();
+      if (perm !== 'granted') {
+        setErroVisivel(`Permissão: ${perm}. Habilite nas configs do navegador.`);
+        return;
       }
+      await garantirSubscription();
+      setEstado('dispensado');
     } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro inesperado';
       console.error('[PushPrompt] erro ao ativar push:', err);
+      setErroVisivel(msg);
     } finally {
       setEnviando(false);
-      setEstado('dispensado');
     }
   }
 
@@ -175,19 +194,24 @@ export default function PushPrompt() {
           <p className="mt-0.5 text-xs text-emerald-800 dark:text-emerald-300">
             A gente te avisa direto no celular — sem precisar abrir email.
           </p>
+          {erroVisivel && (
+            <div className="mt-2 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+              <strong>Falha ao ativar:</strong> {erroVisivel}
+            </div>
+          )}
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               onClick={aceitar}
               disabled={enviando}
               className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
             >
-              {enviando ? 'Ativando...' : 'Ativar notificações'}
+              {enviando ? 'Ativando...' : erroVisivel ? 'Tentar de novo' : 'Ativar notificações'}
             </button>
             <button
               onClick={dispensar}
               className="rounded-md px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 dark:text-emerald-300 dark:hover:bg-emerald-900/50"
             >
-              Agora não
+              {erroVisivel ? 'Fechar' : 'Agora não'}
             </button>
           </div>
         </div>
