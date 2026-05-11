@@ -83,6 +83,13 @@ export async function GET(
       ? evento.aberto_em
       : nowIso;
 
+    // Se o email foi aberto, foi entregue. Promove pendente→entregue
+    // pra não ficar mostrando "Aguardando confirmação" pra sempre.
+    const statusAtual = evento.entrega_status ?? evento.entregaStatus;
+    const statusPromovido = statusAtual === 'bounced' || statusAtual === 'entregue'
+      ? statusAtual
+      : 'entregue';
+
     envios[idx] = {
       ...evento,
       aberto_em: primeiraAbertura,
@@ -90,6 +97,8 @@ export async function GET(
       aberturas: aberturasAtual + 1,
       aberto_user_agent: ua,
       aberto_ip: ip,
+      entrega_status: statusPromovido,
+      ...(statusAtual !== statusPromovido ? { entrega_verificada_em: nowIso } : {}),
     };
 
     // Best-effort: race entre múltiplos hits concorrentes pode perder uma

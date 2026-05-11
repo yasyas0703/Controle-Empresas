@@ -802,9 +802,10 @@ export default function ChecklistFiscalPage() {
               item: aplica ? items.get(buildKey(empresa.id, obrigacao)) : undefined,
             };
           });
-        // "sem_obrigacao" sai do denominador (a empresa não tem essa obrigação no mês)
-        const aplicaveis = cells.filter((c) => c.aplica && c.item?.status !== 'sem_obrigacao');
-        const feitas = aplicaveis.filter((c) => c.item?.concluido).length;
+        // "sem_obrigacao" (X) conta como feito: a usuária marcou X porque
+        // não tinha guia naquele mês, então não há nada a fazer.
+        const aplicaveis = cells.filter((c) => c.aplica);
+        const feitas = aplicaveis.filter((c) => c.item?.concluido || c.item?.status === 'sem_obrigacao').length;
         const total = aplicaveis.length;
         const progresso = total === 0 ? 0 : (feitas / total) * 100;
         return { empresa, respId, cells, feitas, total, progresso };
@@ -876,13 +877,16 @@ export default function ChecklistFiscalPage() {
     const empresasPendentes = linhas.filter((l) => l.feitas === 0).length;
     const empresasParciais = linhas.filter((l) => l.feitas > 0 && l.feitas < l.total).length;
     const progressoGeral = totalCells === 0 ? 0 : (feitasCells / totalCells) * 100;
-    // por obrigação — total considera empresas onde a obrigação se aplica E não foi marcada como "sem obrigação no mês"
+    // por obrigação — X (sem_obrigacao) conta como feito (sem guia naquele mês = resolvido)
     const porObrigacao = obrigacoesAba.map((obr) => {
       const aplicaveis = linhas.filter((l) => {
         const c = l.cells.find((c) => c.obrigacao === obr);
-        return c?.aplica && c.item?.status !== 'sem_obrigacao';
+        return c?.aplica;
       });
-      const feitas = aplicaveis.filter((l) => l.cells.find((c) => c.obrigacao === obr)?.item?.concluido).length;
+      const feitas = aplicaveis.filter((l) => {
+        const c = l.cells.find((c) => c.obrigacao === obr);
+        return c?.item?.concluido || c?.item?.status === 'sem_obrigacao';
+      }).length;
       const total = aplicaveis.length;
       return { obrigacao: obr, feitas, total, pct: total === 0 ? 0 : (feitas / total) * 100 };
     });
@@ -1876,7 +1880,7 @@ export default function ChecklistFiscalPage() {
                                           <MailX size={9} /> Não entregue
                                         </span>
                                       )}
-                                      {(ev.entregaStatus === 'pendente' || !ev.entregaStatus) && (
+                                      {(ev.entregaStatus === 'pendente' || !ev.entregaStatus) && (ev.aberturas ?? 0) === 0 && (
                                         <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 border border-amber-300 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
                                           <Clock size={9} /> Aguardando confirmação
                                         </span>
