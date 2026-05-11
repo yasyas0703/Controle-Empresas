@@ -64,7 +64,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   // Portal do cliente roda em rotas /portal/* com auth/layout próprios — não embrulhar com a shell interna.
-  if (pathname?.startsWith('/portal')) {
+  // Raiz "/" também não usa AppShell — deve ficar 100% invisível pra quem chega ali.
+  if (pathname === '/' || pathname?.startsWith('/portal')) {
     return <>{children}</>;
   }
 

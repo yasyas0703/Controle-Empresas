@@ -651,6 +651,17 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
     let initialLoadDone = false;
 
+    // Helper: garante o cookie de passe interno quando há sessão Supabase.
+    // Cobre o caso de usuário com sessão pré-existente (antes do deploy que adicionou o cookie).
+    const ensureStaffCookie = (): boolean => {
+      if (typeof document === 'undefined') return false;
+      const hasCookie = document.cookie.split(';').some((c) => c.trim().startsWith('triar-staff=1'));
+      if (hasCookie) return false;
+      const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+      document.cookie = `triar-staff=1; path=/; max-age=2592000; SameSite=Lax${secure}`;
+      return true;
+    };
+
     supabase.auth
       .getSession()
       .then(async ({ data, error }) => {
@@ -658,6 +669,13 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
         if (error) console.error('Erro ao obter sessão:', error);
         const userId = data.session?.user?.id ?? null;
         if (userId) {
+          // Se a sessão existe mas o cookie não foi setado ainda, seta e recarrega
+          // (necessário pra middleware liberar rotas admin).
+          const wasMissing = ensureStaffCookie();
+          if (wasMissing && typeof window !== 'undefined' && !window.location.pathname.startsWith('/portal')) {
+            window.location.reload();
+            return;
+          }
           setLoading(true);
           initialLoadDone = true;
           await Promise.all([
