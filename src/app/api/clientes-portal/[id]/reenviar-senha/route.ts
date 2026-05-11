@@ -59,9 +59,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ error: 'Cliente está desativado. Reative antes de reenviar.' }, { status: 400 });
     }
 
-    const empresaRaw = Array.isArray((clienteRow as { empresa: unknown }).empresa)
-      ? ((clienteRow as { empresa: Array<{ razao_social: string | null; apelido: string | null; codigo: string | null }> }).empresa[0] ?? null)
-      : ((clienteRow as { empresa: { razao_social: string | null; apelido: string | null; codigo: string | null } | null }).empresa ?? null);
+    type EmpresaShape = { razao_social: string | null; apelido: string | null; codigo: string | null };
+    const empresaField = (clienteRow as unknown as { empresa: EmpresaShape | EmpresaShape[] | null }).empresa;
+    const empresaRaw: EmpresaShape | null = Array.isArray(empresaField)
+      ? (empresaField[0] ?? null)
+      : (empresaField ?? null);
     const empresaNome = empresaRaw?.razao_social || empresaRaw?.apelido || empresaRaw?.codigo || 'Sua empresa';
 
     // Gera nova senha + atualiza no Auth

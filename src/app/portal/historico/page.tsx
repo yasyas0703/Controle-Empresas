@@ -80,11 +80,12 @@ export default function HistoricoPage() {
         console.error('Erro ao carregar histórico:', error);
         setAcessos([]);
       } else {
-        // Supabase pode retornar `documento` como array dependendo do schema.
+        type DocShape = { id: string; obrigacao_nome: string; competencia: string | null };
         const normalizado = (data ?? []).map((row) => {
-          const doc = Array.isArray((row as { documento: unknown }).documento)
-            ? ((row as { documento: Array<{ id: string; obrigacao_nome: string; competencia: string | null }> }).documento[0] ?? null)
-            : ((row as { documento: { id: string; obrigacao_nome: string; competencia: string | null } | null }).documento ?? null);
+          const docField = (row as unknown as { documento: DocShape | DocShape[] | null }).documento;
+          const doc: DocShape | null = Array.isArray(docField)
+            ? (docField[0] ?? null)
+            : (docField ?? null);
           return { ...row, documento: doc } as Acesso;
         });
         setAcessos(normalizado);

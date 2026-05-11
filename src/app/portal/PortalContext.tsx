@@ -59,9 +59,11 @@ async function fetchClienteEEmpresa(clienteId: string): Promise<{ cliente: Porta
 
   if (error || !data) return null;
 
-  const empresaRaw = Array.isArray((data as { empresa: unknown }).empresa)
-    ? ((data as { empresa: Array<{ id: string; razao_social: string | null; apelido: string | null; cnpj: string | null }> }).empresa[0] ?? null)
-    : ((data as { empresa: { id: string; razao_social: string | null; apelido: string | null; cnpj: string | null } | null }).empresa ?? null);
+  type EmpresaShape = { id: string; razao_social: string | null; apelido: string | null; cnpj: string | null };
+  const empresaField = (data as unknown as { empresa: EmpresaShape | EmpresaShape[] | null }).empresa;
+  const empresaRaw: EmpresaShape | null = Array.isArray(empresaField)
+    ? (empresaField[0] ?? null)
+    : (empresaField ?? null);
 
   const cliente: PortalCliente = {
     id: data.id,

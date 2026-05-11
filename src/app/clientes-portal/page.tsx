@@ -77,12 +77,12 @@ export default function ClientesPortalPage() {
         if (filtro === 'sem-acesso' && cliente) return false;
         if (filtro === 'inativos' && (!cliente || cliente.ativo)) return false;
         if (buscaLower) {
-          const haystack = `${e.codigo} ${e.razaoSocial ?? ''} ${e.apelido ?? ''} ${e.cnpj ?? ''} ${cliente?.email ?? ''}`.toLowerCase();
+          const haystack = `${e.codigo} ${e.razao_social ?? ''} ${e.apelido ?? ''} ${e.cnpj ?? ''} ${cliente?.email ?? ''}`.toLowerCase();
           if (!haystack.includes(buscaLower)) return false;
         }
         return true;
       })
-      .sort((a, b) => (a.razaoSocial ?? a.codigo ?? '').localeCompare(b.razaoSocial ?? b.codigo ?? ''));
+      .sort((a, b) => (a.razao_social ?? a.codigo ?? '').localeCompare(b.razao_social ?? b.codigo ?? ''));
   }, [empresas, clientesPorEmpresa, busca, filtro]);
 
   const contadores = useMemo(() => {
@@ -228,7 +228,7 @@ export default function ClientesPortalPage() {
                   <tr key={e.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
                     <td className="px-3 py-2">
                       <div className="font-medium text-slate-800 dark:text-slate-200">
-                        {e.apelido || e.razaoSocial || e.codigo}
+                        {e.apelido || e.razao_social || e.codigo}
                       </div>
                       <div className="text-[11px] text-slate-500">{e.codigo} {e.cnpj ? `· ${e.cnpj}` : ''}</div>
                     </td>
@@ -302,7 +302,7 @@ export default function ClientesPortalPage() {
         <ModalCriarAcesso
           empresaId={criarTarget.empresaId}
           emailInicial={criarTarget.emailInicial}
-          empresaNome={empresas.find((e) => e.id === criarTarget.empresaId)?.razaoSocial || ''}
+          empresaNome={empresas.find((e) => e.id === criarTarget.empresaId)?.razao_social || ''}
           onClose={() => setCriarTarget(null)}
           onSuccess={(novo) => {
             setClientes((prev) => [novo, ...prev]);

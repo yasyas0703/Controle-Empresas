@@ -202,6 +202,7 @@ export default function DocumentoDetalhePage() {
       </>
     );
   }
+  if (!doc) return null;
 
   const naoPago = !doc.marcado_pago_em;
 
