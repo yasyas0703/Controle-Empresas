@@ -57,14 +57,20 @@ export function proxy(request: NextRequest) {
     }
   }
 
-  // 2. Esconder o admin de clientes: tudo que não é público exige cookie de staff
+  // 2. Esconder o admin de clientes: tudo que não é público exige cookie de staff.
+  //    Sem cookie, devolve 404 — não revela que existe um admin ou portal.
   if (!isPublicPath(pathname)) {
     const cookie = request.cookies.get(STAFF_COOKIE);
     if (!cookie || cookie.value !== '1') {
+      // APIs: 404 em JSON
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      }
+      // Páginas: rewrite pra raiz (que chama notFound() e renderiza a not-found.tsx)
       const url = request.nextUrl.clone();
-      url.pathname = '/portal/login';
+      url.pathname = '/';
       url.search = '';
-      return NextResponse.redirect(url);
+      return NextResponse.rewrite(url);
     }
   }
 

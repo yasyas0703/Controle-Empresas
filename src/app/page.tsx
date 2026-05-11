@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 export default function Home() {
-  redirect('/portal/login');
+  notFound();
 }
