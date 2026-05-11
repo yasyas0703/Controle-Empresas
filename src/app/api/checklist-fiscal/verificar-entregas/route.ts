@@ -13,13 +13,6 @@ function getBearerToken(req: Request): string | null {
   return m?.[1] ?? null;
 }
 
-/** Tempo mínimo (ms) entre o envio e a confirmação automática de "entregue".
- *  Damos esse buffer pra que bounces atrasados (que podem chegar até alguns
- *  minutos depois do envio) não sejam erroneamente marcados como entregues.
- *  3 min cobre a maioria dos bounces do Gmail (que voltam em segundos) sem
- *  deixar o "Aguardando confirmação" preso por muito tempo. */
-const ENTREGA_GRACE_MS = 3 * 60 * 1000; // 3 minutos
-
 /** Quantos dias pra trás varremos a inbox em busca de bounces. */
 const SCAN_LOOKBACK_DAYS = 14;
 
@@ -200,7 +193,6 @@ export async function POST(req: Request) {
     }
 
     // 4. Faz match entre bounces e envios pendentes
-    const agora = Date.now();
     const updatesPorRow = new Map<string, Map<string, { entregaStatus: 'entregue' | 'bounced'; bounceMotivo?: string; bounceDestinatarios?: string[] }>>();
 
     for (const env of pendentes) {
@@ -220,13 +212,10 @@ export async function POST(req: Request) {
         novaEntrega = 'bounced';
         bounceMotivo = matchedBounce.motivo;
         bounceDestinatarios = matchedBounce.enderecosFalha.length > 0 ? matchedBounce.enderecosFalha : undefined;
-      } else {
-        // Sem bounce. Se já passou o grace period, marca como entregue.
-        const tEnvio = new Date(env.enviadoEm).getTime();
-        if (!Number.isNaN(tEnvio) && agora - tEnvio >= ENTREGA_GRACE_MS) {
-          novaEntrega = 'entregue';
-        }
       }
+      // Sem bounce → mantém 'pendente'. A promoção pra 'entregue' acontece
+      // só quando o pixel de abertura dispara (track-open), o que prova que
+      // o destinatário abriu o email. Sem essa prova, deixamos como Enviado.
 
       if (novaEntrega) {
         const inner = updatesPorRow.get(env.rowId) ?? new Map();

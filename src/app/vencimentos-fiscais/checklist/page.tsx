@@ -1876,36 +1876,28 @@ export default function ChecklistFiscalPage() {
                                   {/* Status de entrega só faz sentido se o envio em si foi sucesso */}
                                   {ev.sucesso && (
                                     <>
-                                      {ev.entregaStatus === 'entregue' && (
-                                        <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
-                                          <Check size={9} strokeWidth={3} /> Entregue
-                                        </span>
-                                      )}
-                                      {ev.entregaStatus === 'bounced' && (
+                                      {ev.entregaStatus === 'bounced' ? (
                                         <span className="inline-flex items-center gap-0.5 rounded-full bg-red-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
                                           <MailX size={9} /> Não entregue
                                         </span>
-                                      )}
-                                      {(ev.entregaStatus === 'pendente' || !ev.entregaStatus) && (ev.aberturas ?? 0) === 0 && (
-                                        <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 border border-amber-300 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
-                                          <Clock size={9} /> Aguardando confirmação
-                                        </span>
-                                      )}
-                                      {/* Tracking de abertura (pixel). Só faz sentido se entrega não bounceou. */}
-                                      {ev.entregaStatus !== 'bounced' && (ev.aberturas ?? 0) > 0 && (
+                                      ) : (ev.aberturas ?? 0) > 0 ? (
+                                        <>
+                                          <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                                            <Check size={9} strokeWidth={3} /> Entregue
+                                          </span>
+                                          <span
+                                            className="inline-flex items-center gap-0.5 rounded-full bg-sky-500 px-1.5 py-0.5 text-[9px] font-bold text-white"
+                                            title={`Email aberto ${ev.aberturas}× — última vez em ${ev.abertoEmUltimo ? new Date(ev.abertoEmUltimo).toLocaleString('pt-BR') : '?'}. Atenção: alguns clientes (Apple Mail) pré-carregam imagens automaticamente, então pode haver falso positivo.`}
+                                          >
+                                            <Eye size={9} /> Visualizado{(ev.aberturas ?? 0) > 1 ? ` (${ev.aberturas}×)` : ''}
+                                          </span>
+                                        </>
+                                      ) : (
                                         <span
-                                          className="inline-flex items-center gap-0.5 rounded-full bg-sky-500 px-1.5 py-0.5 text-[9px] font-bold text-white"
-                                          title={`Email aberto ${ev.aberturas}× — última vez em ${ev.abertoEmUltimo ? new Date(ev.abertoEmUltimo).toLocaleString('pt-BR') : '?'}. Atenção: alguns clientes (Apple Mail) pré-carregam imagens automaticamente, então pode haver falso positivo.`}
+                                          className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 border border-amber-300 px-1.5 py-0.5 text-[9px] font-bold text-amber-700"
+                                          title="Email enviado. Status muda para Entregue + Visualizado quando o destinatário abrir o email."
                                         >
-                                          <Eye size={9} /> Visualizado{(ev.aberturas ?? 0) > 1 ? ` (${ev.aberturas}×)` : ''}
-                                        </span>
-                                      )}
-                                      {ev.entregaStatus === 'entregue' && (ev.aberturas ?? 0) === 0 && (
-                                        <span
-                                          className="inline-flex items-center gap-0.5 rounded-full bg-gray-100 border border-gray-300 px-1.5 py-0.5 text-[9px] font-bold text-gray-600"
-                                          title="Nenhuma abertura registrada. Atenção: Gmail/Outlook bloqueiam imagens por padrão, então o cliente pode ter aberto sem disparar o tracker."
-                                        >
-                                          <Eye size={9} /> Não visualizado
+                                          <Clock size={9} /> Enviado
                                         </span>
                                       )}
                                     </>
