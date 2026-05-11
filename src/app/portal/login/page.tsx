@@ -5,6 +5,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
 import Image from 'next/image';
 import { usePortal } from '@/app/portal/PortalContext';
+import InstallPrompt from '@/app/portal/components/InstallPrompt';
 
 export default function PortalLoginPage() {
   const router = useRouter();
@@ -61,7 +62,8 @@ export default function PortalLoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center text-center">
+        <InstallPrompt />
+        <div className="mb-6 mt-4 flex flex-col items-center text-center">
           <Image src="/triar.png" alt="Triar" width={56} height={56} className="rounded" />
           <h1 className="mt-3 text-xl font-semibold text-slate-900 dark:text-slate-100">Portal do Cliente</h1>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Triar Contabilidade</p>

@@ -8,6 +8,7 @@ import { usePortal } from '@/app/portal/PortalContext';
 import { supabasePortal } from '@/lib/supabasePortal';
 import PortalHeader from '@/app/portal/components/PortalHeader';
 import PushPrompt from '@/app/portal/components/PushPrompt';
+import InstallPrompt from '@/app/portal/components/InstallPrompt';
 
 type Documento = {
   id: string;
@@ -146,6 +147,7 @@ export default function PortalHomePage() {
   return (
     <>
       <PortalHeader />
+      <InstallPrompt />
       <PushPrompt />
 
       <main className="mx-auto max-w-3xl px-4 py-6">
