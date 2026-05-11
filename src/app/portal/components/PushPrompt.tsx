@@ -121,6 +121,29 @@ export default function PushPrompt() {
     });
   }
 
+  async function esperarAtivacao(reg: ServiceWorkerRegistration): Promise<void> {
+    if (reg.active) return;
+    const sw = reg.installing || reg.waiting;
+    if (!sw) {
+      // sem worker em nenhum estado — força um update
+      await reg.update();
+      if (reg.active) return;
+      throw new Error('SW sem worker em nenhum estado após update');
+    }
+    await new Promise<void>((resolve, reject) => {
+      const onChange = () => {
+        if (sw.state === 'activated') {
+          sw.removeEventListener('statechange', onChange);
+          resolve();
+        } else if (sw.state === 'redundant') {
+          sw.removeEventListener('statechange', onChange);
+          reject(new Error('SW ficou redundant — provavelmente erro no install'));
+        }
+      };
+      sw.addEventListener('statechange', onChange);
+    });
+  }
+
   async function garantirSubscription() {
     let reg: ServiceWorkerRegistration;
     try {
@@ -131,7 +154,7 @@ export default function PushPrompt() {
         'register',
       );
       setPassoAtual('2/4 Esperando SW ativar...');
-      await comTimeout(navigator.serviceWorker.ready, 15000, 'ready');
+      await comTimeout(esperarAtivacao(reg), 15000, 'ativação');
     } catch (err) {
       throw new Error(`SW falhou: ${(err as Error)?.message ?? 'desconhecido'}`);
     }
