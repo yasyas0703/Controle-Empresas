@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Archive, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, Grid3x3, ListChecks, FileStack, Eye, EyeOff } from 'lucide-react';
+import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Archive, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, Grid3x3, ListChecks, FileStack, Eye, EyeOff, Smartphone } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, isRetRenovado } from '@/app/utils/date';
 import { getDepartamentoSlugDoUsuario, getDepartamentoSlugsDoUsuario, type DepartamentoSlug } from '@/app/utils/departamento';
@@ -48,6 +48,7 @@ const nav: NavItem[] = [
   { href: '/servicos', label: 'Serviços', icon: Briefcase },
   { href: '/tags', label: 'Tags', icon: Tag },
   { href: '/usuarios', label: 'Usuários', icon: Users },
+  { href: '/clientes-portal', label: 'Clientes do Portal', icon: Smartphone },
   { href: '/departamentos', label: 'Departamentos', icon: Layers },
   { href: '/analises', label: 'Análises', icon: BarChart3 },
   { href: '/historico', label: 'Histórico', icon: ClipboardList },
@@ -60,6 +61,17 @@ const BROWSER_NOTIF_SESSION_KEY = 'controle-triar-browser-notifs-shown-v1';
 const FISCAL_NOTIF_TITLE_PREFIX = 'Vencimento fiscal ';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+
+  // Portal do cliente roda em rotas /portal/* com auth/layout próprios — não embrulhar com a shell interna.
+  if (pathname?.startsWith('/portal')) {
+    return <>{children}</>;
+  }
+
+  return <AppShellInner>{children}</AppShellInner>;
+}
+
+function AppShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { currentUser, canManage, canAdmin, isGhost, isPrivileged, logout, login, mostrarAlerta, empresas, notificacoes, marcarNotificacaoLida, marcarTodasLidas, limparNotificacoes, lixeira, authReady, departamentos } = useSistema();
   const [showLogin, setShowLogin] = useState(false);
@@ -390,7 +402,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
     if (i.ghostOnly) return isGhost;
     if (i.href === '/usuarios' || i.href === '/backup' || i.href === '/historico') return canAdmin;
-    if (['/departamentos', '/servicos', '/tags', '/lixeira'].includes(i.href)) return canManage;
+    if (['/departamentos', '/servicos', '/tags', '/lixeira', '/clientes-portal'].includes(i.href)) return canManage;
     // Aba "Empresas" (cadastro/importacao): so admin, gerentes e usuarios do
     // departamento cadastro. Os demais usam o dashboard pra consultar.
     if (i.href === '/empresas') {

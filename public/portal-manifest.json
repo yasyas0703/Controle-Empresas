@@ -1,0 +1,26 @@
+{
+  "name": "Portal Triar Contabilidade",
+  "short_name": "Triar",
+  "description": "Acesse suas guias e documentos enviados pela Triar Contabilidade.",
+  "start_url": "/portal",
+  "scope": "/portal/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#10b981",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/triar.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/triar.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

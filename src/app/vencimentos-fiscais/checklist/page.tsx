@@ -16,6 +16,7 @@ import { sortByPtBr } from '@/lib/sort';
 import { obrigacaoAplicaParaEmpresa, obrigacaoSnAplicaParaEmpresa } from '@/app/utils/regrasVencimentosFiscais';
 import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
 import PainelConectarGmail from '@/app/components/PainelConectarGmail';
+import StatusPortalCliente from '@/app/vencimentos-fiscais/checklist/StatusPortalCliente';
 
 type RegimeAba = 'fiscal' | 'sn';
 
@@ -1770,6 +1771,9 @@ export default function ChecklistFiscalPage() {
                         />
                       </div>
                     )}
+
+                    {/* Atividade do cliente no Portal (Fase 6) */}
+                    {itemAtual?.id && <StatusPortalCliente checklistId={itemAtual.id} />}
 
                     {/* Substituir arquivo */}
                     {podeEditar && (

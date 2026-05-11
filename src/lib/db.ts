@@ -2214,6 +2214,27 @@ export async function removeChecklistArquivo(
   }
 
   if (error) throw error;
+
+  // Soft-delete da(s) linha(s) ativa(s) em portal_documentos pra esse checklist:
+  // o cliente perde acesso na hora, mas o histórico (visualizou/baixou/pago e
+  // o arquivo no Storage) fica preservado pra auditoria. Best-effort: erro aqui
+  // não bloqueia a remoção do anexo interno.
+  const checklistId = (data as { id?: UUID } | null)?.id;
+  if (checklistId) {
+    try {
+      await supabase
+        .from('portal_documentos')
+        .update({
+          removido_em: new Date().toISOString(),
+          removido_por_usuario_id: autor.autorId ?? null,
+        })
+        .eq('checklist_fiscal_id', checklistId)
+        .is('removido_em', null);
+    } catch (portalErr) {
+      console.error('[removeChecklistArquivo] falha ao soft-deletar no portal:', portalErr);
+    }
+  }
+
   return toChecklistItem(data as ChecklistFiscalRow);
 }
 

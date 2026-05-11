@@ -4,6 +4,7 @@ import { google } from 'googleapis';
 import { randomUUID } from 'node:crypto';
 import { getOAuthClient, decryptToken } from '@/lib/googleOAuth';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { sendPushToCliente } from '@/lib/webPush';
 
 export const runtime = 'nodejs';
 
@@ -272,6 +273,80 @@ export async function POST(req: Request) {
       .update({ last_used_at: nowIso })
       .eq('usuario_id', userId);
 
+    // 6. Publica a guia no Portal do Cliente (best-effort: erro aqui
+    //    não impede sucesso do envio Gmail, que já aconteceu).
+    //
+    // Estratégia: cada envio = uma linha nova em portal_documentos.
+    // Se já existe linha ATIVA pro mesmo checklist (re-envio), marcamos
+    // ela como `removido_em = now()` antes de inserir a nova. O arquivo
+    // antigo no Storage FICA preservado pra auditoria (histórico imutável).
+    let portalDocumentoId: string | null = null;
+    try {
+      const portalPath = `${body.empresaId}/${randomUUID()}-${body.arquivoNome}`;
+      const mimeType = mimeTypeFromFilename(body.arquivoNome);
+
+      const { error: uploadErr } = await admin.storage
+        .from('portal-documentos')
+        .upload(portalPath, fileBuffer, { contentType: mimeType, upsert: false });
+
+      if (!uploadErr) {
+        // Soft-delete da(s) linha(s) ativa(s) anterior(es) pro mesmo checklist
+        if (body.checklistId) {
+          await admin
+            .from('portal_documentos')
+            .update({ removido_em: nowIso, removido_por_usuario_id: userId })
+            .eq('checklist_fiscal_id', body.checklistId)
+            .is('removido_em', null);
+        }
+
+        const { data: novo } = await admin
+          .from('portal_documentos')
+          .insert({
+            empresa_id: body.empresaId,
+            checklist_fiscal_id: body.checklistId ?? null,
+            obrigacao_nome: body.obrigacao,
+            competencia: body.mes,
+            arquivo_storage_path: portalPath,
+            arquivo_nome_original: body.arquivoNome,
+            arquivo_mime: mimeType,
+            arquivo_tamanho_bytes: fileBuffer.byteLength,
+            enviado_email: true,
+            enviado_email_em: nowIso,
+            criado_por_usuario_id: userId,
+          })
+          .select('id')
+          .maybeSingle();
+        portalDocumentoId = novo?.id ?? null;
+
+        // Dispara push pro cliente da empresa (best-effort)
+        if (portalDocumentoId) {
+          try {
+            const { data: clienteRow } = await admin
+              .from('clientes_portal')
+              .select('id')
+              .eq('empresa_id', body.empresaId)
+              .eq('ativo', true)
+              .maybeSingle();
+
+            if (clienteRow?.id) {
+              const competenciaLabel = formatComp(body.mes);
+              void sendPushToCliente(clienteRow.id, {
+                title: `Nova guia: ${body.obrigacao}`,
+                body: `Competência ${competenciaLabel}. Toque para abrir.`,
+                url: `/portal/documentos/${portalDocumentoId}`,
+                tag: `portal-doc-${portalDocumentoId}`,
+              });
+            }
+          } catch (pushErr) {
+            console.error('[enviar-anexo] falha ao enviar push:', pushErr);
+          }
+        }
+      }
+    } catch (portalErr) {
+      // Loga e segue — Gmail já foi com sucesso, não queremos derrubar a UI.
+      console.error('[enviar-anexo] falha ao publicar no portal:', portalErr);
+    }
+
     return NextResponse.json({
       ok: true,
       enviadoPara: emails,
@@ -281,6 +356,7 @@ export async function POST(req: Request) {
       gmailThreadId,
       envioId,
       pixelEmbedado: pixelTag !== '',
+      portalDocumentoId,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro inesperado';
