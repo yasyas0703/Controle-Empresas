@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 const OBRIGACOES_ALLOWED_EMAILS = [
-  'yasjean07@gmail.com',
+  'admin@triarcontabilidade.com.br',
   'yasmin@triarcontabilidade.com.br',
 ];
 

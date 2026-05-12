@@ -606,7 +606,7 @@ export default function ChecklistFiscalPage() {
   // Pode ser chamado manualmente (botão no modal) ou silenciosamente
   // (auto-trigger ao abrir a página). Se `silencioso=true`, não mostra alerta
   // de "0 verificados" — fica só no console.
-  const podeApagarHistoricoEnvios = (currentUser?.email ?? '').toLowerCase() === 'yasjean07@gmail.com';
+  const podeApagarHistoricoEnvios = (currentUser?.email ?? '').toLowerCase() === 'admin@triarcontabilidade.com.br';
 
   const removerEnvioHistorico = useCallback(
     async (empresaId: UUID, obrigacao: string, envioId: UUID) => {
@@ -1445,7 +1445,7 @@ export default function ChecklistFiscalPage() {
                     const s = stats.porObrigacao[idx];
                     const temValidacao = (validacaoKeywords.get(obr)?.length ?? 0) > 0;
                     const podeConfigurarValidacao =
-                      (currentUser?.email ?? '').toLowerCase() === 'yasjean07@gmail.com';
+                      (currentUser?.email ?? '').toLowerCase() === 'admin@triarcontabilidade.com.br';
                     return (
                       <th
                         key={obr}

@@ -2471,7 +2471,7 @@ export async function registrarEnvioChecklist(input: RegistrarEnvioInput): Promi
 
 /**
  * Remove um evento específico do histórico de anexo do checklist.
- * Usado pra limpar o histórico quando acumula muito (restrito no UI à yasjean).
+ * Usado pra limpar o histórico quando acumula muito (restrito no UI à conta admin).
  */
 export async function removerEventoArquivoChecklist(
   empresaId: UUID,
@@ -2507,7 +2507,7 @@ export async function removerEventoArquivoChecklist(
 
 /**
  * Remove um evento específico do histórico de envios do checklist.
- * Usado pra limpar o histórico quando acumula muito (restrito no UI à yasjean).
+ * Usado pra limpar o histórico quando acumula muito (restrito no UI à conta admin).
  * Não mexe em status/concluido — só apaga a linha do array.
  */
 export async function removerEnvioChecklist(
