@@ -107,19 +107,21 @@ async function processarCron(): Promise<NextResponse> {
   const admin = getSupabaseAdmin();
 
   // ── 1. Carrega dados básicos em paralelo ────────────────────────────────
-  const [empresasRes, departamentosRes, usuariosRes, overridesRes] = await Promise.all([
+  const [empresasRes, departamentosRes, usuariosRes, overridesRes, responsaveisRes] = await Promise.all([
     admin
       .from('empresas')
-      .select('id, codigo, razao_social, apelido, cnpj, estado, cidade, vencimentos_fiscais, responsaveis, desligada_em')
+      .select('id, codigo, razao_social, apelido, cnpj, estado, cidade, vencimentos_fiscais, desligada_em')
       .is('desligada_em', null),
     admin.from('departamentos').select('id, nome'),
     admin.from('usuarios').select('id, role, departamento_id, departamentos_extras_ids, ativo'),
     admin.from('obrigacao_empresas').select('empresa_id, obrigacao, habilitada'),
+    admin.from('responsaveis').select('empresa_id, departamento_id, usuario_id'),
   ]);
 
   if (empresasRes.error) return NextResponse.json({ error: empresasRes.error.message }, { status: 500 });
   if (departamentosRes.error) return NextResponse.json({ error: departamentosRes.error.message }, { status: 500 });
   if (usuariosRes.error) return NextResponse.json({ error: usuariosRes.error.message }, { status: 500 });
+  if (responsaveisRes.error) return NextResponse.json({ error: responsaveisRes.error.message }, { status: 500 });
 
   const empresas = (empresasRes.data ?? []) as Array<{
     id: string;
@@ -129,8 +131,17 @@ async function processarCron(): Promise<NextResponse> {
     estado: string | null;
     cidade: string | null;
     vencimentos_fiscais: Array<{ nome?: string; vencimento?: string | null }> | null;
-    responsaveis: Record<string, string | null> | null;
   }>;
+
+  // Monta Map<empresaId, Record<departamentoId, usuarioId>> a partir da tabela responsaveis
+  const responsaveisMap = new Map<string, Record<string, string | null>>();
+  for (const r of (responsaveisRes.data ?? []) as Array<{
+    empresa_id: string; departamento_id: string; usuario_id: string | null;
+  }>) {
+    const atual = responsaveisMap.get(r.empresa_id) ?? {};
+    atual[r.departamento_id] = r.usuario_id;
+    responsaveisMap.set(r.empresa_id, atual);
+  }
   const departamentos = (departamentosRes.data ?? []) as Array<{ id: string; nome: string }>;
   const usuarios = (usuariosRes.data ?? []) as Array<{
     id: string;
@@ -228,8 +239,9 @@ async function processarCron(): Promise<NextResponse> {
 
       if (jaMarcado(emp.id, v.nome, v.vencimento)) continue;
 
-      const respId = (fiscalDept ? emp.responsaveis?.[fiscalDept.id] : null)
-        || (fiscalSnDept ? emp.responsaveis?.[fiscalSnDept.id] : null)
+      const respDaEmpresa = responsaveisMap.get(emp.id) ?? {};
+      const respId = (fiscalDept ? respDaEmpresa[fiscalDept.id] : null)
+        || (fiscalSnDept ? respDaEmpresa[fiscalSnDept.id] : null)
         || null;
 
       candidatos.push({
