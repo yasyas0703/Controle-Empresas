@@ -618,6 +618,22 @@ export default function ChecklistFiscalPage() {
     [podeApagarHistoricoEnvios, mes, carregar, mostrarAlerta],
   );
 
+  const removerArquivoHistoricoEvento = useCallback(
+    async (empresaId: UUID, obrigacao: string, eventoId: string) => {
+      if (!podeApagarHistoricoEnvios) return;
+      const ok = window.confirm('Apagar este evento do histórico do anexo? Esta ação não pode ser desfeita.');
+      if (!ok) return;
+      try {
+        await db.removerEventoArquivoChecklist(empresaId, mes, obrigacao, eventoId);
+        await carregar(mes);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Erro inesperado';
+        mostrarAlerta('Erro ao apagar', msg, 'erro');
+      }
+    },
+    [podeApagarHistoricoEnvios, mes, carregar, mostrarAlerta],
+  );
+
   const verificarEntregas = useCallback(async (silencioso = false) => {
     if (verificandoEntregas) return;
     setVerificandoEntregas(true);
@@ -2081,7 +2097,18 @@ export default function ChecklistFiscalPage() {
                           ? new Date(ev.criadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                           : '';
                         return (
-                          <li key={ev.id} className={`rounded-lg border ${cor.border} ${cor.bg} px-2.5 py-1.5`}>
+                          <li key={ev.id} className={`relative rounded-lg border ${cor.border} ${cor.bg} px-2.5 py-1.5`}>
+                            {podeApagarHistoricoEnvios && (
+                              <button
+                                type="button"
+                                onClick={() => void removerArquivoHistoricoEvento(arqTarget.empresa.id, arqTarget.obrigacao, ev.id)}
+                                className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center h-5 w-5 rounded-full bg-white border border-gray-300 text-gray-500 hover:bg-red-500 hover:text-white hover:border-red-500 shadow-sm transition"
+                                title="Apagar este evento do histórico"
+                                aria-label="Apagar evento"
+                              >
+                                <X size={11} strokeWidth={3} />
+                              </button>
+                            )}
                             <div className="flex items-start gap-2">
                               <span className={`mt-1 h-2 w-2 rounded-full shrink-0 ${cor.dot}`} />
                               <div className="min-w-0 flex-1">

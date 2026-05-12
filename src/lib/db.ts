@@ -2470,6 +2470,42 @@ export async function registrarEnvioChecklist(input: RegistrarEnvioInput): Promi
 }
 
 /**
+ * Remove um evento específico do histórico de anexo do checklist.
+ * Usado pra limpar o histórico quando acumula muito (restrito no UI à yasjean).
+ */
+export async function removerEventoArquivoChecklist(
+  empresaId: UUID,
+  mes: string,
+  obrigacao: string,
+  eventoId: string,
+): Promise<ChecklistFiscalItem | null> {
+  const atual = await lerChecklistAtual(empresaId, mes, obrigacao);
+  if (!atual) return null;
+  const historicoAnterior = normalizarHistoricoVencimento(
+    Array.isArray(atual.arquivo_historico) ? (atual.arquivo_historico as HistoricoVencimentoItem[]) : []
+  );
+  const historicoFiltrado = historicoAnterior.filter((e) => e.id !== eventoId);
+  if (historicoFiltrado.length === historicoAnterior.length) {
+    return toChecklistItem(atual);
+  }
+
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('checklist_fiscal')
+    .update({
+      arquivo_historico: historicoFiltrado,
+      atualizado_em: now,
+    })
+    .eq('empresa_id', empresaId)
+    .eq('mes', mes)
+    .eq('obrigacao', obrigacao)
+    .select()
+    .single();
+  if (error) throw error;
+  return toChecklistItem(data as ChecklistFiscalRow);
+}
+
+/**
  * Remove um evento específico do histórico de envios do checklist.
  * Usado pra limpar o histórico quando acumula muito (restrito no UI à yasjean).
  * Não mexe em status/concluido — só apaga a linha do array.
