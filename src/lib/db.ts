@@ -2469,6 +2469,64 @@ export async function registrarEnvioChecklist(input: RegistrarEnvioInput): Promi
   return toChecklistItem(data as ChecklistFiscalRow);
 }
 
+/**
+ * Remove um evento específico do histórico de envios do checklist.
+ * Usado pra limpar o histórico quando acumula muito (restrito no UI à yasjean).
+ * Não mexe em status/concluido — só apaga a linha do array.
+ */
+export async function removerEnvioChecklist(
+  empresaId: UUID,
+  mes: string,
+  obrigacao: string,
+  envioId: UUID,
+): Promise<ChecklistFiscalItem | null> {
+  const atual = await lerChecklistAtual(empresaId, mes, obrigacao);
+  if (!atual) return null;
+  const enviosAnteriores = normalizarEnviosHistorico(atual.envios_historico ?? []);
+  const enviosFiltrados = enviosAnteriores.filter((e) => e.id !== envioId);
+  if (enviosFiltrados.length === enviosAnteriores.length) {
+    return toChecklistItem(atual);
+  }
+
+  const persistirEvento = (e: ChecklistEnvioEvento) => ({
+    id: e.id,
+    enviado_em: e.enviadoEm,
+    enviado_por_id: e.enviadoPorId ?? null,
+    enviado_por_nome: e.enviadoPorNome ?? null,
+    remetente_email: e.remetenteEmail ?? null,
+    destinatarios: e.destinatarios,
+    arquivo_nome: e.arquivoNome ?? null,
+    sucesso: e.sucesso,
+    erro: e.erro ?? null,
+    gmail_message_id: e.gmailMessageId ?? null,
+    gmail_thread_id: e.gmailThreadId ?? null,
+    entrega_status: e.entregaStatus ?? (e.sucesso ? 'pendente' : null),
+    entrega_verificada_em: e.entregaVerificadaEm ?? null,
+    bounce_motivo: e.bounceMotivo ?? null,
+    bounce_destinatarios: e.bounceDestinatarios ?? null,
+    aberto_em: e.abertoEm ?? null,
+    aberto_em_ultimo: e.abertoEmUltimo ?? null,
+    aberturas: e.aberturas ?? 0,
+    aberto_user_agent: e.abertoUserAgent ?? null,
+    aberto_ip: e.abertoIp ?? null,
+  });
+
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('checklist_fiscal')
+    .update({
+      envios_historico: enviosFiltrados.map(persistirEvento),
+      atualizado_em: now,
+    })
+    .eq('empresa_id', empresaId)
+    .eq('mes', mes)
+    .eq('obrigacao', obrigacao)
+    .select()
+    .single();
+  if (error) throw error;
+  return toChecklistItem(data as ChecklistFiscalRow);
+}
+
 function isErroColunaEnviosFaltando(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

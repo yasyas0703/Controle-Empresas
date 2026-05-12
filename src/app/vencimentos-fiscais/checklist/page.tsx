@@ -5,7 +5,7 @@ import {
   ListChecks, Search, XCircle, Filter, Users, ChevronLeft, ChevronRight,
   Check, Calendar, AlertTriangle, TrendingUp, Award, Download, Clock,
   MessageSquare, History, User as UserIcon, Sparkles, Paperclip, Upload, Trash2, Eye, Loader2,
-  Send, MailCheck, MailX, Settings,
+  Send, MailCheck, MailX, Settings, X,
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import type { ChecklistFiscalItem, Empresa, UUID, Usuario } from '@/app/types';
@@ -600,6 +600,24 @@ export default function ChecklistFiscalPage() {
   // Pode ser chamado manualmente (botão no modal) ou silenciosamente
   // (auto-trigger ao abrir a página). Se `silencioso=true`, não mostra alerta
   // de "0 verificados" — fica só no console.
+  const podeApagarHistoricoEnvios = (currentUser?.email ?? '').toLowerCase() === 'yasjean07@gmail.com';
+
+  const removerEnvioHistorico = useCallback(
+    async (empresaId: UUID, obrigacao: string, envioId: UUID) => {
+      if (!podeApagarHistoricoEnvios) return;
+      const ok = window.confirm('Apagar este envio do histórico? Esta ação não pode ser desfeita.');
+      if (!ok) return;
+      try {
+        await db.removerEnvioChecklist(empresaId, mes, obrigacao, envioId);
+        await carregar(mes);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Erro inesperado';
+        mostrarAlerta('Erro ao apagar', msg, 'erro');
+      }
+    },
+    [podeApagarHistoricoEnvios, mes, carregar, mostrarAlerta],
+  );
+
   const verificarEntregas = useCallback(async (silencioso = false) => {
     if (verificandoEntregas) return;
     setVerificandoEntregas(true);
@@ -1937,7 +1955,18 @@ export default function ChecklistFiscalPage() {
                           ? new Date(ev.enviadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                           : '';
                         return (
-                          <li key={ev.id} className={`rounded-lg border ${cor.border} ${cor.bg} px-2.5 py-1.5`}>
+                          <li key={ev.id} className={`relative rounded-lg border ${cor.border} ${cor.bg} px-2.5 py-1.5`}>
+                            {podeApagarHistoricoEnvios && (
+                              <button
+                                type="button"
+                                onClick={() => void removerEnvioHistorico(arqTarget.empresa.id, arqTarget.obrigacao, ev.id)}
+                                className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center h-5 w-5 rounded-full bg-white border border-gray-300 text-gray-500 hover:bg-red-500 hover:text-white hover:border-red-500 shadow-sm transition"
+                                title="Apagar este envio do histórico"
+                                aria-label="Apagar envio"
+                              >
+                                <X size={11} strokeWidth={3} />
+                              </button>
+                            )}
                             <div className="flex items-start gap-2">
                               <span className={`mt-1 h-2 w-2 rounded-full shrink-0 ${cor.dot}`} />
                               <div className="min-w-0 flex-1">
