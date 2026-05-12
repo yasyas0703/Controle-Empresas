@@ -19,6 +19,7 @@ import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
 import PainelConectarGmail from '@/app/components/PainelConectarGmail';
 import StatusPortalCliente from '@/app/vencimentos-fiscais/checklist/StatusPortalCliente';
 import ModalConfigurarValidacao from '@/app/vencimentos-fiscais/checklist/ModalConfigurarValidacao';
+import { useFileDropZone } from '@/app/hooks/useFileDropZone';
 
 type RegimeAba = 'fiscal' | 'sn';
 
@@ -596,6 +597,11 @@ export default function ChecklistFiscalPage() {
       setArqUploading(false);
     }
   };
+
+  const { isDragging: arqIsDragging, dragHandlers: arqDragHandlers } = useFileDropZone({
+    onFile: (f) => void fazerUploadArquivo(f),
+    disabled: arqUploading,
+  });
 
   // Pode ser chamado manualmente (botão no modal) ou silenciosamente
   // (auto-trigger ao abrir a página). Se `silencioso=true`, não mostra alerta
@@ -1883,7 +1889,7 @@ export default function ChecklistFiscalPage() {
 
                     {/* Substituir arquivo */}
                     {podeEditar && (
-                      <label className="block">
+                      <label className="block" {...arqDragHandlers}>
                         <input
                           type="file"
                           accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
@@ -1895,14 +1901,20 @@ export default function ChecklistFiscalPage() {
                             e.target.value = '';
                           }}
                         />
-                        <div className={`rounded-xl border-2 border-dashed border-amber-300 bg-amber-50/50 px-4 py-3 text-center text-xs font-bold cursor-pointer transition ${arqUploading ? 'opacity-50 cursor-wait' : 'hover:bg-amber-100'} text-amber-700`}>
-                          {arqUploading ? 'Enviando...' : 'Substituir arquivo'}
+                        <div className={`rounded-xl border-2 border-dashed px-4 py-3 text-center text-xs font-bold cursor-pointer transition ${
+                          arqUploading
+                            ? 'opacity-50 cursor-wait border-amber-300 bg-amber-50/50 text-amber-700'
+                            : arqIsDragging
+                              ? 'border-amber-500 bg-amber-100 text-amber-800 scale-[1.01]'
+                              : 'border-amber-300 bg-amber-50/50 hover:bg-amber-100 text-amber-700'
+                        }`}>
+                          {arqUploading ? 'Enviando...' : arqIsDragging ? 'Solte o arquivo aqui' : 'Substituir arquivo (ou arraste aqui)'}
                         </div>
                       </label>
                     )}
                   </>
                 ) : podeEditar ? (
-                  <label className="block cursor-pointer">
+                  <label className="block cursor-pointer" {...arqDragHandlers}>
                     <input
                       type="file"
                       accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
@@ -1914,14 +1926,24 @@ export default function ChecklistFiscalPage() {
                         e.target.value = '';
                       }}
                     />
-                    <div className={`rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/50 p-8 text-center transition ${arqUploading ? 'opacity-50 cursor-wait' : 'hover:bg-amber-100'}`}>
+                    <div className={`rounded-2xl border-2 border-dashed p-8 text-center transition ${
+                      arqUploading
+                        ? 'opacity-50 cursor-wait border-amber-300 bg-amber-50/50'
+                        : arqIsDragging
+                          ? 'border-amber-500 bg-amber-100 scale-[1.01]'
+                          : 'border-amber-300 bg-amber-50/50 hover:bg-amber-100'
+                    }`}>
                       {arqUploading ? (
                         <Loader2 size={32} className="mx-auto mb-2 text-amber-500 animate-spin" />
                       ) : (
-                        <Upload size={32} className="mx-auto mb-2 text-amber-500" />
+                        <Upload size={32} className={`mx-auto mb-2 ${arqIsDragging ? 'text-amber-600' : 'text-amber-500'}`} />
                       )}
                       <div className="text-sm font-bold text-amber-800">
-                        {arqUploading ? 'Enviando arquivo...' : 'Clique para anexar guia/comprovante'}
+                        {arqUploading
+                          ? 'Enviando arquivo...'
+                          : arqIsDragging
+                            ? 'Solte o arquivo aqui'
+                            : 'Clique para anexar ou arraste o arquivo aqui'}
                       </div>
                       <div className="text-[11px] text-amber-700 mt-1">
                         PDF, DOC, XLS, PNG, JPG · até 10MB

@@ -7,6 +7,7 @@ import type { Empresa, FormaEnvio, RetItem, TagCor, TipoInscricao, UUID, Vencime
 import { FORMAS_ENVIO } from '@/app/types';
 import ModalBase from '@/app/components/ModalBase';
 import ConfirmModal from '@/app/components/ConfirmModal';
+import FileDropLabel from '@/app/components/FileDropLabel';
 import { cepSchema, cpfSchema, cnpjSchema, detectTipoInscricao, detectTipoEstabelecimento, formatarDocumento } from '@/app/utils/validation';
 import { api } from '@/app/utils/api';
 import { garantirVencimentosFiscais, garantirVencimentosFiscaisComRegras } from '@/app/utils/vencimentos';
@@ -1089,15 +1090,15 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                           >
                             <Download size={12} /> Baixar
                           </button>
-                          <label className="inline-flex items-center gap-1 text-[11px] text-violet-600 font-bold cursor-pointer hover:text-violet-700" title="Trocar arquivo">
+                          <FileDropLabel
+                            onFile={(f) => setFiscalFile(v.id, f)}
+                            accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
+                            className="inline-flex items-center gap-1 text-[11px] text-violet-600 font-bold cursor-pointer hover:text-violet-700 rounded transition"
+                            draggingClassName="ring-2 ring-violet-400 bg-violet-50 px-1"
+                            title="Trocar arquivo (clique ou arraste)"
+                          >
                             <Paperclip size={12} /> Trocar
-                            <input
-                              type="file"
-                              accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
-                              className="hidden"
-                              onChange={(e) => setFiscalFile(v.id, e.target.files?.[0] ?? null)}
-                            />
-                          </label>
+                          </FileDropLabel>
                           <button
                             type="button"
                             onClick={() => setFiscalFile(v.id, null)}
@@ -1132,15 +1133,15 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                           >
                             <Download size={12} /> Baixar
                           </button>
-                          <label className="inline-flex items-center gap-1 text-[11px] text-violet-600 font-bold cursor-pointer hover:text-violet-700" title="Trocar arquivo">
+                          <FileDropLabel
+                            onFile={(f) => setFiscalFile(v.id, f)}
+                            accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
+                            className="inline-flex items-center gap-1 text-[11px] text-violet-600 font-bold cursor-pointer hover:text-violet-700 rounded transition"
+                            draggingClassName="ring-2 ring-violet-400 bg-violet-50 px-1"
+                            title="Trocar arquivo (clique ou arraste)"
+                          >
                             <Paperclip size={12} /> Trocar
-                            <input
-                              type="file"
-                              accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
-                              className="hidden"
-                              onChange={(e) => setFiscalFile(v.id, e.target.files?.[0] ?? null)}
-                            />
-                          </label>
+                          </FileDropLabel>
                           <button
                             type="button"
                             onClick={() => updateVencimentoFiscal(v.id, { arquivoUrl: undefined })}
@@ -1152,15 +1153,14 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                         </div>
                       </div>
                     ) : (
-                      <label className="mt-1 block w-full rounded-lg border-2 border-dashed border-gray-300 px-3 py-2 text-center hover:border-red-400 hover:bg-red-50 transition text-[11px] text-gray-500 cursor-pointer">
-                        Anexar arquivo
-                        <input
-                          type="file"
-                          accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
-                          className="hidden"
-                          onChange={(e) => setFiscalFile(v.id, e.target.files?.[0] ?? null)}
-                        />
-                      </label>
+                      <FileDropLabel
+                        onFile={(f) => setFiscalFile(v.id, f)}
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
+                        className="mt-1 block w-full rounded-lg border-2 border-dashed border-gray-300 px-3 py-2 text-center hover:border-red-400 hover:bg-red-50 transition text-[11px] text-gray-500 cursor-pointer"
+                        draggingClassName="border-red-500 bg-red-100 text-red-700"
+                      >
+                        {({ isDragging }) => (isDragging ? 'Solte o arquivo aqui' : 'Anexar arquivo (clique ou arraste)')}
+                      </FileDropLabel>
                     )}
                   </div>
                 );

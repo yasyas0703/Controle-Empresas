@@ -4,6 +4,7 @@ import React, { useRef, useState } from 'react';
 import { X, Upload, FileText, Globe, Building2, Lock, Users } from 'lucide-react';
 import ModalBase from '@/app/components/ModalBase';
 import { useSistema } from '@/app/context/SistemaContext';
+import { useFileDropZone } from '@/app/hooks/useFileDropZone';
 import type { Departamento, Usuario, UUID, Visibilidade } from '@/app/types';
 
 const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
@@ -90,6 +91,10 @@ export default function ModalAdicionarDocumento({
   // Usuários ativos para o seletor (sem o usuário logado — ele é incluído automaticamente)
   const { currentUser, mostrarAlerta } = useSistema();
   const activeUsers = usuarios.filter((u) => u.ativo);
+
+  const { isDragging, dragHandlers } = useFileDropZone({
+    onFile: (f) => handleFileChange(f),
+  });
 
   return (
     <ModalBase
@@ -292,10 +297,17 @@ export default function ModalAdicionarDocumento({
                 <button
                   type="button"
                   onClick={() => fileRef.current?.click()}
-                  className="w-full rounded-xl border-2 border-dashed border-gray-300 px-4 py-6 text-center hover:border-orange-400 hover:bg-orange-50 transition"
+                  {...dragHandlers}
+                  className={`w-full rounded-xl border-2 border-dashed px-4 py-6 text-center transition ${
+                    isDragging
+                      ? 'border-orange-500 bg-orange-100 scale-[1.01]'
+                      : 'border-gray-300 hover:border-orange-400 hover:bg-orange-50'
+                  }`}
                 >
-                  <Upload size={24} className="mx-auto text-gray-400 mb-2" />
-                  <div className="text-sm font-semibold text-gray-600">Clique para selecionar arquivo</div>
+                  <Upload size={24} className={`mx-auto mb-2 ${isDragging ? 'text-orange-600' : 'text-gray-400'}`} />
+                  <div className="text-sm font-semibold text-gray-600">
+                    {isDragging ? 'Solte o arquivo aqui' : 'Clique para selecionar ou arraste o arquivo aqui'}
+                  </div>
                   <div className="text-xs text-gray-400 mt-1">PDF, DOC, XLS, imagens, TXT (max. 10MB)</div>
                 </button>
               ) : (

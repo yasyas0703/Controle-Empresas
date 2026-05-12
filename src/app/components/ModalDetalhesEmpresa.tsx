@@ -17,6 +17,7 @@ import { garantirVencimentosFiscais, garantirVencimentosFiscaisComRegras } from 
 import { getDocumentoSignedUrl, getVencimentoFiscalSignedUrl, uploadDocumentoArquivo } from '@/lib/db';
 import { sortResponsaveisByNome } from '@/lib/sort';
 import { getDepartamentoSlugDoUsuario, type DepartamentoSlug } from '@/app/utils/departamento';
+import { useFileDropZone } from '@/app/hooks/useFileDropZone';
 
 const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
 
@@ -245,6 +246,13 @@ export default function ModalDetalhesEmpresa({
 
     setEditFiscalFile(nextFile);
   }, [mostrarAlerta]);
+
+  const { isDragging: docIsDragging, dragHandlers: docDragHandlers } = useFileDropZone({
+    onFile: (f) => handleEditFileChange(f),
+  });
+  const { isDragging: fiscalIsDragging, dragHandlers: fiscalDragHandlers } = useFileDropZone({
+    onFile: (f) => handleEditFiscalFileChange(f),
+  });
 
   const salvarFiscal = useCallback(async (fiscal: VencimentoFiscal) => {
     try {
@@ -844,9 +852,16 @@ export default function ModalDetalhesEmpresa({
                                     <button
                                       type="button"
                                       onClick={() => editFiscalFileRef.current?.click()}
-                                      className="w-full rounded-lg border-2 border-dashed border-gray-300 px-3 py-3 text-center hover:border-orange-400 hover:bg-orange-50 transition text-xs text-gray-500"
+                                      {...fiscalDragHandlers}
+                                      className={`w-full rounded-lg border-2 border-dashed px-3 py-3 text-center transition text-xs ${
+                                        fiscalIsDragging
+                                          ? 'border-orange-500 bg-orange-100 text-orange-700'
+                                          : 'border-gray-300 text-gray-500 hover:border-orange-400 hover:bg-orange-50'
+                                      }`}
                                     >
-                                      {f.arquivoUrl ? 'Trocar arquivo' : 'Anexar arquivo'}
+                                      {fiscalIsDragging
+                                        ? 'Solte o arquivo aqui'
+                                        : `${f.arquivoUrl ? 'Trocar arquivo' : 'Anexar arquivo'} (clique ou arraste)`}
                                     </button>
                                   )}
                                   {f.arquivoUrl && !editFiscalFile && (
@@ -1158,9 +1173,16 @@ export default function ModalDetalhesEmpresa({
                                 <button
                                   type="button"
                                   onClick={() => editFileRef.current?.click()}
-                                  className="w-full rounded-lg border-2 border-dashed border-gray-300 px-3 py-3 text-center hover:border-orange-400 hover:bg-orange-50 transition text-xs text-gray-500"
+                                  {...docDragHandlers}
+                                  className={`w-full rounded-lg border-2 border-dashed px-3 py-3 text-center transition text-xs ${
+                                    docIsDragging
+                                      ? 'border-orange-500 bg-orange-100 text-orange-700'
+                                      : 'border-gray-300 text-gray-500 hover:border-orange-400 hover:bg-orange-50'
+                                  }`}
                                 >
-                                  {d.arquivoUrl ? 'Trocar arquivo' : 'Anexar arquivo'}
+                                  {docIsDragging
+                                    ? 'Solte o arquivo aqui'
+                                    : `${d.arquivoUrl ? 'Trocar arquivo' : 'Anexar arquivo'} (clique ou arraste)`}
                                 </button>
                               )}
                               {d.arquivoUrl && !editDocFile && (

@@ -9,6 +9,7 @@ import ModalBase from './ModalBase';
 import ConfirmModal from './ConfirmModal';
 import ModalVisualizadorArquivo from './ModalVisualizadorArquivo';
 import { useSistema } from '@/app/context/SistemaContext';
+import { useFileDropZone } from '@/app/hooks/useFileDropZone';
 import {
   deleteControleContabilStatus,
   deleteExtrato,
@@ -198,6 +199,11 @@ export default function ModalConferenciaCelula({
     }
   }
 
+  const { isDragging: extratoIsDragging, dragHandlers: extratoDragHandlers } = useFileDropZone({
+    onFile: (f) => void handleUpload(f),
+    disabled: uploadando,
+  });
+
   async function baixarExtrato(extrato: ExtratoArquivo) {
     try {
       const url = await getExtratoSignedUrl(extrato.arquivoPath);
@@ -370,7 +376,10 @@ export default function ModalConferenciaCelula({
           </div>
 
           {/* Extratos */}
-          <div>
+          <div
+            {...extratoDragHandlers}
+            className={extratoIsDragging ? 'rounded-xl ring-2 ring-cyan-400 ring-offset-2 bg-cyan-50/40 transition' : ''}
+          >
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
                 Extratos anexados {extratos.length > 0 && <span className="text-cyan-700">({extratos.length})</span>}
@@ -401,10 +410,12 @@ export default function ModalConferenciaCelula({
                 <Loader2 size={14} className="animate-spin mr-2" /> Carregando...
               </div>
             ) : extratos.length === 0 ? (
-              <div className="py-5 px-3 text-center bg-gray-50 rounded-xl border border-dashed border-gray-300">
-                <Paperclip size={18} className="mx-auto text-gray-400 mb-1" />
-                <p className="text-xs text-gray-500">Nenhum extrato anexado neste mês.</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">Ao anexar, a célula é marcada como feita automaticamente.</p>
+              <div className={`py-5 px-3 text-center rounded-xl border-2 border-dashed transition ${
+                extratoIsDragging ? 'bg-cyan-100 border-cyan-400' : 'bg-gray-50 border-gray-300'
+              }`}>
+                <Paperclip size={18} className={`mx-auto mb-1 ${extratoIsDragging ? 'text-cyan-600' : 'text-gray-400'}`} />
+                <p className="text-xs text-gray-500">{extratoIsDragging ? 'Solte o extrato aqui' : 'Nenhum extrato anexado neste mês.'}</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">{extratoIsDragging ? 'A célula será marcada como feita.' : 'Clique em Anexar ou arraste o arquivo aqui. Ao anexar, a célula é marcada como feita automaticamente.'}</p>
               </div>
             ) : (
               <ul className="space-y-1.5">
