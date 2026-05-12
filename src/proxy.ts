@@ -33,6 +33,10 @@ function isPublicPath(pathname: string): boolean {
   // Cron jobs (Vercel Cron — autenticados por CRON_SECRET no próprio endpoint)
   if (pathname.startsWith('/api/cron/')) return true;
 
+  // Pixel de tracking de abertura de email — o proxy de imagens do Gmail
+  // busca essa URL sem cookie. URL já é capability token (UUIDs).
+  if (pathname.startsWith('/api/checklist-fiscal/track-open/')) return true;
+
   return false;
 }
 
