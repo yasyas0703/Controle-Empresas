@@ -73,16 +73,7 @@ export default function StatusPortalCliente({ checklistId }: { checklistId: stri
   }, [checklistId]);
 
   if (linhas === null) return null;
-  if (linhas.length === 0) {
-    return (
-      <div className="rounded-xl border-2 border-slate-200 bg-slate-50 p-3">
-        <div className="flex items-center gap-2 text-xs text-slate-600">
-          <Smartphone size={14} className="text-slate-400" />
-          <span>Esse anexo ainda não foi publicado no portal do cliente. Envie pelo botão de envio pro Gmail — o portal recebe junto.</span>
-        </div>
-      </div>
-    );
-  }
+  if (linhas.length === 0) return null;
 
   const ativo = linhas.find((l) => !l.removido_em) ?? null;
   const removidos = linhas.filter((l) => l.removido_em);

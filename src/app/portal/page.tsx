@@ -73,15 +73,17 @@ function formatCompetencia(comp: string | null): string {
 
 export default function PortalHomePage() {
   const router = useRouter();
-  const { cliente, authReady } = usePortal();
+  const { cliente, acessos, authReady } = usePortal();
   const [documentos, setDocumentos] = useState<Documento[] | null>(null);
   const [filtro, setFiltro] = useState<Filtro>('pendentes');
   const [competenciaFiltro, setCompetenciaFiltro] = useState<string>('');
   const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
-    if (authReady && !cliente) router.replace('/portal/login');
-  }, [authReady, cliente, router]);
+    // Sem acessos = não logado. Se tem acessos mas cliente null,
+    // o EmpresaPicker cobre a tela — não redireciona.
+    if (authReady && !cliente && acessos.length === 0) router.replace('/portal/login');
+  }, [authReady, cliente, acessos.length, router]);
 
   useEffect(() => {
     if (!cliente) return;
@@ -91,6 +93,7 @@ export default function PortalHomePage() {
       const { data, error } = await supabasePortal
         .from('portal_documentos')
         .select('id, obrigacao_nome, competencia, vencimento, descricao, arquivo_nome_original, arquivo_tamanho_bytes, visualizado_em, baixado_em, marcado_pago_em, criado_em')
+        .eq('empresa_id', cliente.empresaId)
         .order('vencimento', { ascending: true, nullsFirst: false })
         .order('criado_em', { ascending: false });
       if (cancelled) return;

@@ -43,33 +43,32 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const admin = getSupabaseAdmin();
 
-    const { data: clienteRow } = await admin
-      .from('clientes_portal')
-      .select('id, empresa_id, ativo')
-      .eq('id', userId)
-      .maybeSingle();
-    if (!clienteRow || !clienteRow.ativo) {
-      return NextResponse.json({ error: 'Acesso não autorizado' }, { status: 403 });
-    }
-
     const { data: doc } = await admin
       .from('portal_documentos')
       .select('id, empresa_id, visualizado_em, removido_em')
       .eq('id', documentoId)
       .maybeSingle();
     if (!doc) return NextResponse.json({ error: 'Guia não encontrada' }, { status: 404 });
-    if (doc.empresa_id !== clienteRow.empresa_id) {
-      return NextResponse.json({ error: 'Acesso não autorizado' }, { status: 403 });
-    }
     if (doc.removido_em) {
       return NextResponse.json({ error: 'Guia removida.' }, { status: 410 });
+    }
+
+    const { data: clienteRow } = await admin
+      .from('clientes_portal')
+      .select('id')
+      .eq('auth_user_id', userId)
+      .eq('empresa_id', doc.empresa_id)
+      .eq('ativo', true)
+      .maybeSingle();
+    if (!clienteRow) {
+      return NextResponse.json({ error: 'Acesso não autorizado' }, { status: 403 });
     }
 
     const nowIso = new Date().toISOString();
 
     // Insere log de visualização (await pra garantir persistência)
     await admin.from('portal_acessos').insert({
-      cliente_id: userId,
+      cliente_id: clienteRow.id,
       documento_id: documentoId,
       acao: 'visualizou',
       ip: getClientIp(req),

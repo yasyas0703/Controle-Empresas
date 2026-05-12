@@ -2,6 +2,7 @@ import React from 'react';
 import type { Metadata, Viewport } from 'next';
 import { PortalProvider } from '@/app/portal/PortalContext';
 import SWAutoUpdate from '@/app/portal/components/SWAutoUpdate';
+import EmpresaPicker from '@/app/portal/components/EmpresaPicker';
 
 export const metadata: Metadata = {
   title: 'Portal do Cliente — Triar Contabilidade',
@@ -25,6 +26,7 @@ export default function PortalRootLayout({ children }: { children: React.ReactNo
   return (
     <PortalProvider>
       <SWAutoUpdate />
+      <EmpresaPicker />
       <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
         {children}
       </div>

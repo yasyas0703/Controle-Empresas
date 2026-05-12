@@ -57,13 +57,13 @@ function formatDataAmigavel(chave: string): string {
 
 export default function HistoricoPage() {
   const router = useRouter();
-  const { cliente, authReady } = usePortal();
+  const { cliente, acessos: acessosPortal, authReady } = usePortal();
   const [acessos, setAcessos] = useState<Acesso[] | null>(null);
   const [filtro, setFiltro] = useState<FiltroAcao>('todas');
 
   useEffect(() => {
-    if (authReady && !cliente) router.replace('/portal/login');
-  }, [authReady, cliente, router]);
+    if (authReady && !cliente && acessosPortal.length === 0) router.replace('/portal/login');
+  }, [authReady, cliente, acessosPortal.length, router]);
 
   useEffect(() => {
     if (!cliente) return;
@@ -72,6 +72,7 @@ export default function HistoricoPage() {
       const { data, error } = await supabasePortal
         .from('portal_acessos')
         .select('id, acao, criado_em, documento_id, documento:portal_documentos(id, obrigacao_nome, competencia)')
+        .eq('cliente_id', cliente.id)
         .in('acao', ['visualizou', 'baixou', 'marcou_pago', 'desmarcou_pago'])
         .order('criado_em', { ascending: false })
         .limit(200);

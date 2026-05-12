@@ -9,6 +9,7 @@ import PortalHeader from '@/app/portal/components/PortalHeader';
 
 type Documento = {
   id: string;
+  empresa_id: string;
   obrigacao_nome: string;
   competencia: string | null;
   vencimento: string | null;
@@ -44,7 +45,7 @@ function formatTamanho(bytes: number | null): string {
 export default function DocumentoDetalhePage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const { cliente, authReady } = usePortal();
+  const { cliente, acessos, authReady } = usePortal();
   const [doc, setDoc] = useState<Documento | null | 'not-found'>(null);
   const [baixando, setBaixando] = useState(false);
   const [marcando, setMarcando] = useState(false);
@@ -126,8 +127,8 @@ export default function DocumentoDetalhePage() {
   }
 
   useEffect(() => {
-    if (authReady && !cliente) router.replace('/portal/login');
-  }, [authReady, cliente, router]);
+    if (authReady && !cliente && acessos.length === 0) router.replace('/portal/login');
+  }, [authReady, cliente, acessos.length, router]);
 
   useEffect(() => {
     if (!cliente || !params?.id) return;
@@ -135,8 +136,9 @@ export default function DocumentoDetalhePage() {
     (async () => {
       const { data, error } = await supabasePortal
         .from('portal_documentos')
-        .select('id, obrigacao_nome, competencia, vencimento, descricao, arquivo_nome_original, arquivo_tamanho_bytes, enviado_email, enviado_email_em, visualizado_em, baixado_em, marcado_pago_em, criado_em')
+        .select('id, empresa_id, obrigacao_nome, competencia, vencimento, descricao, arquivo_nome_original, arquivo_tamanho_bytes, enviado_email, enviado_email_em, visualizado_em, baixado_em, marcado_pago_em, criado_em')
         .eq('id', params.id)
+        .eq('empresa_id', cliente.empresaId)
         .maybeSingle();
       if (cancelled) return;
       if (error || !data) {

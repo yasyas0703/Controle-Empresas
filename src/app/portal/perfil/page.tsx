@@ -9,7 +9,7 @@ import PortalHeader from '@/app/portal/components/PortalHeader';
 
 export default function PerfilPage() {
   const router = useRouter();
-  const { cliente, empresa, authReady, reload } = usePortal();
+  const { cliente, empresa, acessos, authReady, reload } = usePortal();
 
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
@@ -24,8 +24,8 @@ export default function PerfilPage() {
   const [senhaMsg, setSenhaMsg] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
 
   useEffect(() => {
-    if (authReady && !cliente) router.replace('/portal/login');
-  }, [authReady, cliente, router]);
+    if (authReady && !cliente && acessos.length === 0) router.replace('/portal/login');
+  }, [authReady, cliente, acessos.length, router]);
 
   useEffect(() => {
     if (cliente) {

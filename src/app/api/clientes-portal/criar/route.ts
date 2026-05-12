@@ -2,7 +2,12 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendEmailViaUserGmail } from '@/lib/gmailSend';
-import { buildOnboardingEmail, gerarSenhaTemporaria, resolvePortalUrl } from '@/lib/portalOnboardingEmail';
+import {
+  buildOnboardingEmail,
+  buildEmpresaAdicionalEmail,
+  gerarSenhaTemporaria,
+  resolvePortalUrl,
+} from '@/lib/portalOnboardingEmail';
 
 export const runtime = 'nodejs';
 
@@ -18,6 +23,19 @@ interface Payload {
   email: string;
   nome_contato?: string;
   telefone?: string;
+}
+
+// Procura um auth.users já existente pelo email. Retorna o id se achar.
+async function findAuthUserIdByEmail(
+  admin: ReturnType<typeof getSupabaseAdmin>,
+  email: string,
+): Promise<string | null> {
+  // O Admin SDK não tem getByEmail direto. Listamos com filtro.
+  // 1ª página com 200 já cobre. Se precisar paginar no futuro, ajustar.
+  const { data, error } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
+  if (error) return null;
+  const found = data.users.find((u) => (u.email ?? '').toLowerCase() === email);
+  return found?.id ?? null;
 }
 
 export async function POST(req: Request) {
@@ -72,27 +90,108 @@ export async function POST(req: Request) {
     }
     const empresaNome = empresaRow.razao_social || empresaRow.apelido || empresaRow.codigo || 'Sua empresa';
 
-    // Já existe cliente ativo nesta empresa?
-    const { data: existenteAtivo } = await admin
-      .from('clientes_portal')
-      .select('id, email')
-      .eq('empresa_id', body.empresa_id)
-      .eq('ativo', true)
-      .maybeSingle();
-    if (existenteAtivo) {
-      return NextResponse.json(
-        { error: `Esta empresa já tem acesso ativo (${existenteAtivo.email}). Use "Reenviar senha" ou desative o atual primeiro.` },
-        { status: 409 },
-      );
+    // Procura se já existe auth.users com esse email (pode ser outro cliente do portal,
+    // OU usuária interna do escritório usando o mesmo email pra teste).
+    const existingAuthUserId = await findAuthUserIdByEmail(admin, emailNormalizado);
+
+    if (existingAuthUserId) {
+      // Já existe user no Auth. Vamos vincular sem criar/resetar senha.
+
+      // Já tem acesso ATIVO nesta empresa pra esse user? Bloqueia.
+      const { data: jaTemAtivo } = await admin
+        .from('clientes_portal')
+        .select('id')
+        .eq('auth_user_id', existingAuthUserId)
+        .eq('empresa_id', body.empresa_id)
+        .eq('ativo', true)
+        .maybeSingle();
+      if (jaTemAtivo) {
+        return NextResponse.json(
+          { error: 'Este email já tem acesso ativo nesta empresa.' },
+          { status: 409 },
+        );
+      }
+
+      // Tem linha desativada na mesma empresa? Reativa em vez de duplicar.
+      const { data: linhaInativa } = await admin
+        .from('clientes_portal')
+        .select('id')
+        .eq('auth_user_id', existingAuthUserId)
+        .eq('empresa_id', body.empresa_id)
+        .eq('ativo', false)
+        .order('criado_em', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      let novoClienteId: string;
+      if (linhaInativa) {
+        const { error: updErr } = await admin
+          .from('clientes_portal')
+          .update({
+            ativo: true,
+            nome_contato: body.nome_contato ?? null,
+            telefone: body.telefone ?? null,
+            email: emailNormalizado,
+          })
+          .eq('id', linhaInativa.id);
+        if (updErr) {
+          return NextResponse.json({ error: 'Falha ao reativar acesso: ' + updErr.message }, { status: 500 });
+        }
+        novoClienteId = linhaInativa.id;
+      } else {
+        const { data: inserted, error: insErr } = await admin
+          .from('clientes_portal')
+          .insert({
+            auth_user_id: existingAuthUserId,
+            empresa_id: body.empresa_id,
+            email: emailNormalizado,
+            nome_contato: body.nome_contato ?? null,
+            telefone: body.telefone ?? null,
+            ativo: true,
+          })
+          .select('id')
+          .single();
+        if (insErr || !inserted) {
+          return NextResponse.json(
+            { error: 'Falha ao vincular acesso: ' + (insErr?.message || 'erro desconhecido') },
+            { status: 500 },
+          );
+        }
+        novoClienteId = inserted.id;
+      }
+
+      // Aviso por email — senha NÃO muda (user já tem uma)
+      const portalUrl = resolvePortalUrl(req);
+      const { subject, bodyText, bodyHtml } = buildEmpresaAdicionalEmail({
+        empresaNome,
+        email: emailNormalizado,
+        portalUrl,
+        contatoNome: body.nome_contato ?? undefined,
+      });
+      const sendResult = await sendEmailViaUserGmail(usuarioId, {
+        to: [emailNormalizado],
+        subject,
+        bodyText,
+        bodyHtml,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        cliente: { id: novoClienteId, email: emailNormalizado, empresa_id: body.empresa_id },
+        vinculou_existente: true,
+        email_enviado: sendResult.ok,
+        email_erro: sendResult.ok ? null : sendResult.error,
+        senha_provisoria: null, // não geramos senha, reutiliza a atual
+      });
     }
 
-    // Gera senha + cria user no Auth
+    // Email novo — cria user no Auth (trigger insere em clientes_portal)
     const senha = gerarSenhaTemporaria(12);
 
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
       email: emailNormalizado,
       password: senha,
-      email_confirm: true, // não exige confirmação, já loga
+      email_confirm: true,
       user_metadata: {
         tipo: 'cliente_portal',
         empresa_id: body.empresa_id,
@@ -100,24 +199,27 @@ export async function POST(req: Request) {
       },
     });
     if (createErr || !created.user) {
-      // Email já existe?
-      const msg = createErr?.message ?? '';
-      if (msg.toLowerCase().includes('already')) {
-        return NextResponse.json(
-          { error: 'Esse email já está cadastrado no sistema. Use outro email ou desvincule o anterior.' },
-          { status: 409 },
-        );
-      }
-      return NextResponse.json({ error: msg || 'Falha ao criar usuário.' }, { status: 500 });
+      const msg = createErr?.message ?? 'Falha ao criar usuário.';
+      return NextResponse.json({ error: msg }, { status: 500 });
     }
 
-    // Trigger handle_new_auth_user já criou a linha em clientes_portal.
-    // Atualiza dados opcionais (telefone) que o trigger não preenche.
-    if (body.telefone) {
+    // O trigger criou a linha em clientes_portal (com auth_user_id = created.user.id).
+    // Buscamos pra pegar o id novo e atualizamos telefone se houver.
+    const { data: clienteCriado } = await admin
+      .from('clientes_portal')
+      .select('id')
+      .eq('auth_user_id', created.user.id)
+      .eq('empresa_id', body.empresa_id)
+      .eq('ativo', true)
+      .order('criado_em', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (body.telefone && clienteCriado?.id) {
       await admin
         .from('clientes_portal')
         .update({ telefone: body.telefone })
-        .eq('id', created.user.id);
+        .eq('id', clienteCriado.id);
     }
 
     // Envia email com a senha
@@ -140,10 +242,15 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      cliente: { id: created.user.id, email: emailNormalizado, empresa_id: body.empresa_id },
+      cliente: {
+        id: clienteCriado?.id ?? created.user.id,
+        email: emailNormalizado,
+        empresa_id: body.empresa_id,
+      },
+      vinculou_existente: false,
       email_enviado: sendResult.ok,
       email_erro: sendResult.ok ? null : sendResult.error,
-      senha_provisoria: sendResult.ok ? null : senha, // se email falhou, devolve pra menina copiar
+      senha_provisoria: sendResult.ok ? null : senha,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro inesperado';

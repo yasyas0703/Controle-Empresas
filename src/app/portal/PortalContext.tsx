@@ -22,8 +22,14 @@ export type PortalEmpresa = {
   cnpj: string | null;
 };
 
+export type PortalAcesso = {
+  cliente: PortalCliente;
+  empresa: PortalEmpresa | null;
+};
+
 export type PortalLoginResult =
   | { status: 'ok' }
+  | { status: 'ok_multi' } // logou mas tem N empresas, precisa escolher
   | { status: 'invalid' }
   | { status: 'rate_limited' }
   | { status: 'inactive' }
@@ -32,59 +38,74 @@ export type PortalLoginResult =
 type PortalContextValue = {
   cliente: PortalCliente | null;
   empresa: PortalEmpresa | null;
+  acessos: PortalAcesso[];
+  precisaEscolherEmpresa: boolean;
   authReady: boolean;
   login: (email: string, senha: string) => Promise<PortalLoginResult>;
   logout: () => Promise<void>;
   reload: () => Promise<void>;
+  selecionarEmpresa: (clienteId: string) => void;
 };
 
 const PortalContext = createContext<PortalContextValue | null>(null);
 
-// ---- Rate limiting in-memory (mesmo padrão do AppShell interno) ----
+// ---- Rate limiting in-memory ----
 
 const MAX_LOGIN_ATTEMPTS = 5;
 const RATE_WINDOW_MS = 3 * 60 * 1000;
+const STORAGE_KEY_EMPRESA_SELECIONADA = 'controle-triar-portal-empresa-cliente-id';
 
 type AttemptState = { count: number; firstAttemptAt: number };
 
 // ---- Helpers ----
 
-async function fetchClienteEEmpresa(clienteId: string): Promise<{ cliente: PortalCliente; empresa: PortalEmpresa | null } | null> {
-  // Single round-trip: cliente + empresa via embedded select. Antes eram 2 awaits sequenciais.
+type EmpresaShape = { id: string; razao_social: string | null; apelido: string | null; cnpj: string | null };
+
+function rowToAcesso(row: {
+  id: string;
+  empresa_id: string;
+  email: string;
+  nome_contato: string | null;
+  telefone: string | null;
+  ativo: boolean;
+  ultimo_login_em: string | null;
+  empresa: EmpresaShape | EmpresaShape[] | null;
+}): PortalAcesso {
+  const empresaRaw: EmpresaShape | null = Array.isArray(row.empresa)
+    ? (row.empresa[0] ?? null)
+    : (row.empresa ?? null);
+
+  return {
+    cliente: {
+      id: row.id,
+      empresaId: row.empresa_id,
+      email: row.email,
+      nomeContato: row.nome_contato ?? null,
+      telefone: row.telefone ?? null,
+      ativo: !!row.ativo,
+      ultimoLoginEm: row.ultimo_login_em ?? null,
+    },
+    empresa: empresaRaw
+      ? {
+          id: empresaRaw.id,
+          razaoSocial: empresaRaw.razao_social ?? null,
+          apelido: empresaRaw.apelido ?? null,
+          cnpj: empresaRaw.cnpj ?? null,
+        }
+      : null,
+  };
+}
+
+async function fetchAcessosByAuthUser(authUserId: string): Promise<PortalAcesso[]> {
   const { data, error } = await supabasePortal
     .from('clientes_portal')
     .select('id, empresa_id, email, nome_contato, telefone, ativo, ultimo_login_em, empresa:empresas(id, razao_social, apelido, cnpj)')
-    .eq('id', clienteId)
-    .maybeSingle();
+    .eq('auth_user_id', authUserId)
+    .eq('ativo', true)
+    .order('criado_em', { ascending: true });
 
-  if (error || !data) return null;
-
-  type EmpresaShape = { id: string; razao_social: string | null; apelido: string | null; cnpj: string | null };
-  const empresaField = (data as unknown as { empresa: EmpresaShape | EmpresaShape[] | null }).empresa;
-  const empresaRaw: EmpresaShape | null = Array.isArray(empresaField)
-    ? (empresaField[0] ?? null)
-    : (empresaField ?? null);
-
-  const cliente: PortalCliente = {
-    id: data.id,
-    empresaId: data.empresa_id,
-    email: data.email,
-    nomeContato: data.nome_contato ?? null,
-    telefone: data.telefone ?? null,
-    ativo: !!data.ativo,
-    ultimoLoginEm: data.ultimo_login_em ?? null,
-  };
-
-  const empresa: PortalEmpresa | null = empresaRaw
-    ? {
-        id: empresaRaw.id,
-        razaoSocial: empresaRaw.razao_social ?? null,
-        apelido: empresaRaw.apelido ?? null,
-        cnpj: empresaRaw.cnpj ?? null,
-      }
-    : null;
-
-  return { cliente, empresa };
+  if (error || !data) return [];
+  return (data as unknown as Parameters<typeof rowToAcesso>[0][]).map(rowToAcesso);
 }
 
 async function registrarAcesso(acao: 'login' | 'logout', clienteId: string) {
@@ -99,52 +120,85 @@ async function registrarAcesso(acao: 'login' | 'logout', clienteId: string) {
   }
 }
 
+function lerEmpresaSalva(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.sessionStorage.getItem(STORAGE_KEY_EMPRESA_SELECIONADA);
+  } catch {
+    return null;
+  }
+}
+
+function salvarEmpresa(clienteId: string | null) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (clienteId) window.sessionStorage.setItem(STORAGE_KEY_EMPRESA_SELECIONADA, clienteId);
+    else window.sessionStorage.removeItem(STORAGE_KEY_EMPRESA_SELECIONADA);
+  } catch {
+    // ignore
+  }
+}
+
 // ---- Provider ----
 
 export function PortalProvider({ children }: { children: React.ReactNode }) {
-  const [cliente, setCliente] = useState<PortalCliente | null>(null);
-  const [empresa, setEmpresa] = useState<PortalEmpresa | null>(null);
+  const [acessos, setAcessos] = useState<PortalAcesso[]>([]);
+  const [clienteIdSelecionado, setClienteIdSelecionado] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const attemptsRef = useRef<AttemptState | null>(null);
 
-  const applySession = useCallback(async (userId: string | null) => {
+  const acessoSelecionado = useMemo<PortalAcesso | null>(() => {
+    if (!clienteIdSelecionado) return acessos.length === 1 ? acessos[0] : null;
+    return acessos.find((a) => a.cliente.id === clienteIdSelecionado) ?? null;
+  }, [acessos, clienteIdSelecionado]);
+
+  const cliente = acessoSelecionado?.cliente ?? null;
+  const empresa = acessoSelecionado?.empresa ?? null;
+  const precisaEscolherEmpresa = acessos.length > 1 && !acessoSelecionado;
+
+  const aplicarSessao = useCallback(async (userId: string | null) => {
     if (!userId) {
-      setCliente(null);
-      setEmpresa(null);
+      setAcessos([]);
+      setClienteIdSelecionado(null);
+      salvarEmpresa(null);
       return;
     }
-    const result = await fetchClienteEEmpresa(userId);
-    if (!result) {
-      // Sessão do Supabase existe, mas o usuário não é cliente do portal
-      // (ou foi desativado). Limpa pra forçar nova autenticação.
+    const lista = await fetchAcessosByAuthUser(userId);
+    if (lista.length === 0) {
+      // Sessão existe mas não é cliente do portal (ou foi desativado).
       await supabasePortal.auth.signOut();
-      setCliente(null);
-      setEmpresa(null);
+      setAcessos([]);
+      setClienteIdSelecionado(null);
+      salvarEmpresa(null);
       return;
     }
-    if (!result.cliente.ativo) {
-      await supabasePortal.auth.signOut();
-      setCliente(null);
-      setEmpresa(null);
-      return;
+    setAcessos(lista);
+
+    // Recupera empresa anteriormente selecionada se ainda válida
+    const salva = lerEmpresaSalva();
+    if (salva && lista.some((a) => a.cliente.id === salva)) {
+      setClienteIdSelecionado(salva);
+    } else if (lista.length === 1) {
+      setClienteIdSelecionado(lista[0].cliente.id);
+      salvarEmpresa(lista[0].cliente.id);
+    } else {
+      // Múltiplas e nenhuma salva: deixa null pra UI mostrar picker
+      setClienteIdSelecionado(null);
+      salvarEmpresa(null);
     }
-    setCliente(result.cliente);
-    setEmpresa(result.empresa);
   }, []);
 
   const reload = useCallback(async () => {
     const { data } = await supabasePortal.auth.getSession();
-    await applySession(data.session?.user?.id ?? null);
-  }, [applySession]);
+    await aplicarSessao(data.session?.user?.id ?? null);
+  }, [aplicarSessao]);
 
-  // Carrega sessão inicial + escuta mudanças.
+  // Carga inicial + listener de mudança de sessão.
   //
   // PEGADINHA SUPABASE: o callback de `onAuthStateChange` é invocado dentro
   // de um lock interno do supabase-js. Fazer query no DB ali dentro (ou
-  // `await` em qualquer método do supabase) gera deadlock — o app fica em
-  // loading infinito quando há sessão persistida (recarregar página, voltar
-  // depois). A solução padrão é deferir o trabalho com `setTimeout(0)`
-  // pra que ele rode FORA do lock.
+  // `await` em qualquer método do supabase) gera deadlock. Solução: deferir
+  // o trabalho com `setTimeout(0)` pra rodar FORA do lock.
   useEffect(() => {
     let cancelled = false;
 
@@ -152,7 +206,7 @@ export function PortalProvider({ children }: { children: React.ReactNode }) {
       try {
         const { data } = await supabasePortal.auth.getSession();
         if (cancelled) return;
-        await applySession(data.session?.user?.id ?? null);
+        await aplicarSessao(data.session?.user?.id ?? null);
       } catch (err) {
         console.error('[PortalContext] erro na carga inicial:', err);
       }
@@ -163,7 +217,7 @@ export function PortalProvider({ children }: { children: React.ReactNode }) {
       const userId = session?.user?.id ?? null;
       setTimeout(() => {
         if (cancelled) return;
-        void applySession(userId).catch((err) =>
+        void aplicarSessao(userId).catch((err) =>
           console.error('[PortalContext] erro em onAuthStateChange:', err)
         );
       }, 0);
@@ -173,7 +227,7 @@ export function PortalProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       sub.subscription.unsubscribe();
     };
-  }, [applySession]);
+  }, [aplicarSessao]);
 
   const checkAndRegisterAttempt = useCallback((): 'ok' | 'rate_limited' => {
     const now = Date.now();
@@ -191,9 +245,28 @@ export function PortalProvider({ children }: { children: React.ReactNode }) {
     attemptsRef.current = null;
   }, []);
 
+  const selecionarEmpresa = useCallback(
+    (clienteId: string) => {
+      const existe = acessos.some((a) => a.cliente.id === clienteId);
+      if (!existe) return;
+      setClienteIdSelecionado(clienteId);
+      salvarEmpresa(clienteId);
+      // best-effort: atualiza ultimo_login_em + log
+      void supabasePortal
+        .from('clientes_portal')
+        .update({ ultimo_login_em: new Date().toISOString() })
+        .eq('id', clienteId);
+      void registrarAcesso('login', clienteId);
+    },
+    [acessos],
+  );
+
   const login = useCallback(
     async (email: string, senha: string): Promise<PortalLoginResult> => {
+      console.log('[PortalLogin] iniciando login com', { email: email.trim().toLowerCase() });
+
       if (checkAndRegisterAttempt() === 'rate_limited') {
+        console.warn('[PortalLogin] rate_limited');
         return { status: 'rate_limited' };
       }
 
@@ -203,6 +276,11 @@ export function PortalProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
+        console.error('[PortalLogin] signInWithPassword ERRO:', {
+          message: error.message,
+          status: error.status,
+          name: error.name,
+        });
         const msg = error.message?.toLowerCase() ?? '';
         if (msg.includes('invalid') || msg.includes('credentials')) {
           return { status: 'invalid' };
@@ -211,31 +289,41 @@ export function PortalProvider({ children }: { children: React.ReactNode }) {
       }
 
       const userId = data.user?.id;
-      if (!userId) return { status: 'invalid' };
+      console.log('[PortalLogin] signInWithPassword OK, userId=', userId);
+      if (!userId) {
+        console.warn('[PortalLogin] resposta sem user.id');
+        return { status: 'invalid' };
+      }
 
-      const result = await fetchClienteEEmpresa(userId);
-      if (!result) {
-        // Existe no auth.users, mas não é cliente do portal.
+      const lista = await fetchAcessosByAuthUser(userId);
+      console.log('[PortalLogin] fetchAcessosByAuthUser retornou', lista.length, 'acessos', lista);
+      if (lista.length === 0) {
+        console.warn('[PortalLogin] nenhum cliente_portal ativo encontrado pro auth_user_id', userId, '— fazendo signOut');
         await supabasePortal.auth.signOut();
         return { status: 'invalid' };
       }
-      if (!result.cliente.ativo) {
-        await supabasePortal.auth.signOut();
-        return { status: 'inactive' };
-      }
+      // Note: lista filtra ativos == true, então não precisa testar inactive aqui.
 
-      setCliente(result.cliente);
-      setEmpresa(result.empresa);
+      setAcessos(lista);
       resetAttempts();
 
-      // Atualiza ultimo_login_em + grava em portal_acessos (best-effort)
-      void supabasePortal
-        .from('clientes_portal')
-        .update({ ultimo_login_em: new Date().toISOString() })
-        .eq('id', userId);
-      void registrarAcesso('login', userId);
+      if (lista.length === 1) {
+        const unico = lista[0];
+        setClienteIdSelecionado(unico.cliente.id);
+        salvarEmpresa(unico.cliente.id);
 
-      return { status: 'ok' };
+        void supabasePortal
+          .from('clientes_portal')
+          .update({ ultimo_login_em: new Date().toISOString() })
+          .eq('id', unico.cliente.id);
+        void registrarAcesso('login', unico.cliente.id);
+        return { status: 'ok' };
+      }
+
+      // Múltiplas empresas: UI vai mostrar o picker
+      setClienteIdSelecionado(null);
+      salvarEmpresa(null);
+      return { status: 'ok_multi' };
     },
     [checkAndRegisterAttempt, resetAttempts]
   );
@@ -244,13 +332,24 @@ export function PortalProvider({ children }: { children: React.ReactNode }) {
     const clienteId = cliente?.id;
     if (clienteId) await registrarAcesso('logout', clienteId);
     await supabasePortal.auth.signOut();
-    setCliente(null);
-    setEmpresa(null);
+    setAcessos([]);
+    setClienteIdSelecionado(null);
+    salvarEmpresa(null);
   }, [cliente?.id]);
 
   const value = useMemo<PortalContextValue>(
-    () => ({ cliente, empresa, authReady, login, logout, reload }),
-    [cliente, empresa, authReady, login, logout, reload]
+    () => ({
+      cliente,
+      empresa,
+      acessos,
+      precisaEscolherEmpresa,
+      authReady,
+      login,
+      logout,
+      reload,
+      selecionarEmpresa,
+    }),
+    [cliente, empresa, acessos, precisaEscolherEmpresa, authReady, login, logout, reload, selecionarEmpresa]
   );
 
   return <PortalContext.Provider value={value}>{children}</PortalContext.Provider>;

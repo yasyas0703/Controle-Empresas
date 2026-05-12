@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { CheckCircle2, Copy, KeyRound, Loader2, Mail, Power, Search, Smartphone, UserPlus, XCircle } from 'lucide-react';
+import { CheckCircle2, Copy, KeyRound, Loader2, Pencil, Power, Search, Smartphone, Trash2, UserPlus, XCircle } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { supabase } from '@/lib/supabase';
 
@@ -35,6 +35,7 @@ export default function ClientesPortalPage() {
   const [busca, setBusca] = useState('');
   const [filtro, setFiltro] = useState<Filtro>('todos');
   const [criarTarget, setCriarTarget] = useState<{ empresaId: string; emailInicial: string } | null>(null);
+  const [editarTarget, setEditarTarget] = useState<Cliente | null>(null);
   const [acaoEmCurso, setAcaoEmCurso] = useState<string | null>(null);
 
   // Carrega clientes_portal
@@ -85,6 +86,17 @@ export default function ClientesPortalPage() {
       .sort((a, b) => (a.razao_social ?? a.codigo ?? '').localeCompare(b.razao_social ?? b.codigo ?? ''));
   }, [empresas, clientesPorEmpresa, busca, filtro]);
 
+  // Quantas empresas ativas cada email atende (pra mostrar badge "+N empresas")
+  const empresasAtivasPorEmail = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const c of clientes) {
+      if (!c.ativo) continue;
+      const k = c.email.toLowerCase();
+      map.set(k, (map.get(k) ?? 0) + 1);
+    }
+    return map;
+  }, [clientes]);
+
   const contadores = useMemo(() => {
     const totalEmpresas = empresas.length;
     let comAcesso = 0;
@@ -123,6 +135,41 @@ export default function ClientesPortalPage() {
       } else {
         mostrarAlerta('Senha reenviada', 'Nova senha provisória enviada pro email do cliente.', 'sucesso');
       }
+    } finally {
+      setAcaoEmCurso(null);
+    }
+  }
+
+  async function excluir(clienteId: string, emailDoCliente: string) {
+    if (acaoEmCurso) return;
+    if (
+      !confirm(
+        `Excluir o acesso de "${emailDoCliente}" desta empresa em DEFINITIVO?\n\n` +
+          `Histórico de acessos será apagado. Se for o último acesso dele no sistema, ` +
+          `o email será liberado pra ser cadastrado de novo no futuro.`,
+      )
+    )
+      return;
+    setAcaoEmCurso(clienteId);
+    try {
+      const token = await getAccessToken();
+      const res = await fetch(`/api/clientes-portal/${clienteId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        mostrarAlerta('Erro', json.error || 'Falha ao excluir.', 'erro');
+        return;
+      }
+      setClientes((prev) => prev.filter((c) => c.id !== clienteId));
+      mostrarAlerta(
+        'Excluído',
+        json.email_liberado
+          ? 'Acesso removido e email liberado pra ser usado novamente.'
+          : 'Acesso removido.',
+        'sucesso',
+      );
     } finally {
       setAcaoEmCurso(null);
     }
@@ -233,7 +280,18 @@ export default function ClientesPortalPage() {
                       <div className="text-[11px] text-slate-500">{e.codigo} {e.cnpj ? `· ${e.cnpj}` : ''}</div>
                     </td>
                     <td className="px-3 py-2 text-slate-700 dark:text-slate-300">
-                      {cliente?.email ?? <span className="text-slate-400">—</span>}
+                      {cliente ? (
+                        <div>
+                          <div>{cliente.email}</div>
+                          {(empresasAtivasPorEmail.get(cliente.email.toLowerCase()) ?? 0) > 1 && (
+                            <div className="text-[10px] text-emerald-600 dark:text-emerald-400">
+                              também atende {(empresasAtivasPorEmail.get(cliente.email.toLowerCase()) ?? 1) - 1} outra(s) empresa(s)
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       {!cliente ? (
@@ -261,6 +319,14 @@ export default function ClientesPortalPage() {
                         {cliente && cliente.ativo && (
                           <>
                             <button
+                              onClick={() => setEditarTarget(cliente)}
+                              disabled={!!acaoEmCurso}
+                              className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                              title="Editar email/contato"
+                            >
+                              <Pencil size={12} /> Editar
+                            </button>
+                            <button
                               onClick={() => void reenviarSenha(cliente.id)}
                               disabled={!!acaoEmCurso}
                               className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
@@ -273,20 +339,38 @@ export default function ClientesPortalPage() {
                               onClick={() => void toggleAtivo(cliente.id, false)}
                               disabled={!!acaoEmCurso}
                               className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-900 dark:bg-slate-900 dark:text-red-300"
-                              title="Desativar"
+                              title="Desativar (mantém histórico, pode reativar depois)"
                             >
                               <Power size={12} /> Desativar
+                            </button>
+                            <button
+                              onClick={() => void excluir(cliente.id, cliente.email)}
+                              disabled={!!acaoEmCurso}
+                              className="inline-flex items-center gap-1 rounded-md border border-red-300 bg-red-50 px-2.5 py-1 text-xs text-red-700 hover:bg-red-100 disabled:opacity-60 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"
+                              title="Excluir definitivo — libera o email"
+                            >
+                              <Trash2 size={12} /> Excluir
                             </button>
                           </>
                         )}
                         {cliente && !cliente.ativo && (
-                          <button
-                            onClick={() => void toggleAtivo(cliente.id, true)}
-                            disabled={!!acaoEmCurso}
-                            className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-white px-2.5 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 dark:border-emerald-900 dark:bg-slate-900 dark:text-emerald-300"
-                          >
-                            <CheckCircle2 size={12} /> Reativar
-                          </button>
+                          <>
+                            <button
+                              onClick={() => void toggleAtivo(cliente.id, true)}
+                              disabled={!!acaoEmCurso}
+                              className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-white px-2.5 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 dark:border-emerald-900 dark:bg-slate-900 dark:text-emerald-300"
+                            >
+                              <CheckCircle2 size={12} /> Reativar
+                            </button>
+                            <button
+                              onClick={() => void excluir(cliente.id, cliente.email)}
+                              disabled={!!acaoEmCurso}
+                              className="inline-flex items-center gap-1 rounded-md border border-red-300 bg-red-50 px-2.5 py-1 text-xs text-red-700 hover:bg-red-100 disabled:opacity-60 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"
+                              title="Excluir definitivo — libera o email"
+                            >
+                              <Trash2 size={12} /> Excluir
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -307,6 +391,33 @@ export default function ClientesPortalPage() {
           onSuccess={(novo) => {
             setClientes((prev) => [novo, ...prev]);
             setCriarTarget(null);
+          }}
+        />
+      )}
+
+      {editarTarget && (
+        <ModalEditarAcesso
+          cliente={editarTarget}
+          onClose={() => setEditarTarget(null)}
+          onSuccess={(atualizado) => {
+            // Se o email mudou, propaga em todas as linhas com o mesmo email
+            // antigo (porque o auth.users.email é único e mudou pra todas).
+            setClientes((prev) =>
+              prev.map((c) =>
+                c.email === editarTarget.email
+                  ? {
+                      ...c,
+                      email: atualizado.email,
+                      ...(c.id === atualizado.id
+                        ? { nome_contato: atualizado.nome_contato, telefone: atualizado.telefone }
+                        : {}),
+                    }
+                  : c.id === atualizado.id
+                  ? { ...c, ...atualizado }
+                  : c,
+              ),
+            );
+            setEditarTarget(null);
           }}
         />
       )}
@@ -397,23 +508,33 @@ function ModalCriarAcesso({
         mostrarAlerta('Erro', json.error || 'Falha ao criar acesso.', 'erro');
         return;
       }
-      if (!json.email_enviado) {
+      const novo: Cliente = {
+        id: json.cliente.id,
+        empresa_id: empresaId,
+        email: email.trim().toLowerCase(),
+        nome_contato: nome.trim() || null,
+        telefone: telefone.trim() || null,
+        ativo: true,
+        ultimo_login_em: null,
+        criado_em: new Date().toISOString(),
+      };
+      if (!json.email_enviado && json.senha_provisoria) {
+        // Só tem senha provisória quando criou user novo no Auth. Pra mostrar
+        // pra menina copiar e mandar manualmente.
         setResultado({
           senha: json.senha_provisoria,
           aviso: `Acesso criado, mas não conseguimos enviar email automaticamente (${json.email_erro || 'erro desconhecido'}). Copie a senha abaixo e mande pro cliente manualmente.`,
         });
       } else {
-        mostrarAlerta('Acesso criado', 'Email enviado pro cliente com senha provisória.', 'sucesso');
-        onSuccess({
-          id: json.cliente.id,
-          empresa_id: empresaId,
-          email: email.trim().toLowerCase(),
-          nome_contato: nome.trim() || null,
-          telefone: telefone.trim() || null,
-          ativo: true,
-          ultimo_login_em: null,
-          criado_em: new Date().toISOString(),
-        });
+        const tipoMsg = json.vinculou_existente
+          ? 'Email já tinha conta no sistema — vinculado a essa empresa também. O cliente continua usando a mesma senha.'
+          : 'Email enviado pro cliente com senha provisória.';
+        mostrarAlerta(
+          json.vinculou_existente ? 'Acesso vinculado' : 'Acesso criado',
+          tipoMsg,
+          'sucesso',
+        );
+        onSuccess(novo);
       }
     } finally {
       setEnviando(false);
@@ -502,11 +623,6 @@ function ModalCriarAcesso({
               />
             </label>
 
-            <div className="rounded-md bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-800/50 dark:text-slate-400">
-              <Mail size={12} className="mr-1 inline" />
-              Vamos gerar uma senha provisória e enviar pelo SEU Gmail (precisa estar conectado em Obrigações).
-            </div>
-
             <div className="flex gap-2 pt-1">
               <button
                 type="button"
@@ -527,6 +643,139 @@ function ModalCriarAcesso({
             </div>
           </form>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ModalEditarAcesso({
+  cliente,
+  onClose,
+  onSuccess,
+}: {
+  cliente: Cliente;
+  onClose: () => void;
+  onSuccess: (atualizado: Cliente) => void;
+}) {
+  const { mostrarAlerta } = useSistema();
+  const [email, setEmail] = useState(cliente.email);
+  const [nome, setNome] = useState(cliente.nome_contato ?? '');
+  const [telefone, setTelefone] = useState(cliente.telefone ?? '');
+  const [enviando, setEnviando] = useState(false);
+
+  async function submeter(e: FormEvent) {
+    e.preventDefault();
+    if (!email.trim()) {
+      mostrarAlerta('Email obrigatório', 'Email não pode ficar vazio.', 'aviso');
+      return;
+    }
+    setEnviando(true);
+    try {
+      const token = await getAccessToken();
+      const res = await fetch(`/api/clientes-portal/${cliente.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          email: email.trim(),
+          nome_contato: nome.trim() || null,
+          telefone: telefone.trim() || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        mostrarAlerta('Erro', json.error || 'Falha ao salvar.', 'erro');
+        return;
+      }
+      mostrarAlerta(
+        'Salvo',
+        json.email_mudou
+          ? 'Dados atualizados. O cliente já pode logar com o novo email.'
+          : 'Dados atualizados.',
+        'sucesso',
+      );
+      onSuccess({
+        ...cliente,
+        email: email.trim().toLowerCase(),
+        nome_contato: nome.trim() || null,
+        telefone: telefone.trim() || null,
+      });
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+      onMouseDown={(e) => e.currentTarget === e.target && !enviando && onClose()}
+    >
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
+        <div className="flex items-start justify-between bg-gradient-to-r from-slate-700 to-slate-600 px-5 py-4 rounded-t-2xl text-white">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider opacity-90">Editar acesso · Portal</div>
+            <div className="text-sm font-bold">{cliente.email}</div>
+          </div>
+          <button onClick={onClose} disabled={enviando} className="rounded-lg bg-white/20 p-1.5 hover:bg-white/30">
+            <XCircle size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={submeter} className="p-5 space-y-3">
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-slate-700 dark:text-slate-300">Email do acesso *</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+              disabled={enviando}
+            />
+            <span className="mt-1 block text-[11px] text-slate-500">
+              Trocar o email muda o login do cliente em <strong>todas</strong> as empresas dele.
+            </span>
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-slate-700 dark:text-slate-300">Nome do contato</span>
+            <input
+              type="text"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+              disabled={enviando}
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-slate-700 dark:text-slate-300">Telefone</span>
+            <input
+              type="tel"
+              value={telefone}
+              onChange={(e) => setTelefone(e.target.value)}
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+              disabled={enviando}
+            />
+          </label>
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={enviando}
+              className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={enviando}
+              className="flex flex-1 items-center justify-center gap-2 rounded-md bg-slate-700 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {enviando ? <Loader2 size={14} className="animate-spin" /> : <Pencil size={14} />}
+              Salvar
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

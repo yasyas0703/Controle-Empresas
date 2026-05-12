@@ -9,7 +9,7 @@ import InstallPrompt from '@/app/portal/components/InstallPrompt';
 
 export default function PortalLoginPage() {
   const router = useRouter();
-  const { cliente, authReady, login } = usePortal();
+  const { cliente, acessos, authReady, login } = usePortal();
 
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -18,8 +18,10 @@ export default function PortalLoginPage() {
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
-    if (authReady && cliente) router.replace('/portal');
-  }, [authReady, cliente, router]);
+    // Se cliente já selecionado OU se tem acessos (logado mas escolhendo
+    // empresa) — em ambos casos sai do form de login.
+    if (authReady && (cliente || acessos.length > 0)) router.replace('/portal');
+  }, [authReady, cliente, acessos.length, router]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -34,6 +36,11 @@ export default function PortalLoginPage() {
 
     switch (result.status) {
       case 'ok':
+        router.replace('/portal');
+        return;
+      case 'ok_multi':
+        // login deu certo, mas tem N empresas — o EmpresaPicker do layout
+        // já cobre a tela. Redireciona pro /portal pra ele assumir.
         router.replace('/portal');
         return;
       case 'invalid':

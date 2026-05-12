@@ -42,12 +42,18 @@ export async function POST(req: Request) {
     const userId = authData.user.id;
 
     const admin = getSupabaseAdmin();
+    // Pega a 1ª linha ativa do user (em multi-empresa, qualquer uma serve —
+    // a subscription é por dispositivo, e o webPush.ts envia pra todas as
+    // empresas do mesmo auth_user).
     const { data: clienteRow } = await admin
       .from('clientes_portal')
-      .select('id, ativo')
-      .eq('id', userId)
+      .select('id')
+      .eq('auth_user_id', userId)
+      .eq('ativo', true)
+      .order('criado_em', { ascending: true })
+      .limit(1)
       .maybeSingle();
-    if (!clienteRow || !clienteRow.ativo) {
+    if (!clienteRow) {
       return NextResponse.json({ error: 'Acesso não autorizado' }, { status: 403 });
     }
 
@@ -56,7 +62,7 @@ export async function POST(req: Request) {
       .from('portal_push_subscriptions')
       .upsert(
         {
-          cliente_id: userId,
+          cliente_id: clienteRow.id,
           endpoint: body.endpoint,
           p256dh: body.keys.p256dh,
           auth: body.keys.auth,

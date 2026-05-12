@@ -49,7 +49,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // Carrega cliente + empresa
     const { data: clienteRow } = await admin
       .from('clientes_portal')
-      .select('id, email, empresa_id, nome_contato, ativo, empresa:empresas(razao_social, apelido, codigo)')
+      .select('id, auth_user_id, email, empresa_id, nome_contato, ativo, empresa:empresas(razao_social, apelido, codigo)')
       .eq('id', clienteId)
       .maybeSingle();
     if (!clienteRow) {
@@ -66,9 +66,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       : (empresaField ?? null);
     const empresaNome = empresaRaw?.razao_social || empresaRaw?.apelido || empresaRaw?.codigo || 'Sua empresa';
 
-    // Gera nova senha + atualiza no Auth
+    // PROTEÇÃO: se o auth_user_id também é uma usuária do escritório,
+    // bloqueia — resetar a senha quebraria o login interno dela.
+    const { data: ehUsuariaInterna } = await admin
+      .from('usuarios')
+      .select('id, email')
+      .eq('id', clienteRow.auth_user_id)
+      .maybeSingle();
+    if (ehUsuariaInterna) {
+      return NextResponse.json(
+        {
+          error:
+            'Esse email pertence a uma usuária do escritório. Resetar a senha aqui quebraria o login dela no sistema interno. ' +
+            'Use "Trocar senha" no perfil dela ou peça pra ela trocar em /usuarios.',
+        },
+        { status: 409 },
+      );
+    }
+
+    // Gera nova senha + atualiza no Auth (usa auth_user_id, não o id da linha)
     const senha = gerarSenhaTemporaria(12);
-    const { error: updErr } = await admin.auth.admin.updateUserById(clienteId, { password: senha });
+    const { error: updErr } = await admin.auth.admin.updateUserById(clienteRow.auth_user_id, { password: senha });
     if (updErr) {
       return NextResponse.json({ error: 'Falha ao atualizar senha: ' + updErr.message }, { status: 500 });
     }
