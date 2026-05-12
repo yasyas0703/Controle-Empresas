@@ -85,8 +85,13 @@ export default function HojePage() {
   }, [abaUsuario]);
 
   // Configurações do usuário (persistidas em localStorage)
+  // Pro gerente, "apenasMinhas" começa DESLIGADO (vê tudo do escritório por padrão).
+  // Pra funcionário comum, começa LIGADO (vê só as empresas dele).
+  // Cada um tem chave própria pra não sobrescrever a do outro.
+  const apenasMinhasKey = canManage ? 'hoje-apenas-minhas-gerente' : 'hoje-apenas-minhas-usuario';
+  const apenasMinhasDefault = !canManage; // gerente → false; usuário → true
   const [dias, setDias] = useLocalStorageState<number>('hoje-dias', 7);
-  const [apenasMinhas, setApenasMinhas] = useLocalStorageState<boolean>('hoje-apenas-minhas', true);
+  const [apenasMinhas, setApenasMinhas] = useLocalStorageState<boolean>(apenasMinhasKey, apenasMinhasDefault);
   const [tipos, setTipos] = useLocalStorageState<Tipo[]>('hoje-tipos', ['fiscal', 'ret', 'documento']);
   const [incluirVencidos, setIncluirVencidos] = useLocalStorageState<boolean>('hoje-incluir-vencidos', true);
   const [incluirFeitos, setIncluirFeitos] = useLocalStorageState<boolean>('hoje-incluir-feitos', false);
@@ -307,7 +312,7 @@ export default function HojePage() {
               <h1 className="text-xl sm:text-2xl font-black">Hoje</h1>
             </div>
             <p className="mt-1 text-sm text-cyan-50">
-              {currentUser?.nome ? `${currentUser.nome}, o ` : 'O '}foco do dia. Sem ruído, sem filtro complicado.
+              {currentUser?.nome ? `${currentUser.nome}, o ` : 'O '}painel de hoje mostra as obrigações que estão vencendo para suas empresas nos próximos dias, pra você não esquecer de nada importante.
             </p>
           </div>
           <button

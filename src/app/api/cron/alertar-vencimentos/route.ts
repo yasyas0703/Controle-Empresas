@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
-import { daysUntil } from '@/app/utils/date';
 import { obrigacaoAplicaParaEmpresa, obrigacaoSnAplicaParaEmpresa } from '@/app/utils/regrasVencimentosFiscais';
 import {
   FISCAL_DEPT_NOME, FISCAL_SN_DEPT_NOME,
@@ -90,8 +89,13 @@ export async function GET(req: Request) {
     }
   }
 
+  // Modo simulação: ?simular=2026-05-18 finge que "hoje" é essa data e ?dry=1 não grava nada
+  const url = new URL(req.url);
+  const simular = url.searchParams.get('simular');
+  const dry = url.searchParams.get('dry') === '1';
+
   try {
-    return await processarCron();
+    return await processarCron({ simularDataIso: simular, dry });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro desconhecido';
     const stack = err instanceof Error ? err.stack : undefined;
@@ -103,8 +107,14 @@ export async function GET(req: Request) {
   }
 }
 
-async function processarCron(): Promise<NextResponse> {
+async function processarCron(opts: { simularDataIso?: string | null; dry?: boolean } = {}): Promise<NextResponse> {
   const admin = getSupabaseAdmin();
+  const { simularDataIso, dry } = opts;
+  // Data de referência (default = hoje; usar ?simular=YYYY-MM-DD pra fingir outro dia)
+  const dataRef = simularDataIso ? new Date(simularDataIso + 'T00:00:00') : new Date();
+  if (Number.isNaN(dataRef.getTime())) {
+    return NextResponse.json({ error: `Data simular inválida: ${simularDataIso}` }, { status: 400 });
+  }
 
   // ── 1. Carrega dados básicos em paralelo ────────────────────────────────
   const [empresasRes, departamentosRes, usuariosRes, overridesRes, responsaveisRes] = await Promise.all([
@@ -176,9 +186,8 @@ async function processarCron(): Promise<NextResponse> {
   }
 
   // ── 5. Checklist do mês corrente + anterior ────────────────────────────
-  const hoje = new Date();
-  const mesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
-  const mesAnt = new Date(hoje);
+  const mesAtual = `${dataRef.getFullYear()}-${String(dataRef.getMonth() + 1).padStart(2, '0')}`;
+  const mesAnt = new Date(dataRef);
   mesAnt.setMonth(mesAnt.getMonth() - 1);
   const mesAnterior = `${mesAnt.getFullYear()}-${String(mesAnt.getMonth() + 1).padStart(2, '0')}`;
 
@@ -215,6 +224,18 @@ async function processarCron(): Promise<NextResponse> {
     ...VENCIMENTOS_FISCAIS_SN_NOMES,
   ].map(normalizarNome));
 
+  // Função local de "dias até vencer" baseada na data de referência (default hoje)
+  const refMidnight = new Date(dataRef);
+  refMidnight.setHours(0, 0, 0, 0);
+  const refMs = refMidnight.getTime();
+  function diasAteRef(vencimentoIso: string): number | null {
+    if (!vencimentoIso) return null;
+    const v = new Date(vencimentoIso + 'T00:00:00');
+    if (Number.isNaN(v.getTime())) return null;
+    v.setHours(0, 0, 0, 0);
+    return Math.round((v.getTime() - refMs) / (1000 * 60 * 60 * 24));
+  }
+
   // ── 7. Loop pra montar candidatos ──────────────────────────────────────
   const candidatos: CandidatoOut[] = [];
   for (const emp of empresas) {
@@ -232,7 +253,7 @@ async function processarCron(): Promise<NextResponse> {
           || obrigacaoSnAplicaParaEmpresa(v.nome, emp.estado, emp.cidade));
       if (!aplica) continue;
 
-      const d = daysUntil(v.vencimento);
+      const d = diasAteRef(v.vencimento);
       if (d === null) continue;
       const marco = marcoDeDias(d);
       if (!marco) continue;
@@ -297,13 +318,21 @@ async function processarCron(): Promise<NextResponse> {
   }
 
   // ── 10. Cria 1 notif agregada por (destinatário, marco) ────────────────
+  // Quando dry=1, só simula: monta a lista mas NÃO insere notif/alerta no banco.
   let notifsCriadas = 0;
   let falhas = 0;
+  const previewNotifs: Array<{ destinatarioId: string; marco: Marco; titulo: string; quantidade: number }> = [];
 
   for (const [destinatarioId, porMarco] of porDestinatario.entries()) {
     for (const [marco, items] of porMarco.entries()) {
+      const titulo = tituloAgregado(marco, items.length);
+      if (dry) {
+        previewNotifs.push({ destinatarioId, marco, titulo, quantidade: items.length });
+        notifsCriadas++;
+        continue;
+      }
       const { error: insErr } = await admin.from('notificacoes').insert({
-        titulo: tituloAgregado(marco, items.length),
+        titulo,
         mensagem: mensagemAgregada(marco, items),
         tipo: tipoDoAlerta(marco),
         lida: false,
@@ -323,14 +352,13 @@ async function processarCron(): Promise<NextResponse> {
   }
 
   // ── 11. Marca todos os items como "já alertados" (bulk insert) ─────────
-  if (novos.length > 0) {
+  if (!dry && novos.length > 0) {
     const log = novos.map((c) => ({
       empresa_id: c.empresaId,
       obrigacao: c.obrigacao,
       vencimento: c.vencimento,
       marco: c.marco,
     }));
-    // Upsert pra ignorar conflito (caso paralelismo)
     const { error: logErr } = await admin
       .from('vencimento_alertas')
       .upsert(log, { onConflict: 'empresa_id,obrigacao,vencimento,marco', ignoreDuplicates: true });
@@ -339,12 +367,15 @@ async function processarCron(): Promise<NextResponse> {
 
   return NextResponse.json({
     ok: true,
+    data_referencia: refMidnight.toISOString().slice(0, 10),
+    dry_run: !!dry,
     candidatos_em_janela: candidatos.length,
     novos_alertas: novos.length,
     ja_alertados: candidatos.length - novos.length,
     notificacoes_criadas: notifsCriadas,
     destinatarios_unicos: porDestinatario.size,
     falhas,
+    preview: dry ? previewNotifs : undefined,
     timestamp: new Date().toISOString(),
   });
 }
