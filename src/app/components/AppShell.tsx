@@ -432,7 +432,11 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   //   • Fiscal/SN (não admin): PRIMEIRO item (acima de Dashboard)
   //   • Admin/privileged: logo DEPOIS do Dashboard
   //   • Outros (pessoal/contabil/cadastro): não vê "Hoje"
-  const podeVerHoje = canAdmin || isPrivileged || ehFiscalOuSn;
+  //
+  // ⚠️ Aba SUSPENSA temporariamente — não aparece pra ninguém.
+  //    Pra religar, troca MOSTRAR_ABA_HOJE pra true.
+  const MOSTRAR_ABA_HOJE = false;
+  const podeVerHoje = MOSTRAR_ABA_HOJE && (canAdmin || isPrivileged || ehFiscalOuSn);
   if (podeVerHoje) {
     const hojeItem: NavItem = { href: '/hoje', label: 'Hoje', icon: Sparkles };
     if (ehFiscalOuSn && !canAdmin && !isPrivileged) {
