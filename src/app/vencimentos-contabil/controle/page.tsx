@@ -218,22 +218,16 @@ export default function ControleContabilPage() {
   }, [authReady, currentUserId, userSlug, canAdmin, isPrivileged]);
 
   // Bancos visíveis no ano selecionado.
-  //  - Ano corrente: mostra todos os bancos ativos (workflow normal — bancos
-  //    recém-criados aparecem mesmo sem marcação ainda).
-  //  - Anos anteriores: só bancos que têm pelo menos uma marcação naquele
-  //    ano. Isso garante que import de 2023 não polua a visão de 2024 e
-  //    vice-versa — cada ano é isolado pelos próprios statuses.
+  //  - Bancos ativos aparecem em qualquer ano — usuário pode marcar meses
+  //    retroativos quando recebe extratos antigos de banco novo.
+  //  - Bancos inativos (desativados pelo usuário) só aparecem nos anos em
+  //    que têm marcação, pra preservar histórico sem poluir anos sem uso.
   const bancosVisiveisIds = useMemo(() => {
-    const anoCorrente = new Date().getFullYear();
-    if (ano === anoCorrente) {
-      const set = new Set<UUID>();
-      for (const b of bancos) if (b.ativo) set.add(b.id);
-      return set;
-    }
     const set = new Set<UUID>();
+    for (const b of bancos) if (b.ativo) set.add(b.id);
     for (const s of statusMap.values()) set.add(s.contaBancariaId);
     return set;
-  }, [bancos, statusMap, ano]);
+  }, [bancos, statusMap]);
 
   const bancosPorEmpresa = useMemo(() => {
     const map = new Map<UUID, ContaBancaria[]>();
