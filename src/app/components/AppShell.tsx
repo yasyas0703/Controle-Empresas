@@ -32,7 +32,11 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 const nav: NavItem[] = [
-  { href: '/hoje', label: 'Hoje', icon: Sparkles },
+  // "/hoje" não é estático aqui — é injetado dinamicamente abaixo em
+  // navItems, com posição que varia conforme o perfil do usuário:
+  //   • Fiscal/SN (não admin): aparece como PRIMEIRO item (acima de Dashboard)
+  //   • Admin/privileged: aparece logo DEPOIS do Dashboard
+  //   • Outros departamentos: NÃO aparece
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/vencimentos', label: 'Vencimentos', icon: AlertTriangle, badge: true },
   { href: '/vencimentos-fiscais', label: 'Painel Fiscal', icon: Grid3x3, department: 'fiscal' },
@@ -394,6 +398,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
   const userDepartamentoSlug = getDepartamentoSlugDoUsuario(currentUser, departamentos);
   const userDepartamentoSlugs = getDepartamentoSlugsDoUsuario(currentUser, departamentos);
+  const ehFiscalOuSn = userDepartamentoSlugs.includes('fiscal');
   const navItems = nav.filter((i) => {
     if (i.emailOnly) {
       const userEmail = currentUser?.email?.toLowerCase();
@@ -422,6 +427,23 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     }
     return true;
   });
+
+  // Injeta "Hoje" dinamicamente:
+  //   • Fiscal/SN (não admin): PRIMEIRO item (acima de Dashboard)
+  //   • Admin/privileged: logo DEPOIS do Dashboard
+  //   • Outros (pessoal/contabil/cadastro): não vê "Hoje"
+  const podeVerHoje = canAdmin || isPrivileged || ehFiscalOuSn;
+  if (podeVerHoje) {
+    const hojeItem: NavItem = { href: '/hoje', label: 'Hoje', icon: Sparkles };
+    if (ehFiscalOuSn && !canAdmin && !isPrivileged) {
+      navItems.unshift(hojeItem);
+    } else {
+      const dashIdx = navItems.findIndex((i) => i.href === '/dashboard');
+      if (dashIdx >= 0) navItems.splice(dashIdx + 1, 0, hojeItem);
+      else navItems.unshift(hojeItem);
+    }
+  }
+
   // Usado em outros pontos da pagina (notificacoes etc) que ja consumiam o
   // singular. Mantemos a variavel pra nao quebrar referencias abaixo.
   void userDepartamentoSlug;
