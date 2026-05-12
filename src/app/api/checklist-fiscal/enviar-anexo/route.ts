@@ -319,7 +319,17 @@ export async function POST(req: Request) {
     // antigo no Storage FICA preservado pra auditoria (histórico imutável).
     let portalDocumentoId: string | null = null;
     try {
-      const portalPath = `${body.empresaId}/${randomUUID()}-${body.arquivoNome}`;
+      // Sanitiza o nome do arquivo pro path do Storage (Supabase rejeita
+      // acentos/cedilha e alguns caracteres). O nome original continua salvo
+      // em `arquivo_nome_original` pra exibição.
+      const ext = (body.arquivoNome.split('.').pop() ?? '').toLowerCase();
+      const baseSemExt = body.arquivoNome.replace(/\.[^.]+$/, '');
+      const nomeSlug = baseSemExt
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-zA-Z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'arquivo';
+      const nomeSeguro = ext ? `${nomeSlug}.${ext}` : nomeSlug;
+      const portalPath = `${body.empresaId}/${randomUUID()}-${nomeSeguro}`;
       const mimeType = mimeTypeFromFilename(body.arquivoNome);
 
       const { error: uploadErr } = await admin.storage
