@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Clock, Download, FileText, Inbox, Loader2 } from 'lucide-react';
+import { CheckCircle2, Clock, Download, FileText, Inbox, Loader2, Send } from 'lucide-react';
 import { usePortal } from '@/app/portal/PortalContext';
 import { supabasePortal } from '@/lib/supabasePortal';
 import PortalHeader from '@/app/portal/components/PortalHeader';
@@ -18,6 +18,7 @@ type Documento = {
   descricao: string | null;
   arquivo_nome_original: string;
   arquivo_tamanho_bytes: number | null;
+  enviado_email_em: string | null;
   visualizado_em: string | null;
   baixado_em: string | null;
   marcado_pago_em: string | null;
@@ -64,6 +65,18 @@ function formatData(iso: string | null): string {
   return d.toLocaleDateString('pt-BR');
 }
 
+function formatDataHora(iso: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).replace(',', ' às');
+}
+
 function formatCompetencia(comp: string | null): string {
   if (!comp || !/^\d{4}-\d{2}$/.test(comp)) return comp ?? '—';
   const [ano, mes] = comp.split('-');
@@ -92,7 +105,7 @@ export default function PortalHomePage() {
       setCarregando(true);
       const { data, error } = await supabasePortal
         .from('portal_documentos')
-        .select('id, obrigacao_nome, competencia, vencimento, descricao, arquivo_nome_original, arquivo_tamanho_bytes, visualizado_em, baixado_em, marcado_pago_em, criado_em')
+        .select('id, obrigacao_nome, competencia, vencimento, descricao, arquivo_nome_original, arquivo_tamanho_bytes, enviado_email_em, visualizado_em, baixado_em, marcado_pago_em, criado_em')
         .eq('empresa_id', cliente.empresaId)
         .order('vencimento', { ascending: true, nullsFirst: false })
         .order('criado_em', { ascending: false });
@@ -259,6 +272,11 @@ function DocumentoCard({ doc }: { doc: Documento }) {
             <span className="flex items-center gap-1">
               <Clock size={12} /> Vence: <strong>{formatData(doc.vencimento)}</strong>
             </span>
+          </div>
+
+          <div className="mt-1.5 flex items-center gap-1 text-[11px] text-cyan-700 dark:text-cyan-400">
+            <Send size={11} />
+            Enviado em <strong>{formatDataHora(doc.enviado_email_em ?? doc.criado_em)}</strong>
           </div>
 
           {(doc.baixado_em || doc.marcado_pago_em) && (
