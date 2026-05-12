@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { getOAuthClient, decryptToken } from '@/lib/googleOAuth';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendPushToCliente } from '@/lib/webPush';
+import { vencimentoDoMes, vencimentoDoMesSn } from '@/app/utils/regrasVencimentosFiscais';
 
 export const runtime = 'nodejs';
 
@@ -179,7 +180,11 @@ export async function POST(req: Request) {
 
     // 2. Carrega empresa e emails
     const [empresaRes, emailsRes] = await Promise.all([
-      admin.from('empresas').select('id, codigo, razao_social, apelido, cnpj').eq('id', body.empresaId).maybeSingle(),
+      admin
+        .from('empresas')
+        .select('id, codigo, razao_social, apelido, cnpj, estado, cidade, vencimentos_fiscais')
+        .eq('id', body.empresaId)
+        .maybeSingle(),
       admin.from('empresa_emails_cliente').select('email').eq('empresa_id', body.empresaId).eq('ativo', true),
     ]);
 
@@ -195,7 +200,35 @@ export async function POST(req: Request) {
       razao_social?: string | null;
       apelido?: string | null;
       cnpj?: string | null;
+      estado?: string | null;
+      cidade?: string | null;
+      vencimentos_fiscais?: { nome?: string; vencimento?: string | null }[] | null;
     };
+
+    // Calcula o vencimento da obrigação no mês alvo (body.mes = "YYYY-MM").
+    // 1ª tentativa: regras automáticas do Fiscal (ICMS, SPED, IPI etc.)
+    // 2ª tentativa: regras SN (EMISSÃO GUIA DAS, DECLARAÇÃO DAS etc.)
+    // 3ª tentativa: lookup manual em `empresas.vencimentos_fiscais` (caso a
+    //   empresa tenha um vencimento sobrescrito manualmente). Ali a data é
+    //   fixa e não varia por mês — usado como último recurso.
+    const calcularVencimento = (): string | null => {
+      const fiscal = vencimentoDoMes(body.obrigacao, empresa.estado, body.mes, empresa.cidade);
+      if (fiscal) return fiscal;
+      const sn = vencimentoDoMesSn(body.obrigacao, empresa.estado, body.mes, empresa.cidade);
+      if (sn) return sn;
+      const normalizar = (s: string) =>
+        s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+      const obrigAlvo = normalizar(body.obrigacao);
+      const manual = (empresa.vencimentos_fiscais ?? []).find(
+        (v) => v?.nome && normalizar(v.nome) === obrigAlvo,
+      );
+      return manual?.vencimento || null;
+    };
+
+    const vencimentoIso = calcularVencimento();
+    const vencimentoLabel = vencimentoIso
+      ? new Date(vencimentoIso.length === 10 ? vencimentoIso + 'T00:00:00' : vencimentoIso).toLocaleDateString('pt-BR')
+      : null;
     const emails = ((emailsRes.data ?? []) as { email: string }[]).map((r) => r.email).filter(Boolean);
 
     if (emails.length === 0) {
@@ -216,10 +249,14 @@ export async function POST(req: Request) {
     const empresaNome = empresa.razao_social || empresa.apelido || empresa.codigo;
     const competenciaLabel = formatComp(body.mes);
     const subject = `${body.obrigacao} — ${empresaNome} (${competenciaLabel})`;
+    const linhaVencimento = vencimentoLabel
+      ? `\nVencimento: ${vencimentoLabel}\n`
+      : '';
     const bodyText =
       `Olá,\n\n` +
-      `Segue em anexo o arquivo referente à obrigação ${body.obrigacao}, competência ${competenciaLabel}.\n\n` +
-      `Qualquer dúvida, estamos à disposição.\n\n` +
+      `Segue em anexo o arquivo referente à obrigação ${body.obrigacao}, competência ${competenciaLabel}.` +
+      linhaVencimento +
+      `\nQualquer dúvida, estamos à disposição.\n\n` +
       `Atenciosamente.`;
     const escapeHtml = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
 
@@ -306,6 +343,7 @@ export async function POST(req: Request) {
             checklist_fiscal_id: body.checklistId ?? null,
             obrigacao_nome: body.obrigacao,
             competencia: body.mes,
+            vencimento: vencimentoIso,
             arquivo_storage_path: portalPath,
             arquivo_nome_original: body.arquivoNome,
             arquivo_mime: mimeType,
@@ -330,9 +368,12 @@ export async function POST(req: Request) {
 
             if (clienteRow?.id) {
               const competenciaLabel = formatComp(body.mes);
+              const pushBody = vencimentoLabel
+                ? `Competência ${competenciaLabel} · vence ${vencimentoLabel}.`
+                : `Competência ${competenciaLabel}. Toque para abrir.`;
               await sendPushToCliente(clienteRow.id, {
                 title: `Nova guia: ${body.obrigacao}`,
-                body: `Competência ${competenciaLabel}. Toque para abrir.`,
+                body: pushBody,
                 url: `/portal/documentos/${portalDocumentoId}`,
                 tag: `portal-doc-${portalDocumentoId}`,
               });

@@ -3130,6 +3130,55 @@ export async function toggleObrigacaoAtivo(id: UUID, ativo: boolean): Promise<vo
   if (error) throw error;
 }
 
+// ─── Palavras-chave de validação por obrigação do checklist ──────────────
+// Tabela: checklist_validacao_keywords (obrigacao_nome PK, palavras_chave text[], exemplo_storage_path)
+
+export interface ChecklistValidacaoKeywords {
+  obrigacaoNome: string;
+  palavrasChave: string[];
+  exemploStoragePath: string | null;
+  updatedAt: string;
+}
+
+export async function fetchChecklistValidacaoKeywords(): Promise<ChecklistValidacaoKeywords[]> {
+  const { data, error } = await supabase
+    .from('checklist_validacao_keywords')
+    .select('obrigacao_nome, palavras_chave, exemplo_storage_path, updated_at');
+  if (error) throw error;
+  return ((data ?? []) as {
+    obrigacao_nome: string;
+    palavras_chave: string[] | null;
+    exemplo_storage_path: string | null;
+    updated_at: string;
+  }[]).map((r) => ({
+    obrigacaoNome: r.obrigacao_nome,
+    palavrasChave: r.palavras_chave ?? [],
+    exemploStoragePath: r.exemplo_storage_path,
+    updatedAt: r.updated_at,
+  }));
+}
+
+export async function upsertChecklistValidacaoKeyword(input: {
+  obrigacaoNome: string;
+  palavrasChave: string[];
+  exemploStoragePath?: string | null;
+  userId?: UUID | null;
+}): Promise<void> {
+  const { error } = await supabase
+    .from('checklist_validacao_keywords')
+    .upsert(
+      {
+        obrigacao_nome: input.obrigacaoNome,
+        palavras_chave: input.palavrasChave,
+        exemplo_storage_path: input.exemploStoragePath ?? null,
+        updated_at: new Date().toISOString(),
+        updated_by: input.userId ?? null,
+      },
+      { onConflict: 'obrigacao_nome' },
+    );
+  if (error) throw error;
+}
+
 export async function setObrigacaoEmpresas(obrigacaoId: UUID, empresasIds: UUID[]): Promise<void> {
   // Carrega vínculos atuais
   const { data: atuais, error: errAtuais } = await supabase

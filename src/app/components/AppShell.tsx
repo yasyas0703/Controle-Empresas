@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Archive, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, Grid3x3, ListChecks, FileStack, Eye, EyeOff, Smartphone } from 'lucide-react';
+import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Archive, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, Grid3x3, ListChecks, FileStack, Eye, EyeOff, Smartphone, Sparkles } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, isRetRenovado } from '@/app/utils/date';
 import { getDepartamentoSlugDoUsuario, getDepartamentoSlugsDoUsuario, type DepartamentoSlug } from '@/app/utils/departamento';
@@ -32,6 +32,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 const nav: NavItem[] = [
+  { href: '/hoje', label: 'Hoje', icon: Sparkles },
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/vencimentos', label: 'Vencimentos', icon: AlertTriangle, badge: true },
   { href: '/vencimentos-fiscais', label: 'Painel Fiscal', icon: Grid3x3, department: 'fiscal' },
@@ -169,6 +170,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     setBrowserNotifPermission(Notification.permission);
   }, []);
 
+  // Contador do badge do menu "Vencimentos" — só RETs e documentos vencidos.
+  // Vencimentos fiscais (ICMS, SPED etc) NÃO entram aqui — eles têm a aba
+  // própria Painel Fiscal / Checklist Mensal e seus próprios indicadores.
   const vencidosCount = useMemo(() => {
     let count = 0;
     for (const e of empresas) {
@@ -179,10 +183,6 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       for (const r of e.rets) {
         if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) continue;
         const dias = daysUntil(r.vencimento);
-        if (dias !== null && dias < 0) count++;
-      }
-      for (const f of e.vencimentosFiscais ?? []) {
-        const dias = daysUntil(f.vencimento);
         if (dias !== null && dias < 0) count++;
       }
     }
@@ -492,27 +492,30 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-100 flex">
       {/* ── Mobile Top Bar ── */}
-      <div className="fixed top-0 left-0 right-0 z-50 md:hidden bg-white border-b border-gray-200 shadow-sm">
-        <div className="flex items-center justify-between px-3 py-2">
+      <div className="fixed top-0 left-0 right-0 z-50 md:hidden bg-white border-b border-gray-200 shadow-sm max-w-full">
+        <div className="flex items-center justify-between gap-2 px-2 py-2 min-w-0">
           <button
             onClick={() => setMobileMenuOpen(true)}
-            className="p-2 rounded-lg hover:bg-gray-100 text-gray-700"
+            className="p-2 rounded-lg hover:bg-gray-100 text-gray-700 shrink-0"
+            aria-label="Abrir menu"
           >
             <Menu size={22} />
           </button>
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg overflow-hidden">
+          <Link href="/dashboard" className="flex items-center gap-2 min-w-0 flex-1 justify-center">
+            <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0">
               <Image src="/triar.png" alt="Triar" width={32} height={32} priority className="w-8 h-8 object-contain" />
             </div>
-            <span className="text-sm font-bold text-gray-900">Controle de Empresas</span>
+            {/* Texto some em telas muito estreitas pra não empurrar os ícones pra fora */}
+            <span className="text-sm font-bold text-gray-900 truncate hidden xs:inline">Controle de Empresas</span>
           </Link>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5 shrink-0">
             {currentUser && <BotaoTarefas variant="mobile-bar" />}
             <ThemeToggle variant="mobile" />
             <button
               ref={notifBellMobileRef}
               onClick={() => setShowNotifs(!showNotifs)}
               className="p-2 rounded-lg hover:bg-gray-100 relative"
+              aria-label="Notificações"
             >
               <Bell size={20} className={notifsNaoLidas > 0 ? 'text-cyan-600' : 'text-gray-400'} />
               {notifsNaoLidas > 0 && (

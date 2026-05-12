@@ -5,7 +5,7 @@ import {
   ListChecks, Search, XCircle, Filter, Users, ChevronLeft, ChevronRight,
   Check, Calendar, AlertTriangle, TrendingUp, Award, Download, Clock,
   MessageSquare, History, User as UserIcon, Sparkles, Paperclip, Upload, Trash2, Eye, Loader2,
-  Send, MailCheck, MailX,
+  Send, MailCheck, MailX, Settings,
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import type { ChecklistFiscalItem, Empresa, UUID, Usuario } from '@/app/types';
@@ -14,9 +14,11 @@ import * as db from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { sortByPtBr } from '@/lib/sort';
 import { obrigacaoAplicaParaEmpresa, obrigacaoSnAplicaParaEmpresa } from '@/app/utils/regrasVencimentosFiscais';
+import { extrairTextoPdf } from '@/app/utils/extrairTextoPdf';
 import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
 import PainelConectarGmail from '@/app/components/PainelConectarGmail';
 import StatusPortalCliente from '@/app/vencimentos-fiscais/checklist/StatusPortalCliente';
+import ModalConfigurarValidacao from '@/app/vencimentos-fiscais/checklist/ModalConfigurarValidacao';
 
 type RegimeAba = 'fiscal' | 'sn';
 
@@ -113,6 +115,25 @@ export default function ChecklistFiscalPage() {
   const [arqPreview, setArqPreview] = useState<boolean>(false);
   const [arqSignedUrl, setArqSignedUrl] = useState<string | null>(null);
   const [verificandoEntregas, setVerificandoEntregas] = useState(false);
+
+  // Palavras-chave de validação por obrigação do checklist — Map<obrigacaoNome, palavras[]>
+  const [validacaoKeywords, setValidacaoKeywords] = useState<Map<string, string[]>>(new Map());
+  const recarregarValidacaoKeywords = useCallback(async () => {
+    try {
+      const todas = await db.fetchChecklistValidacaoKeywords();
+      const map = new Map<string, string[]>();
+      for (const k of todas) map.set(k.obrigacaoNome, k.palavrasChave);
+      setValidacaoKeywords(map);
+    } catch (err) {
+      console.error('[checklist] erro ao carregar palavras-chave de validação:', err);
+    }
+  }, []);
+  useEffect(() => {
+    void recarregarValidacaoKeywords();
+  }, [recarregarValidacaoKeywords]);
+
+  // Modal de configuração de validação por obrigação
+  const [configurandoObrigacao, setConfigurandoObrigacao] = useState<string | null>(null);
 
   const fiscalDept = useMemo(
     () => departamentos.find((d) => d.nome.trim().toLowerCase() === FISCAL_DEPT_NOME)
@@ -456,6 +477,40 @@ export default function ChecklistFiscalPage() {
     if (!arqTarget) return;
     setArqUploading(true);
     try {
+      // 0. Validação de tipo de guia — confere se as palavras-chave da obrigação
+      //    estão presentes no PDF antes de subir. Protege contra erro humano
+      //    (ex.: subir guia de ICMS no campo de SPED).
+      //    Pula se: não é PDF, sem palavras-chave configuradas pra essa obrigação,
+      //    ou se a extração de texto falhar (PDF scanneado).
+      const ehPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      if (ehPdf) {
+        const palavras = (validacaoKeywords.get(arqTarget.obrigacao) ?? [])
+          .map((p) => p.trim())
+          .filter((p) => p.length > 0);
+        if (palavras.length > 0) {
+          try {
+            const { texto } = await extrairTextoPdf(file);
+            const textoNorm = texto.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+            const faltando = palavras.filter((p) => {
+              const pNorm = p.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+              return !textoNorm.includes(pNorm);
+            });
+            if (faltando.length > 0) {
+              mostrarAlerta(
+                'Guia incompatível',
+                `Esta guia não parece ser de "${arqTarget.obrigacao}". Verifique se você selecionou a obrigação correta. ` +
+                  `Palavras esperadas que não foram encontradas: ${faltando.join(', ')}.`,
+                'erro',
+              );
+              return;
+            }
+          } catch (err) {
+            console.warn('[checklist] não foi possível validar PDF (segue mesmo assim):', err);
+            // Se a extração falhar (PDF scanneado, encriptado etc), permite seguir.
+          }
+        }
+      }
+
       // 1. Pré-checks: Gmail conectado + empresa com email cliente
       const pre = await db.prepararEnvioChecklist(arqTarget.empresa.id);
       if (!pre.ok) {
@@ -1348,15 +1403,32 @@ export default function ChecklistFiscalPage() {
                   </th>
                   {obrigacoesAba.map((obr, idx) => {
                     const s = stats.porObrigacao[idx];
+                    const temValidacao = (validacaoKeywords.get(obr)?.length ?? 0) > 0;
+                    const podeConfigurarValidacao =
+                      (currentUser?.email ?? '').toLowerCase() === 'yasjean07@gmail.com';
                     return (
                       <th
                         key={obr}
                         className="sticky top-0 z-20 bg-gray-900 text-white text-[9px] font-bold text-center px-1 py-2 border-b-2 border-gray-700 w-[90px] min-w-[90px] max-w-[90px]"
-                        title={`${obr} — ${s.feitas}/${s.total} (${Math.round(s.pct)}%)`}
+                        title={`${obr} — ${s.feitas}/${s.total} (${Math.round(s.pct)}%)${temValidacao ? ' · validação ativa' : ''}`}
                       >
                         <div className="leading-tight px-1">{obr}</div>
                         <div className="mt-1 flex items-center justify-center gap-1">
                           <span className="rounded bg-emerald-600 px-1 text-[8px] font-black">{s.feitas}/{s.total}</span>
+                          {podeConfigurarValidacao && (
+                            <button
+                              onClick={() => setConfigurandoObrigacao(obr)}
+                              className={`rounded p-0.5 transition ${
+                                temValidacao
+                                  ? 'text-cyan-300 hover:bg-cyan-900/50'
+                                  : 'text-gray-500 hover:bg-gray-700 hover:text-cyan-300'
+                              }`}
+                              title={temValidacao ? 'Configurar validação (ativa)' : 'Configurar validação'}
+                              aria-label={`Configurar validação de ${obr}`}
+                            >
+                              <Settings size={10} />
+                            </button>
+                          )}
                         </div>
                       </th>
                     );
@@ -2086,6 +2158,15 @@ export default function ChecklistFiscalPage() {
           </div>
         </div>
       )}
+
+      {/* Modal de configuração de validação de upload por obrigação */}
+      <ModalConfigurarValidacao
+        isOpen={configurandoObrigacao !== null}
+        onClose={() => setConfigurandoObrigacao(null)}
+        obrigacaoNome={configurandoObrigacao ?? ''}
+        currentUserId={currentUserId}
+        onSaved={() => void recarregarValidacaoKeywords()}
+      />
     </div>
   );
 }
