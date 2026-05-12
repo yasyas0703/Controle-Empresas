@@ -90,6 +90,20 @@ export async function GET(req: Request) {
     }
   }
 
+  try {
+    return await processarCron();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Erro desconhecido';
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error('[cron] erro fatal:', err);
+    return NextResponse.json(
+      { error: message, stack: stack?.split('\n').slice(0, 6) },
+      { status: 500 },
+    );
+  }
+}
+
+async function processarCron(): Promise<NextResponse> {
   const admin = getSupabaseAdmin();
 
   // ── 1. Carrega dados básicos em paralelo ────────────────────────────────
