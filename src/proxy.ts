@@ -30,6 +30,9 @@ function isPublicPath(pathname: string): boolean {
   // Manutenção pública (AppShell lê antes do login)
   if (pathname === '/api/admin/manutencao') return true;
 
+  // Cron jobs (Vercel Cron — autenticados por CRON_SECRET no próprio endpoint)
+  if (pathname.startsWith('/api/cron/')) return true;
+
   return false;
 }
 
