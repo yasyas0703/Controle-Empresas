@@ -32,6 +32,10 @@ const TAG_ARQUIVADA = 'arquivada';
 function isArquivada(empresa: Empresa): boolean {
   return Array.isArray(empresa.tags) && empresa.tags.includes(TAG_ARQUIVADA);
 }
+
+// Filiais que devem aparecer no controle contábil mesmo sendo filial.
+// 478: Andrea Izula. 859/860/861/862: filiais da CINTHIA PRADO VIEIRA CARDOSO MALHAS.
+const FILIAIS_PERMITIDAS_NO_CONTABIL = new Set(['478', '859', '860', '861', '862']);
 import ModalGerenciarBancos from '@/app/components/ModalGerenciarBancos';
 import ModalConferenciaCelula from '@/app/components/ModalConferenciaCelula';
 import ModalCentralExtratos from '@/app/components/ModalCentralExtratos';
@@ -279,9 +283,9 @@ export default function ControleContabilPage() {
         // Detecta pelo CNPJ (posições 9-12 = '0001' = matriz). Se já tem
         // tipoEstabelecimento salvo, prefere esse. CPF e empresas sem CNPJ ficam
         // (ainda podem ser cliente contábil legítimo).
-        // Exceção: empresa 478 (Andrea Izula) — filial mas deve aparecer no contábil.
+        // Exceções no allowlist FILIAIS_PERMITIDAS_NO_CONTABIL acima.
         const tipoEfetivo = detectTipoEstabelecimento(l.empresa.cnpj || '') || l.empresa.tipoEstabelecimento;
-        if (tipoEfetivo === 'filial' && l.empresa.codigo !== '478') return false;
+        if (tipoEfetivo === 'filial' && !FILIAIS_PERMITIDAS_NO_CONTABIL.has(l.empresa.codigo ?? '')) return false;
         if (!mostrarArquivadas && isArquivada(l.empresa)) return false;
         if (q) {
           const hay = `${l.empresa.codigo} ${l.empresa.razao_social ?? ''} ${l.empresa.apelido ?? ''}`.toLowerCase();
