@@ -16,6 +16,10 @@ import { sortByPtBr, sortStringsPtBr } from '@/lib/sort';
 
 const MAX_FISCAL_FILE_SIZE = 10 * 1024 * 1024;
 
+// Tag interna que força uma filial a aparecer no controle contábil de extratos.
+// Lida em src/app/vencimentos-contabil/controle/page.tsx (TAG_INCLUIR_NO_CONTABIL).
+const TAG_INCLUIR_NO_CONTABIL = 'incluir_no_contabil';
+
 interface ModalCadastrarEmpresaProps {
   onClose: () => void;
   empresa?: Empresa;
@@ -291,10 +295,30 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
 
     handleChange('tipoEstabelecimento', value);
 
+    // Se deixar de ser filial, remove a tag de inclusão no contábil pra não ficar pendurada.
+    if (value !== 'filial') {
+      setFormData((prev) => ({
+        ...prev,
+        tags: (prev.tags ?? []).filter((t) => t !== TAG_INCLUIR_NO_CONTABIL),
+      }));
+    }
+
     if (formData.tipoInscricao === 'CNO') {
       const autoTipo = detectTipoInscricao(String(formData.cnpj || ''), '');
       handleChange('tipoInscricao', autoTipo || '');
     }
+  };
+
+  const incluirNoContabil = (formData.tags ?? []).includes(TAG_INCLUIR_NO_CONTABIL);
+  const toggleIncluirNoContabil = () => {
+    setFormData((prev) => {
+      const current = prev.tags ?? [];
+      const has = current.includes(TAG_INCLUIR_NO_CONTABIL);
+      return {
+        ...prev,
+        tags: has ? current.filter((t) => t !== TAG_INCLUIR_NO_CONTABIL) : [...current, TAG_INCLUIR_NO_CONTABIL],
+      };
+    });
   };
 
   const toggleServico = (servico: string) => {
@@ -715,6 +739,7 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                 </select>
               </div>
             </div>
+
 
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -1374,6 +1399,22 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
               />
             </div>
           </div>
+
+          {formData.tipoEstabelecimento === 'filial' && (
+            <div>
+              <label className="flex items-center gap-3 cursor-pointer bg-white border border-emerald-200 rounded-xl p-3 hover:bg-emerald-50 transition">
+                <input
+                  type="checkbox"
+                  checked={incluirNoContabil}
+                  onChange={toggleIncluirNoContabil}
+                  className="w-5 h-5 accent-emerald-600"
+                />
+                <span className="text-sm font-semibold text-gray-900">
+                  Incluir no controle contábil
+                </span>
+              </label>
+            </div>
+          )}
 
           {/* Botões */}
           <div className="flex gap-4 pt-6 border-t border-gray-200">

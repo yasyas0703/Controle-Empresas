@@ -33,9 +33,19 @@ function isArquivada(empresa: Empresa): boolean {
   return Array.isArray(empresa.tags) && empresa.tags.includes(TAG_ARQUIVADA);
 }
 
-// Filiais que devem aparecer no controle contábil mesmo sendo filial.
+// Tag que força a filial a aparecer no controle contábil mesmo sendo filial.
+// É marcada pelo usuário no modal de cadastro/edição da empresa.
+const TAG_INCLUIR_NO_CONTABIL = 'incluir_no_contabil';
+
+// Allowlist legada — filiais que apareciam no contábil antes da tag existir.
 // 478: Andrea Izula. 859/860/861/862: filiais da CINTHIA PRADO VIEIRA CARDOSO MALHAS.
+// Pode ser removida depois que essas empresas receberem a tag manualmente.
 const FILIAIS_PERMITIDAS_NO_CONTABIL = new Set(['478', '859', '860', '861', '862']);
+
+function filialIncluidaNoContabil(empresa: Empresa): boolean {
+  if (Array.isArray(empresa.tags) && empresa.tags.includes(TAG_INCLUIR_NO_CONTABIL)) return true;
+  return FILIAIS_PERMITIDAS_NO_CONTABIL.has(empresa.codigo ?? '');
+}
 import ModalGerenciarBancos from '@/app/components/ModalGerenciarBancos';
 import ModalConferenciaCelula from '@/app/components/ModalConferenciaCelula';
 import ModalCentralExtratos from '@/app/components/ModalCentralExtratos';
@@ -283,9 +293,9 @@ export default function ControleContabilPage() {
         // Detecta pelo CNPJ (posições 9-12 = '0001' = matriz). Se já tem
         // tipoEstabelecimento salvo, prefere esse. CPF e empresas sem CNPJ ficam
         // (ainda podem ser cliente contábil legítimo).
-        // Exceções no allowlist FILIAIS_PERMITIDAS_NO_CONTABIL acima.
+        // Exceção: filial marcada manualmente via tag incluir_no_contabil (ou allowlist legada).
         const tipoEfetivo = detectTipoEstabelecimento(l.empresa.cnpj || '') || l.empresa.tipoEstabelecimento;
-        if (tipoEfetivo === 'filial' && !FILIAIS_PERMITIDAS_NO_CONTABIL.has(l.empresa.codigo ?? '')) return false;
+        if (tipoEfetivo === 'filial' && !filialIncluidaNoContabil(l.empresa)) return false;
         if (!mostrarArquivadas && isArquivada(l.empresa)) return false;
         if (q) {
           const hay = `${l.empresa.codigo} ${l.empresa.razao_social ?? ''} ${l.empresa.apelido ?? ''}`.toLowerCase();
