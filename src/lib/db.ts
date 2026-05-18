@@ -4,6 +4,7 @@ import type {
   AnotacaoTipo,
   ArquivoAnotacao,
   EmpresaEmailCliente,
+  EmpresaObrigacaoConfig,
   Obrigacao,
   ObrigacaoDepartamento,
   ObrigacaoEsfera,
@@ -3572,4 +3573,91 @@ export async function deleteObrigacaoTarefa(id: UUID): Promise<void> {
   }
   const { error } = await supabase.from('obrigacao_tarefas').delete().eq('id', id);
   if (error) throw error;
+}
+
+// ─── Configuração de obrigações por empresa ─────────────────────────────
+// Tabela `empresa_obrigacoes_config` guarda apenas obrigações DESATIVADAS
+// (ativa=false). A ausência de linha significa "ativa" — default seguro.
+
+interface EmpresaObrigacaoConfigRow {
+  empresa_id: string;
+  obrigacao: string;
+  ativa: boolean;
+  motivo: string | null;
+  alterada_em: string;
+  alterada_por_id: string | null;
+  alterada_por_nome: string | null;
+}
+
+function toEmpresaObrigacaoConfig(row: EmpresaObrigacaoConfigRow): EmpresaObrigacaoConfig {
+  return {
+    empresaId: row.empresa_id,
+    obrigacao: row.obrigacao,
+    ativa: row.ativa,
+    motivo: row.motivo,
+    alteradaEm: row.alterada_em,
+    alteradaPorId: row.alterada_por_id,
+    alteradaPorNome: row.alterada_por_nome,
+  };
+}
+
+export async function fetchEmpresaObrigacoesConfig(empresaId: UUID): Promise<EmpresaObrigacaoConfig[]> {
+  const { data, error } = await supabase
+    .from('empresa_obrigacoes_config')
+    .select('*')
+    .eq('empresa_id', empresaId);
+  if (error) {
+    // Tabela pode não existir ainda (migration não rodou). Devolve vazio
+    // pra não quebrar a UI — admin/gerente vê tudo ativo.
+    if (hasMissingTable(error)) return [];
+    throw error;
+  }
+  return (data ?? []).map((r) => toEmpresaObrigacaoConfig(r as EmpresaObrigacaoConfigRow));
+}
+
+export async function setEmpresaObrigacaoAtiva(payload: {
+  empresaId: UUID;
+  obrigacao: string;
+  ativa: boolean;
+  motivo?: string | null;
+  currentUserId?: UUID | null;
+  currentUserNome?: string;
+}): Promise<EmpresaObrigacaoConfig | null> {
+  // Quando ativa = true (default), apaga a linha — economia de storage
+  // e mantém a tabela só com exceções.
+  if (payload.ativa) {
+    const { error } = await supabase
+      .from('empresa_obrigacoes_config')
+      .delete()
+      .eq('empresa_id', payload.empresaId)
+      .eq('obrigacao', payload.obrigacao);
+    if (error) throw error;
+    return null;
+  }
+
+  const row = {
+    empresa_id: payload.empresaId,
+    obrigacao: payload.obrigacao,
+    ativa: false,
+    motivo: payload.motivo?.trim() || null,
+    alterada_em: new Date().toISOString(),
+    alterada_por_id: payload.currentUserId ?? null,
+    alterada_por_nome: payload.currentUserNome?.trim() || null,
+  };
+  const { data, error } = await supabase
+    .from('empresa_obrigacoes_config')
+    .upsert(row, { onConflict: 'empresa_id,obrigacao' })
+    .select()
+    .single();
+  if (error) throw error;
+  return toEmpresaObrigacaoConfig(data as EmpresaObrigacaoConfigRow);
+}
+
+function hasMissingTable(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const msg = String((err as any).message ?? '').toLowerCase();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const code = String((err as any).code ?? '');
+  return code === '42P01' || msg.includes('does not exist') || msg.includes('relation') && msg.includes('not found');
 }

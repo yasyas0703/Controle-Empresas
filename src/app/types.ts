@@ -507,6 +507,21 @@ export interface ObrigacaoTarefa {
   atualizadoEm: string;
 }
 
+// ─── Configuração de obrigações por empresa ─────────────────
+// Default = ativa (sem linha no banco). Só são gravadas linhas para
+// obrigações que admin/gerente DESATIVOU explicitamente. Empresa que
+// não tem IPI, por exemplo, ganha uma linha com ativa=false e motivo.
+
+export interface EmpresaObrigacaoConfig {
+  empresaId: UUID;
+  obrigacao: string;
+  ativa: boolean;
+  motivo: string | null;
+  alteradaEm: string;
+  alteradaPorId: UUID | null;
+  alteradaPorNome: string | null;
+}
+
 // ─── E-mails de destinatário do cliente ─────────────────────
 
 export interface EmpresaEmailCliente {

@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Grid3x3, ListChecks } from 'lucide-react';
+import { Grid3x3, ListChecks, Send } from 'lucide-react';
 
 const TABS = [
   { href: '/vencimentos-fiscais', label: 'Painel Fiscal', icon: Grid3x3, gradient: 'from-red-500 via-orange-500 to-amber-500' },
   { href: '/vencimentos-fiscais/checklist', label: 'Checklist Mensal', icon: ListChecks, gradient: 'from-emerald-500 via-teal-500 to-cyan-500' },
+  { href: '/vencimentos-fiscais/envio', label: 'Envio de Guias', icon: Send, gradient: 'from-violet-500 via-fuchsia-500 to-pink-500' },
 ] as const;
 
 export default function FiscalTabs() {
