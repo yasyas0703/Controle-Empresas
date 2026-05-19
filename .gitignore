@@ -34,3 +34,7 @@ comand.md
 
 # guias fiscais reais — dados sensíveis (CNPJs, valores, razões sociais)
 FISCAL/
+
+# planilhas e outputs com CNPJs reais e códigos de receita por empresa
+CODIGOS EMPRESAS.xlsx
+scripts/output-*.csv

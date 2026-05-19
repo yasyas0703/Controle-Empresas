@@ -79,6 +79,26 @@ function encontrarCnpj(texto: string, cnpjEmpresa: string): string | null {
   if (cnpjDigitos.length !== 14) return null;
   const todosDigitos = apenasDigitos(texto);
   if (todosDigitos.includes(cnpjDigitos)) return cnpjDigitos;
+  // Algumas guias (DARE-SP) trazem só o CNPJ-base (8 primeiros dígitos)
+  // como identificador principal. Aceita se os 8 batem.
+  const cnpjBase = cnpjDigitos.slice(0, 8);
+  if (cnpjBase.length === 8 && todosDigitos.includes(cnpjBase)) return cnpjDigitos;
+  return null;
+}
+
+/**
+ * Procura a Inscrição Estadual da empresa no texto do PDF. Guias estaduais
+ * (DAE-MG, GNRE, DAPI) frequentemente trazem só a IE, sem CNPJ. Comparação
+ * por dígitos pra ignorar formatação (pontos, traços, zeros à esquerda).
+ */
+function encontrarInscricaoEstadual(texto: string, ieEmpresa: string): string | null {
+  const ieDigitos = apenasDigitos(ieEmpresa);
+  if (ieDigitos.length < 6) return null;
+  const todosDigitos = apenasDigitos(texto);
+  if (todosDigitos.includes(ieDigitos)) return ieEmpresa;
+  // Tenta também sem zeros à esquerda (alguns sistemas omitem)
+  const ieSemZeros = ieDigitos.replace(/^0+/, '');
+  if (ieSemZeros.length >= 6 && todosDigitos.includes(ieSemZeros)) return ieEmpresa;
   return null;
 }
 
@@ -148,14 +168,28 @@ function extrairValor(texto: string): number | null {
 }
 
 /**
- * Procura um código de receita conhecido no texto. Retorna o primeiro que
- * achar, junto com o contexto (texto ao redor) pra log.
+ * Procura um código de receita conhecido no texto. Aceita o código com ou sem
+ * zeros à esquerda (a planilha às vezes traz "121-4" no lugar de "0121-4").
  */
 function encontrarCodigoReceita(texto: string, codigos: string[]): string | null {
+  const textoNoSpaces = texto.replace(/\s+/g, ' ');
   for (const cod of codigos) {
-    const escaped = cod.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-    const re = new RegExp(`(?:^|\\D)${escaped}(?:\\D|$)`);
-    if (re.test(texto)) return cod;
+    const codTrim = cod.trim();
+    if (!codTrim) continue;
+    const variantes = new Set<string>();
+    variantes.add(codTrim);
+    // Sem zero à esquerda: "0120-6" -> "120-6"
+    variantes.add(codTrim.replace(/^0+/, ''));
+    // Com zero à esquerda em códigos 3-X / X-X: "121-4" -> "0121-4", "46-2" -> "046-2"
+    if (/^\d{2,3}-\d$/.test(codTrim) && codTrim.length < 5) {
+      variantes.add(`0${codTrim}`);
+    }
+    for (const v of variantes) {
+      if (!v) continue;
+      const escaped = v.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const re = new RegExp(`(?:^|\\D)${escaped}(?:\\D|$)`);
+      if (re.test(textoNoSpaces)) return cod;
+    }
   }
   return null;
 }
@@ -166,30 +200,44 @@ function encontrarCodigoReceita(texto: string, codigos: string[]): string | null
  */
 const PERFIS: Record<string, PerfilValidacao> = {
   // ─── Federais (DARF) ────────────────────────────────────────────────────
-  'PIS/COFINS': {
-    nome: 'PIS/COFINS (DARF Federal)',
-    anchorsObrigatorios: ['receita federal', 'documento de arrecadacao'],
-    denominacaoRegex: /(pis\s*-\s*|cofins\s*-\s*contrib|cofins\s*-\s*faturamento)/i,
-    codigosReceitaConhecidos: ['8109', '2172', '1239', '3703', '8645', '5856'],
-    palavrasProibidas: ['simples nacional', 'documento de arrecadacao do simples'],
+  PIS: {
+    nome: 'PIS (DARF Federal)',
+    anchorsObrigatorios: ['documento de arrecadacao'],
+    denominacaoRegex: /pis\s*-\s*/i,
+    codigosReceitaConhecidos: ['8109', '3703', '8301', '6912'],
+    palavrasProibidas: ['simples nacional', 'documento de arrecadacao do simples', 'cofins\\s*-\\s*contrib', 'cofins\\s*-\\s*faturamento'],
   },
-  'CSLL/IRPJ': {
-    nome: 'CSLL/IRPJ (DARF Federal)',
-    anchorsObrigatorios: ['receita federal', 'documento de arrecadacao'],
-    denominacaoRegex: /(irpj\s*-\s*|csll\s*-\s*)/i,
-    codigosReceitaConhecidos: ['2089', '0220', '2362', '2456', '5993', '2372', '2484', '6773', '2030'],
-    palavrasProibidas: ['simples nacional', 'pis\\s*-\\s*faturamento', 'cofins\\s*-\\s*contrib'],
+  COFINS: {
+    nome: 'COFINS (DARF Federal)',
+    anchorsObrigatorios: ['documento de arrecadacao'],
+    denominacaoRegex: /cofins\s*-\s*/i,
+    codigosReceitaConhecidos: ['2172', '1239', '8645', '5856'],
+    palavrasProibidas: ['simples nacional', 'documento de arrecadacao do simples', 'pis\\s*-\\s*faturamento', 'pis\\s*-\\s*pasep'],
+  },
+  IRPJ: {
+    nome: 'IRPJ (DARF Federal)',
+    anchorsObrigatorios: ['documento de arrecadacao'],
+    denominacaoRegex: /irpj\s*-\s*/i,
+    codigosReceitaConhecidos: ['2089', '0220', '2362', '2456', '5993', '3373'],
+    palavrasProibidas: ['simples nacional', 'csll\\s*-\\s*', 'pis\\s*-\\s*', 'cofins\\s*-\\s*'],
+  },
+  CSLL: {
+    nome: 'CSLL (DARF Federal)',
+    anchorsObrigatorios: ['documento de arrecadacao'],
+    denominacaoRegex: /csll\s*-\s*/i,
+    codigosReceitaConhecidos: ['2372', '2484', '6773', '2030'],
+    palavrasProibidas: ['simples nacional', 'irpj\\s*-\\s*', 'pis\\s*-\\s*', 'cofins\\s*-\\s*'],
   },
   'DARF-SERVIÇOS TOMADOS': {
     nome: 'DARF Serviços Tomados (IRRF)',
-    anchorsObrigatorios: ['receita federal', 'documento de arrecadacao'],
+    anchorsObrigatorios: ['documento de arrecadacao'],
     denominacaoRegex: /(irrf|ret\s*de\s*contribuicoes\s*pagt\s*pj\s*a\s*pj)/i,
     codigosReceitaConhecidos: ['1708', '5952', '5979', '0588'],
     palavrasProibidas: ['simples nacional', 'pis\\s*-\\s*faturamento'],
   },
   'IPI': {
     nome: 'IPI (DARF Federal)',
-    anchorsObrigatorios: ['receita federal', 'documento de arrecadacao'],
+    anchorsObrigatorios: ['documento de arrecadacao'],
     denominacaoRegex: /ipi\s*-\s*/i,
     codigosReceitaConhecidos: ['5123', '1097', '0668'],
     palavrasProibidas: ['simples nacional', 'pis\\s*-\\s*faturamento', 'cofins\\s*-\\s*contrib', 'irpj\\s*-\\s*'],
@@ -215,13 +263,17 @@ const PERFIS: Record<string, PerfilValidacao> = {
 
   // ─── Estaduais (genéricos por nome — sistema escolhe o perfil correto pelo
   //     conteúdo, mas o nome da obrigação é o ponto de entrada) ────────────
-  'ICMS': {
-    nome: 'ICMS Normal',
-    // Pelo menos um dos anchors precisa aparecer — não usa anchorsObrigatorios,
-    // usa o regex de denominação que cobre os 2 layouts (DAE-MG e DARE-SP).
+  'ICMS NORMAL': {
+    nome: 'ICMS Normal (DAE-MG ou DARE-SP)',
     anchorsObrigatorios: [],
-    denominacaoRegex: /(icms\s*comercio\s*-\s*outros|icms\s*–\s*regime\s*periodico\s*de\s*apuracao|icms\s*-\s*regime\s*periodico\s*de\s*apuracao|operacoes\s*proprias-\s*rpa)/i,
-    palavrasProibidas: ['simples nacional', 'icms\\s*st\\s*entradas', 'icms\\s*diferenca\\s*de\\s*aliquota', 'icms\\s*rec\\s*\\.\\s*antecipado'],
+    denominacaoRegex: /(icms\s*comercio\s*-\s*outros|icms\s*[–-]\s*regime\s*periodico\s*de\s*apuracao|operacoes\s*proprias-\s*rpa)/i,
+    palavrasProibidas: ['simples nacional', 'icms\\s*comercio\\s*td', 'icms\\s*st\\s*entradas', 'icms\\s*diferenca\\s*de\\s*aliquota', 'icms\\s*rec\\s*\\.\\s*antecipado'],
+  },
+  'ICMS TDD': {
+    nome: 'ICMS TDD (DAE-MG)',
+    anchorsObrigatorios: [],
+    denominacaoRegex: /icms\s*comercio\s*td/i,
+    palavrasProibidas: ['simples nacional', 'icms\\s*comercio\\s*-\\s*outros', 'icms\\s*st\\s*entradas', 'icms\\s*diferenca\\s*de\\s*aliquota', 'icms\\s*rec\\s*\\.\\s*antecipado'],
   },
   'ICMS-ST/DIFAL': {
     nome: 'ICMS-ST / DIFAL',
@@ -327,15 +379,15 @@ const PERFIS: Record<string, PerfilValidacao> = {
  * Aliases de nome — mesma obrigação pode aparecer com variações.
  */
 const ALIASES: Record<string, string> = {
-  'PIS': 'PIS/COFINS',
-  'COFINS': 'PIS/COFINS',
-  'CSLL': 'CSLL/IRPJ',
-  'IRPJ': 'CSLL/IRPJ',
+  // Retrocompat com nomes antigos (antes de separar)
+  'PIS/COFINS': 'PIS',
+  'CSLL/IRPJ': 'CSLL',
+  'ICMS': 'ICMS NORMAL',
+  // Atalhos comuns
   'DARF': 'DARF-SERVIÇOS TOMADOS',
   'DARF SERVICOS TOMADOS': 'DARF-SERVIÇOS TOMADOS',
   'DARF SERVIÇOS TOMADOS': 'DARF-SERVIÇOS TOMADOS',
   'DAS': 'EMISSÃO GUIA DAS',
-  'ICMS NORMAL': 'ICMS',
   'ICMS ST': 'ICMS-ST/DIFAL',
   'GIA': 'GIA-ST/DIFAL',
   'GIA-ST': 'GIA-ST/DIFAL',
@@ -374,6 +426,8 @@ export function validarGuia(
   texto: string,
   empresa: Empresa,
   obrigacaoNome: string,
+  /** Códigos de receita esperados desta empresa pra esta obrigação. Se preenchido, exige bater (bloqueio). Se vazio, segue só pela denominação. Vem da tabela empresa_obrigacoes_config. */
+  codigosEsperados?: string[],
 ): ResultadoValidacao {
   const problemas: ProblemaValidacao[] = [];
   const textoNorm = normalizar(texto);
@@ -388,23 +442,38 @@ export function validarGuia(
     valor: extrairValor(texto),
   };
 
-  // ─── Bloqueio 1: CNPJ da empresa precisa aparecer no PDF ───────────────
+  // ─── Bloqueio 1: identifica a empresa via CNPJ OU Inscrição Estadual ────
+  // Guias estaduais (DAE-MG, GNRE, DAPI) frequentemente não trazem o CNPJ
+  // visível, só a Inscrição Estadual. Aceita qualquer um dos dois como
+  // prova de que a guia é desta empresa.
   const cnpjEmpresa = empresa.cnpj ?? '';
-  if (cnpjEmpresa) {
-    const encontrado = encontrarCnpj(texto, cnpjEmpresa);
-    detectado.cnpjEncontrado = encontrado;
-    if (!encontrado) {
-      problemas.push({
-        severidade: 'bloqueio',
-        motivo: 'CNPJ não encontrado',
-        detalhe: `O CNPJ ${cnpjEmpresa} da empresa "${empresa.razao_social || empresa.codigo}" não aparece no PDF. A guia pode ser de outra empresa.`,
-      });
-    }
-  } else {
+  const ieEmpresa = empresa.inscricao_estadual ?? '';
+  const cnpjEncontrado = cnpjEmpresa ? encontrarCnpj(texto, cnpjEmpresa) : null;
+  detectado.cnpjEncontrado = cnpjEncontrado;
+
+  if (cnpjEncontrado) {
+    // ok — identificou por CNPJ
+  } else if (ieEmpresa && encontrarInscricaoEstadual(texto, ieEmpresa)) {
+    // Identificou pela IE — comum em guias estaduais
+    problemas.push({
+      severidade: 'info',
+      motivo: 'Identificação por Inscrição Estadual',
+      detalhe: `CNPJ não visível no PDF, mas a Inscrição Estadual ${ieEmpresa} confere. Comum em DAE-MG e GNRE.`,
+    });
+  } else if (!cnpjEmpresa && !ieEmpresa) {
     problemas.push({
       severidade: 'aviso',
-      motivo: 'Empresa sem CNPJ cadastrado',
-      detalhe: 'Não foi possível verificar se a guia é desta empresa porque o cadastro está sem CNPJ.',
+      motivo: 'Empresa sem CNPJ ou IE cadastrados',
+      detalhe: 'Não foi possível verificar se a guia é desta empresa porque o cadastro está sem CNPJ e sem Inscrição Estadual.',
+    });
+  } else {
+    const tentados: string[] = [];
+    if (cnpjEmpresa) tentados.push(`CNPJ ${cnpjEmpresa}`);
+    if (ieEmpresa) tentados.push(`Inscrição Estadual ${ieEmpresa}`);
+    problemas.push({
+      severidade: 'bloqueio',
+      motivo: 'Empresa não identificada no PDF',
+      detalhe: `Nenhum identificador da empresa "${empresa.razao_social || empresa.codigo}" foi encontrado no PDF (tentei: ${tentados.join(' e ')}). A guia pode ser de outra empresa.`,
     });
   }
 
@@ -439,8 +508,11 @@ export function validarGuia(
   }
 
   // ─── Bloqueio 3: Denominação ────────────────────────────────────────────
+  // Roda no texto NORMALIZADO (lowercase, sem acentos) — todas as regex de
+  // denominação foram escritas assumindo essa forma. Aplicar no texto cru
+  // faria "Operações Próprias" não bater em /operacoes proprias/.
   if (perfil.denominacaoRegex) {
-    const m = texto.match(perfil.denominacaoRegex);
+    const m = textoNorm.match(perfil.denominacaoRegex);
     if (m) {
       detectado.denominacaoEncontrada = m[0];
     } else {
@@ -502,8 +574,29 @@ export function validarGuia(
     }
   }
 
-  // ─── Info: código de receita (não bloqueante) ───────────────────────────
-  if (perfil.codigosReceitaConhecidos && perfil.codigosReceitaConhecidos.length > 0) {
+  // ─── Bloqueio 6: código de receita cadastrado pra esta empresa ─────────
+  // Se a empresa tem códigos cadastrados (empresa_obrigacoes_config.codigos),
+  // o PDF tem que trazer um deles. Caso contrário, bloqueia — admin/gerente
+  // pode forçar pela UI se a planilha estiver errada.
+  const codigosLimpos = (codigosEsperados ?? []).map((c) => c.trim()).filter(Boolean);
+  if (codigosLimpos.length > 0) {
+    const codigoEncontrado = encontrarCodigoReceita(texto, codigosLimpos);
+    if (codigoEncontrado) {
+      detectado.codigoReceitaEncontrado = codigoEncontrado;
+    } else {
+      // Tenta detectar QUAL código aparece no PDF (pra ajudar o usuário a entender)
+      let codigoVistoNoPdf: string | null = null;
+      if (perfil.codigosReceitaConhecidos) {
+        codigoVistoNoPdf = encontrarCodigoReceita(texto, perfil.codigosReceitaConhecidos);
+      }
+      problemas.push({
+        severidade: 'bloqueio',
+        motivo: 'Código de receita não confere com o cadastro da empresa',
+        detalhe: `Para "${empresa.razao_social || empresa.codigo}" esta obrigação usa código(s): ${codigosLimpos.join(', ')}. ${codigoVistoNoPdf ? `O PDF traz código ${codigoVistoNoPdf} — diferente do esperado.` : 'Nenhum dos códigos esperados foi encontrado no PDF.'}`,
+      });
+    }
+  } else if (perfil.codigosReceitaConhecidos && perfil.codigosReceitaConhecidos.length > 0) {
+    // Empresa sem códigos cadastrados — usa lista global do perfil só pra preview
     const cod = encontrarCodigoReceita(texto, perfil.codigosReceitaConhecidos);
     if (cod) detectado.codigoReceitaEncontrado = cod;
   }

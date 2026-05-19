@@ -1,7 +1,15 @@
 import type { HistoricoVencimentoItem, UUID, VencimentoFiscal } from '@/app/types';
-import { VENCIMENTOS_FISCAIS_NOMES } from '@/app/types';
+import { VENCIMENTOS_FISCAIS_NOMES, VENCIMENTOS_FISCAIS_SN_NOMES } from '@/app/types';
 import { isoNow } from '@/app/utils/date';
 import { proximoVencimento } from '@/app/utils/regrasVencimentosFiscais';
+
+// União das obrigações de regime normal + SN. Empresa só vê na aba "Envio
+// de Guias" as que estão ativas pra ela em empresa_obrigacoes_config
+// (preenchido pelo script de descoberta). As inativas são filtradas na UI.
+const TODOS_NOMES_FISCAIS: readonly string[] = [
+  ...VENCIMENTOS_FISCAIS_NOMES,
+  ...VENCIMENTOS_FISCAIS_SN_NOMES.filter((n) => !(VENCIMENTOS_FISCAIS_NOMES as readonly string[]).includes(n)),
+];
 
 function newId(): UUID {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
@@ -47,7 +55,7 @@ export function normalizarHistoricoVencimento(historico?: HistoricoVencimentoIte
 export function garantirVencimentosFiscais(existentes?: VencimentoFiscal[] | null): VencimentoFiscal[] {
   const atuais = Array.isArray(existentes) ? existentes : [];
   const porNome = new Map(atuais.map((v) => [v.nome, v]));
-  return VENCIMENTOS_FISCAIS_NOMES.map((nome) => {
+  return TODOS_NOMES_FISCAIS.map((nome) => {
     const atual = porNome.get(nome);
     if (atual) {
       return {

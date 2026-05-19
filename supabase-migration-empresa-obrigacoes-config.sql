@@ -22,11 +22,22 @@ CREATE TABLE IF NOT EXISTS public.empresa_obrigacoes_config (
   obrigacao         TEXT NOT NULL,
   ativa             BOOLEAN NOT NULL DEFAULT TRUE,
   motivo            TEXT,
+  codigos           TEXT[] NOT NULL DEFAULT '{}',
   alterada_em       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   alterada_por_id   UUID REFERENCES public.usuarios(id) ON DELETE SET NULL,
   alterada_por_nome TEXT,
   PRIMARY KEY (empresa_id, obrigacao)
 );
+
+-- Idempotente: se a tabela já existia sem as colunas novas, adiciona agora.
+ALTER TABLE public.empresa_obrigacoes_config
+  ADD COLUMN IF NOT EXISTS codigos TEXT[] NOT NULL DEFAULT '{}';
+
+-- Marca obrigações que o escritório processa internamente mas NÃO envia
+-- ao cliente (ex: SPED, REINF, LIVROS FISCAIS). Quando true, a aba de
+-- Envio de Guias esconde o botão "Enviar" e marca como interno.
+ALTER TABLE public.empresa_obrigacoes_config
+  ADD COLUMN IF NOT EXISTS nao_envia_cliente BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE INDEX IF NOT EXISTS empresa_obrigacoes_config_empresa_idx
   ON public.empresa_obrigacoes_config (empresa_id);

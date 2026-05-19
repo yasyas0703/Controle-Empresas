@@ -88,7 +88,8 @@ export interface VencimentoFiscal {
 
 /** Nomes fixos dos vencimentos fiscais que toda empresa possui. */
 export const VENCIMENTOS_FISCAIS_NOMES = [
-  'ICMS',
+  'ICMS NORMAL',
+  'ICMS TDD',
   'SPED ICMS/IPI',
   'IPI',
   'GIA-ST/DIFAL',
@@ -97,12 +98,16 @@ export const VENCIMENTOS_FISCAIS_NOMES = [
   'ISS - SERVIÇOS TOMADOS',
   'REINF',
   'DARF-SERVIÇOS TOMADOS',
-  'PIS/COFINS',
+  'PIS',
+  'COFINS',
   'SPED CONTRIBUIÇÕES',
-  'CSLL/IRPJ',
+  'CSLL',
+  'IRPJ',
   'DIFERENCIAL DE ALIQUOTA',
   'DAPI',
   'DIME',
+  'LIVROS FISCAIS',
+  'DEMONSTR. APURAÇÃO',
 ] as const;
 
 export type VencimentoFiscalNome = (typeof VENCIMENTOS_FISCAIS_NOMES)[number];
@@ -517,6 +522,10 @@ export interface EmpresaObrigacaoConfig {
   obrigacao: string;
   ativa: boolean;
   motivo: string | null;
+  /** Códigos de receita esperados para esta empresa nesta obrigação. Se vazio, validador usa só a denominação. Se preenchido, exige bater. */
+  codigos: string[];
+  /** Obrigação interna do escritório — não envia pro cliente. UI esconde botão de envio. */
+  naoEnviaCliente: boolean;
   alteradaEm: string;
   alteradaPorId: UUID | null;
   alteradaPorNome: string | null;

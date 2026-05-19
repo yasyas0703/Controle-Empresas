@@ -20,7 +20,8 @@ type UF =
   | 'RS' | 'RO' | 'RR' | 'SC' | 'SP' | 'SE' | 'TO';
 
 const REGRAS: Partial<Record<VencimentoFiscalNome, RegraDia>> = {
-  ICMS: { MG: 8, SP: 20, BA: 10, SC: 10, default: 20 },
+  'ICMS NORMAL': { MG: 8, SP: 20, BA: 10, SC: 10, default: 20 },
+  'ICMS TDD': { MG: 8, default: 10 },
   'SPED ICMS/IPI': { MG: 15, SP: 20, BA: 10, SC: 20 },
   'SPED CONTRIBUIÇÕES': { default: 10 },
   REINF: { default: 13 },
@@ -28,10 +29,15 @@ const REGRAS: Partial<Record<VencimentoFiscalNome, RegraDia>> = {
   'GIA-ST/DIFAL': { default: 10 },
   'ICMS-ST/DIFAL': { MG: 9, SP: 9, default: 10 },
   IPI: { default: 25 },
-  'PIS/COFINS': { default: 25 },
-  'CSLL/IRPJ': { default: 30 },
+  PIS: { default: 25 },
+  COFINS: { default: 25 },
+  CSLL: { default: 30 },
+  IRPJ: { default: 30 },
   DAPI: { MG: 8 },
   DIME: { SC: 10 },
+  // Internas (sem dia fixo — preenche manual conforme equipe entrega):
+  'LIVROS FISCAIS': {},
+  'DEMONSTR. APURAÇÃO': {},
   'ISS - PRESTAÇÃO DE SERVIÇOS': {
     cidades: {
       'ouro fino': 10,

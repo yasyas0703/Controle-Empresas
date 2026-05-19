@@ -3584,6 +3584,8 @@ interface EmpresaObrigacaoConfigRow {
   obrigacao: string;
   ativa: boolean;
   motivo: string | null;
+  codigos: string[] | null;
+  nao_envia_cliente: boolean | null;
   alterada_em: string;
   alterada_por_id: string | null;
   alterada_por_nome: string | null;
@@ -3595,6 +3597,8 @@ function toEmpresaObrigacaoConfig(row: EmpresaObrigacaoConfigRow): EmpresaObriga
     obrigacao: row.obrigacao,
     ativa: row.ativa,
     motivo: row.motivo,
+    codigos: Array.isArray(row.codigos) ? row.codigos : [],
+    naoEnviaCliente: Boolean(row.nao_envia_cliente),
     alteradaEm: row.alterada_em,
     alteradaPorId: row.alterada_por_id,
     alteradaPorNome: row.alterada_por_nome,
@@ -3607,25 +3611,32 @@ export async function fetchEmpresaObrigacoesConfig(empresaId: UUID): Promise<Emp
     .select('*')
     .eq('empresa_id', empresaId);
   if (error) {
-    // Tabela pode não existir ainda (migration não rodou). Devolve vazio
-    // pra não quebrar a UI — admin/gerente vê tudo ativo.
     if (hasMissingTable(error)) return [];
     throw error;
   }
   return (data ?? []).map((r) => toEmpresaObrigacaoConfig(r as EmpresaObrigacaoConfigRow));
 }
 
-export async function setEmpresaObrigacaoAtiva(payload: {
+/**
+ * Upserta a configuração de uma obrigação de uma empresa. Se o resultado for
+ * "default total" (ativa=true E codigos vazios), apaga a linha pra manter
+ * a tabela só com exceções.
+ */
+export async function upsertEmpresaObrigacaoConfig(payload: {
   empresaId: UUID;
   obrigacao: string;
   ativa: boolean;
   motivo?: string | null;
+  codigos?: string[];
+  naoEnviaCliente?: boolean;
   currentUserId?: UUID | null;
   currentUserNome?: string;
 }): Promise<EmpresaObrigacaoConfig | null> {
-  // Quando ativa = true (default), apaga a linha — economia de storage
-  // e mantém a tabela só com exceções.
-  if (payload.ativa) {
+  const codigos = (payload.codigos ?? []).map((c) => c.trim()).filter(Boolean);
+  const naoEnviaCliente = payload.naoEnviaCliente ?? false;
+  const isDefault = payload.ativa && codigos.length === 0 && !naoEnviaCliente;
+
+  if (isDefault) {
     const { error } = await supabase
       .from('empresa_obrigacoes_config')
       .delete()
@@ -3638,8 +3649,10 @@ export async function setEmpresaObrigacaoAtiva(payload: {
   const row = {
     empresa_id: payload.empresaId,
     obrigacao: payload.obrigacao,
-    ativa: false,
+    ativa: payload.ativa,
     motivo: payload.motivo?.trim() || null,
+    codigos,
+    nao_envia_cliente: naoEnviaCliente,
     alterada_em: new Date().toISOString(),
     alterada_por_id: payload.currentUserId ?? null,
     alterada_por_nome: payload.currentUserNome?.trim() || null,
@@ -3651,6 +3664,18 @@ export async function setEmpresaObrigacaoAtiva(payload: {
     .single();
   if (error) throw error;
   return toEmpresaObrigacaoConfig(data as EmpresaObrigacaoConfigRow);
+}
+
+/** Alias retrocompat — só liga/desliga. */
+export async function setEmpresaObrigacaoAtiva(payload: {
+  empresaId: UUID;
+  obrigacao: string;
+  ativa: boolean;
+  motivo?: string | null;
+  currentUserId?: UUID | null;
+  currentUserNome?: string;
+}): Promise<EmpresaObrigacaoConfig | null> {
+  return upsertEmpresaObrigacaoConfig(payload);
 }
 
 function hasMissingTable(err: unknown): boolean {

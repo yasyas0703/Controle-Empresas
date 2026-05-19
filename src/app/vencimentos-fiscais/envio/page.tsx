@@ -13,9 +13,9 @@ import {
   fetchChecklistFiscalByMes,
   fetchEmpresaEmailsCliente,
   fetchEmpresaObrigacoesConfig,
-  setEmpresaObrigacaoAtiva,
-  uploadChecklistArquivo,
   upsertChecklistFiscal,
+  upsertEmpresaObrigacaoConfig,
+  uploadChecklistArquivo,
 } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { formatBR } from '@/app/utils/date';
@@ -58,6 +58,7 @@ interface ObrigacaoLinha {
   fiscal: VencimentoFiscal;
   status: StatusEnvio;
   checklistItem: ChecklistFiscalItem | null;
+  naoEnviaCliente: boolean;
 }
 
 export default function EnvioGuiasPage() {
@@ -70,8 +71,8 @@ export default function EnvioGuiasPage() {
   const [checklistDoMes, setChecklistDoMes] = useState<ChecklistFiscalItem[]>([]);
   const [carregandoChecklist, setCarregandoChecklist] = useState(false);
 
-  // Mapa: empresaId -> Set<obrigacaoNome> de obrigações DESATIVADAS pela empresa
-  const [desativadasPorEmpresa, setDesativadasPorEmpresa] = useState<Map<UUID, Set<string>>>(new Map());
+  // Mapa: empresaId -> lista de configs (ativa + codigos esperados + motivo) por obrigação
+  const [configsPorEmpresa, setConfigsPorEmpresa] = useState<Map<UUID, EmpresaObrigacaoConfig[]>>(new Map());
 
   const [modalEnvio, setModalEnvio] = useState<{ empresa: Empresa; fiscal: VencimentoFiscal } | null>(null);
   const [modalConfig, setModalConfig] = useState<Empresa | null>(null);
@@ -157,14 +158,12 @@ export default function EnvioGuiasPage() {
     return empresasVisiveis.find((e) => e.id === empresaSelecionadaId) ?? null;
   }, [empresasVisiveis, empresaSelecionadaId]);
 
-  // Carrega config de obrigações desativadas quando empresa é selecionada
   const carregarConfigEmpresa = React.useCallback((empresaId: UUID) => {
     fetchEmpresaObrigacoesConfig(empresaId)
       .then((lista) => {
-        setDesativadasPorEmpresa((prev) => {
+        setConfigsPorEmpresa((prev) => {
           const next = new Map(prev);
-          const setDesativadas = new Set(lista.filter((c) => !c.ativa).map((c) => c.obrigacao));
-          next.set(empresaId, setDesativadas);
+          next.set(empresaId, lista);
           return next;
         });
       })
@@ -176,6 +175,12 @@ export default function EnvioGuiasPage() {
     carregarConfigEmpresa(empresaSelecionada.id);
   }, [empresaSelecionada, carregarConfigEmpresa]);
 
+  function configDeObrigacao(empresaId: UUID, obrigacao: string): EmpresaObrigacaoConfig | null {
+    const lista = configsPorEmpresa.get(empresaId);
+    if (!lista) return null;
+    return lista.find((c) => c.obrigacao === obrigacao) ?? null;
+  }
+
   // Obrigações da empresa selecionada para o mês escolhido (já filtra desativadas)
   const obrigacoesEmpresa: ObrigacaoLinha[] = useMemo(() => {
     if (!empresaSelecionada) return [];
@@ -184,19 +189,22 @@ export default function EnvioGuiasPage() {
       empresaSelecionada.estado,
       empresaSelecionada.cidade,
     );
-    const desativadas = desativadasPorEmpresa.get(empresaSelecionada.id) ?? new Set<string>();
+    const configs = configsPorEmpresa.get(empresaSelecionada.id) ?? [];
+    const configPorNome = new Map(configs.map((c) => [c.obrigacao, c]));
+    const desativadas = new Set(configs.filter((c) => !c.ativa).map((c) => c.obrigacao));
     return fiscais
       .filter((f) => !desativadas.has(f.nome))
       .map((fiscal) => {
         const it = checklistMap.get(`${empresaSelecionada.id}|${fiscal.nome}`);
         const status: StatusEnvio = it?.concluido ? 'enviada' : 'pendente';
-        return { fiscal, status, checklistItem: it ?? null };
+        const cfg = configPorNome.get(fiscal.nome);
+        return { fiscal, status, checklistItem: it ?? null, naoEnviaCliente: cfg?.naoEnviaCliente ?? false };
       })
       .sort((a, b) => {
         if (a.status !== b.status) return a.status === 'pendente' ? -1 : 1;
         return a.fiscal.nome.localeCompare(b.fiscal.nome);
       });
-  }, [empresaSelecionada, checklistMap, desativadasPorEmpresa]);
+  }, [empresaSelecionada, checklistMap, configsPorEmpresa]);
 
   if (!authReady) return null;
 
@@ -348,26 +356,38 @@ export default function EnvioGuiasPage() {
                 </div>
               ) : (
                 <ul className="divide-y divide-gray-100">
-                  {obrigacoesEmpresa.map(({ fiscal, status, checklistItem }) => {
+                  {obrigacoesEmpresa.map(({ fiscal, status, checklistItem, naoEnviaCliente }) => {
                     const enviada = status === 'enviada';
                     return (
                       <li key={fiscal.id} className="p-3 sm:p-4 flex items-center gap-3 flex-wrap">
                         <div className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 ${
-                          enviada ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                          enviada ? 'bg-emerald-100 text-emerald-700'
+                          : naoEnviaCliente ? 'bg-slate-100 text-slate-600'
+                          : 'bg-amber-100 text-amber-700'
                         }`}>
                           {enviada ? <CheckCircle2 size={18} /> : <FileText size={16} />}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-bold text-gray-900">{fiscal.nome}</div>
+                          <div className="text-sm font-bold text-gray-900 flex items-center gap-2 flex-wrap">
+                            {fiscal.nome}
+                            {naoEnviaCliente && (
+                              <span className="text-[9px] font-bold uppercase tracking-wider bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">
+                                Interna
+                              </span>
+                            )}
+                          </div>
                           <div className="text-[11px] text-gray-500 flex items-center gap-2 flex-wrap">
                             {fiscal.vencimento && (
                               <span className="inline-flex items-center gap-1">
                                 <Calendar size={10} /> vence {formatBR(fiscal.vencimento)}
                               </span>
                             )}
+                            {naoEnviaCliente && (
+                              <span className="text-slate-500 italic">não envia ao cliente</span>
+                            )}
                             {enviada && checklistItem?.concluidoEm && (
                               <span className="text-emerald-700 font-semibold">
-                                enviada em {formatBR(checklistItem.concluidoEm.split('T')[0])}
+                                {naoEnviaCliente ? 'concluída' : 'enviada'} em {formatBR(checklistItem.concluidoEm.split('T')[0])}
                                 {checklistItem.concluidoPorNome ? ` por ${checklistItem.concluidoPorNome}` : ''}
                               </span>
                             )}
@@ -378,11 +398,15 @@ export default function EnvioGuiasPage() {
                           className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition shrink-0 ${
                             enviada
                               ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                              : naoEnviaCliente
+                              ? 'bg-slate-700 text-white shadow-sm hover:bg-slate-800'
                               : 'bg-gradient-to-r from-violet-500 to-fuchsia-600 text-white shadow-sm hover:from-violet-600 hover:to-fuchsia-700'
                           }`}
                         >
                           {enviada ? (
                             <><Upload size={12} /> Reenviar</>
+                          ) : naoEnviaCliente ? (
+                            <><CheckCircle2 size={12} /> Marcar feito</>
                           ) : (
                             <><Send size={12} /> Enviar guia</>
                           )}
@@ -402,6 +426,8 @@ export default function EnvioGuiasPage() {
           empresa={modalEnvio.empresa}
           fiscal={modalEnvio.fiscal}
           mes={mes}
+          codigosEsperados={configDeObrigacao(modalEnvio.empresa.id, modalEnvio.fiscal.nome)?.codigos ?? []}
+          naoEnviaCliente={configDeObrigacao(modalEnvio.empresa.id, modalEnvio.fiscal.nome)?.naoEnviaCliente ?? false}
           podeForcar={canManage || isPrivileged}
           currentUserNome={currentUser?.nome ?? null}
           onClose={() => setModalEnvio(null)}
@@ -440,6 +466,8 @@ interface ModalEnviarGuiaProps {
   empresa: Empresa;
   fiscal: VencimentoFiscal;
   mes: string;
+  codigosEsperados: string[];
+  naoEnviaCliente: boolean;
   podeForcar: boolean;
   currentUserNome: string | null;
   onClose: () => void;
@@ -448,7 +476,7 @@ interface ModalEnviarGuiaProps {
 }
 
 function ModalEnviarGuia({
-  empresa, fiscal, mes, podeForcar, currentUserNome, onClose, onEnviado, onErro,
+  empresa, fiscal, mes, codigosEsperados, naoEnviaCliente, podeForcar, currentUserNome, onClose, onEnviado, onErro,
 }: ModalEnviarGuiaProps) {
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [analisando, setAnalisando] = useState(false);
@@ -459,19 +487,24 @@ function ModalEnviarGuia({
   const [motivoForcar, setMotivoForcar] = useState('');
 
   useEffect(() => {
+    if (naoEnviaCliente) {
+      setCarregandoEmails(false);
+      setEmails([]);
+      return;
+    }
     setCarregandoEmails(true);
     fetchEmpresaEmailsCliente(empresa.id)
       .then((lista) => setEmails(lista.filter((e) => e.ativo)))
       .catch(() => setEmails([]))
       .finally(() => setCarregandoEmails(false));
-  }, [empresa.id]);
+  }, [empresa.id, naoEnviaCliente]);
 
   async function analisar(file: File) {
     setAnalisando(true);
     setResultado(null);
     try {
       const { texto } = await extrairTextoPdf(file);
-      const r = validarGuia(texto, empresa, fiscal.nome);
+      const r = validarGuia(texto, empresa, fiscal.nome, codigosEsperados);
       setResultado(r);
     } catch (err) {
       console.error('[ModalEnviarGuia] falha ao extrair texto:', err);
@@ -499,7 +532,7 @@ function ModalEnviarGuia({
   const podeEnviar =
     !!arquivo &&
     !!resultado &&
-    emails.length > 0 &&
+    (naoEnviaCliente || emails.length > 0) &&
     !enviando &&
     !analisando &&
     (valido || (precisaForcar && podeForcar && motivoForcar.trim().length >= 10));
@@ -517,7 +550,25 @@ function ModalEnviarGuia({
         { autorId: null, autorNome: currentUserNome ?? undefined },
       );
 
-      // 2. Pega checklist_id pra tracking
+      const obsForcar = precisaForcar
+        ? `[ENVIO FORÇADO por ${currentUserNome ?? 'admin'}] ${motivoForcar.trim()}`
+        : undefined;
+
+      if (naoEnviaCliente) {
+        // Obrigação interna: só upload + marca feito, sem Gmail/portal
+        await upsertChecklistFiscal({
+          empresaId: empresa.id,
+          mes,
+          obrigacao: fiscal.nome,
+          status: 'feito',
+          concluidoPorNome: currentUserNome ?? undefined,
+          observacao: obsForcar ?? '[INTERNA] arquivo armazenado para controle do escritório',
+        });
+        onEnviado();
+        return;
+      }
+
+      // Fluxo normal: envia email via API
       const { data: row } = await supabase
         .from('checklist_fiscal')
         .select('id')
@@ -527,7 +578,6 @@ function ModalEnviarGuia({
         .maybeSingle();
       const checklistId = (row as { id?: string } | null)?.id;
 
-      // 3. Chama API de envio (já faz Gmail + portal_documentos + push)
       const session = (await supabase.auth.getSession()).data.session;
       const token = session?.access_token;
       if (!token) throw new Error('Sessão expirada. Faça login novamente.');
@@ -552,10 +602,6 @@ function ModalEnviarGuia({
         throw new Error(erro.error || `Falha no envio (HTTP ${resp.status})`);
       }
 
-      // 4. Marca checklist como concluído (status: 'feito')
-      const obsForcar = precisaForcar
-        ? `[ENVIO FORÇADO por ${currentUserNome ?? 'admin'}] ${motivoForcar.trim()}`
-        : undefined;
       await upsertChecklistFiscal({
         empresaId: empresa.id,
         mes,
@@ -600,8 +646,11 @@ function ModalEnviarGuia({
         </div>
 
         <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
-          {/* Destinatários */}
-          {carregandoEmails ? (
+          {naoEnviaCliente ? (
+            <div className="rounded-lg bg-slate-100 border border-slate-300 p-3 text-xs text-slate-700">
+              <strong>Obrigação interna do escritório.</strong> O arquivo será apenas armazenado para controle (não envia email ao cliente).
+            </div>
+          ) : carregandoEmails ? (
             <div className="text-xs text-gray-500 flex items-center gap-1.5">
               <Loader2 className="animate-spin" size={12} /> Carregando emails…
             </div>
@@ -761,9 +810,11 @@ function ModalEnviarGuia({
             className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {enviando ? (
-              <><Loader2 className="animate-spin" size={14} /> Enviando…</>
+              <><Loader2 className="animate-spin" size={14} /> {naoEnviaCliente ? 'Salvando…' : 'Enviando…'}</>
             ) : precisaForcar ? (
-              <><ShieldAlert size={14} /> Forçar envio</>
+              <><ShieldAlert size={14} /> {naoEnviaCliente ? 'Forçar marcação' : 'Forçar envio'}</>
+            ) : naoEnviaCliente ? (
+              <><CheckCircle2 size={14} /> Marcar feito</>
             ) : (
               <><Send size={14} /> Enviar e marcar feito</>
             )}
@@ -808,11 +859,13 @@ interface ModalConfigurarObrigacoesProps {
   onErro: (msg: string) => void;
 }
 
+interface PendingState { ativa: boolean; motivo: string; codigos: string[]; naoEnviaCliente: boolean }
+
 function ModalConfigurarObrigacoes({
   empresa, currentUserId, currentUserNome, onClose, onSalvo, onErro,
 }: ModalConfigurarObrigacoesProps) {
   const [configs, setConfigs] = useState<EmpresaObrigacaoConfig[]>([]);
-  const [pendentes, setPendentes] = useState<Map<string, { ativa: boolean; motivo: string }>>(new Map());
+  const [pendentes, setPendentes] = useState<Map<string, PendingState>>(new Map());
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
 
@@ -830,27 +883,23 @@ function ModalConfigurarObrigacoes({
       .finally(() => setCarregando(false));
   }, [empresa.id]);
 
-  function estadoAtual(obrigacao: string): { ativa: boolean; motivo: string } {
+  function estadoAtual(obrigacao: string): PendingState {
     const pendente = pendentes.get(obrigacao);
     if (pendente) return pendente;
     const config = configs.find((c) => c.obrigacao === obrigacao);
-    return { ativa: config ? config.ativa : true, motivo: config?.motivo ?? '' };
+    return {
+      ativa: config ? config.ativa : true,
+      motivo: config?.motivo ?? '',
+      codigos: config?.codigos ?? [],
+      naoEnviaCliente: config?.naoEnviaCliente ?? false,
+    };
   }
 
-  function alternar(obrigacao: string) {
+  function atualizarPendente(obrigacao: string, patch: Partial<PendingState>) {
     const atual = estadoAtual(obrigacao);
     setPendentes((prev) => {
       const next = new Map(prev);
-      next.set(obrigacao, { ativa: !atual.ativa, motivo: atual.motivo });
-      return next;
-    });
-  }
-
-  function setMotivo(obrigacao: string, motivo: string) {
-    const atual = estadoAtual(obrigacao);
-    setPendentes((prev) => {
-      const next = new Map(prev);
-      next.set(obrigacao, { ativa: atual.ativa, motivo });
+      next.set(obrigacao, { ...atual, ...patch });
       return next;
     });
   }
@@ -863,11 +912,13 @@ function ModalConfigurarObrigacoes({
     setSalvando(true);
     try {
       for (const [obrigacao, estado] of pendentes) {
-        await setEmpresaObrigacaoAtiva({
+        await upsertEmpresaObrigacaoConfig({
           empresaId: empresa.id,
           obrigacao,
           ativa: estado.ativa,
           motivo: estado.motivo,
+          codigos: estado.codigos,
+          naoEnviaCliente: estado.naoEnviaCliente,
           currentUserId,
           currentUserNome: currentUserNome ?? undefined,
         });
@@ -924,11 +975,12 @@ function ModalConfigurarObrigacoes({
               {obrigacoesDisponiveis.map((obrigacao) => {
                 const estado = estadoAtual(obrigacao);
                 const tinhaPendencia = pendentes.has(obrigacao);
+                const codigosStr = estado.codigos.join(', ');
                 return (
                   <li key={obrigacao} className="p-3">
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={() => alternar(obrigacao)}
+                        onClick={() => atualizarPendente(obrigacao, { ativa: !estado.ativa })}
                         disabled={salvando}
                         className="shrink-0"
                         aria-label={estado.ativa ? 'Desativar' : 'Ativar'}
@@ -955,11 +1007,49 @@ function ModalConfigurarObrigacoes({
                         <input
                           type="text"
                           value={estado.motivo}
-                          onChange={(e) => setMotivo(obrigacao, e.target.value)}
+                          onChange={(e) => atualizarPendente(obrigacao, { motivo: e.target.value })}
                           placeholder="Motivo (opcional, ex: empresa só de serviços)"
                           disabled={salvando}
                           className="w-full text-xs rounded-md border border-gray-300 px-2 py-1 focus:ring-2 focus:ring-violet-400 outline-none"
                         />
+                      </div>
+                    )}
+                    {estado.ativa && (
+                      <div className="mt-2 ml-11 space-y-2">
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1">
+                            Códigos de receita esperados (separados por vírgula)
+                          </label>
+                          <input
+                            type="text"
+                            value={codigosStr}
+                            onChange={(e) => {
+                              const codigos = e.target.value
+                                .split(',')
+                                .map((c) => c.trim())
+                                .filter(Boolean);
+                              atualizarPendente(obrigacao, { codigos });
+                            }}
+                            placeholder="ex: 0120-6, 0121-4  (deixe vazio se não quiser validar por código)"
+                            disabled={salvando}
+                            className="w-full text-xs font-mono rounded-md border border-gray-300 px-2 py-1 focus:ring-2 focus:ring-violet-400 outline-none"
+                          />
+                          {estado.codigos.length > 0 && (
+                            <div className="mt-1 text-[10px] text-gray-500">
+                              {estado.codigos.length} código{estado.codigos.length === 1 ? '' : 's'} · validador bloqueia se o PDF trouxer outro
+                            </div>
+                          )}
+                        </div>
+                        <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={estado.naoEnviaCliente}
+                            onChange={(e) => atualizarPendente(obrigacao, { naoEnviaCliente: e.target.checked })}
+                            disabled={salvando}
+                            className="rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                          />
+                          <span><strong>Não envia ao cliente</strong> — obrigação interna do escritório (ex: SPED, REINF, Livros)</span>
+                        </label>
                       </div>
                     )}
                   </li>
