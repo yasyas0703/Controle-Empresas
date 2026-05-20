@@ -163,6 +163,11 @@ export interface ChecklistEnvioEvento {
   remetenteEmail?: string;      // conta Gmail da usuária que enviou
   destinatarios: string[];
   arquivoNome?: string;
+  // Path no Supabase Storage do arquivo enviado neste envio específico.
+  // Preservado mesmo após reenvios — permite ver versão antiga sem perda.
+  arquivoStoragePath?: string;
+  // Motivo do reenvio (preenchido quando é o 2º+ envio da mesma obrigação).
+  motivoReenvio?: string;
   sucesso: boolean;
   erro?: string;
   // ─── Tracking de entrega (preenchido pela rotina de verificação) ───

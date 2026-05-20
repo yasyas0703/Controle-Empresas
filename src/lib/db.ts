@@ -1788,6 +1788,8 @@ function normalizarEnviosHistorico(raw: unknown): ChecklistEnvioEvento[] {
         remetenteEmail: e.remetente_email ?? e.remetenteEmail ?? undefined,
         destinatarios: Array.isArray(e.destinatarios) ? e.destinatarios.filter((x: unknown) => typeof x === 'string') : [],
         arquivoNome: e.arquivo_nome ?? e.arquivoNome ?? undefined,
+        arquivoStoragePath: e.arquivo_storage_path ?? e.arquivoStoragePath ?? undefined,
+        motivoReenvio: e.motivo_reenvio ?? e.motivoReenvio ?? undefined,
         sucesso: e.sucesso === true,
         erro: e.erro ?? undefined,
         gmailMessageId: e.gmail_message_id ?? e.gmailMessageId ?? undefined,
@@ -2313,6 +2315,8 @@ export interface EnviarAnexoChecklistInput {
   codigosEsperados?: string[];
   /** Confirma reenvio quando já existe envio anterior com sucesso (passa 409). */
   confirmarReenvio?: boolean;
+  /** Motivo do reenvio (≥10 chars). Salvo no evento de envios_historico pra auditoria. */
+  motivoReenvio?: string;
   /** Admin/gerente força envio mesmo com bloqueios no PDF (precisa motivo). */
   forcarEnvio?: boolean;
   motivoForcar?: string;
@@ -2419,6 +2423,8 @@ export async function registrarEnvioChecklist(input: RegistrarEnvioInput): Promi
     remetente_email: e.remetenteEmail ?? null,
     destinatarios: e.destinatarios,
     arquivo_nome: e.arquivoNome ?? null,
+    arquivo_storage_path: e.arquivoStoragePath ?? null,
+    motivo_reenvio: e.motivoReenvio ?? null,
     sucesso: e.sucesso,
     erro: e.erro ?? null,
     gmail_message_id: e.gmailMessageId ?? null,
@@ -2548,6 +2554,8 @@ export async function removerEnvioChecklist(
     remetente_email: e.remetenteEmail ?? null,
     destinatarios: e.destinatarios,
     arquivo_nome: e.arquivoNome ?? null,
+    arquivo_storage_path: e.arquivoStoragePath ?? null,
+    motivo_reenvio: e.motivoReenvio ?? null,
     sucesso: e.sucesso,
     erro: e.erro ?? null,
     gmail_message_id: e.gmailMessageId ?? null,

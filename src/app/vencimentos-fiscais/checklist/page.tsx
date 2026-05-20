@@ -1856,12 +1856,15 @@ export default function ChecklistFiscalPage() {
                             )}
                           </button>
                         )}
-                        {podeEditar && (
+                        {/* Excluir anexo: SÓ admin/gerente. Funcionário comum
+                            não pode mais apagar guia já enviada — pra reenviar
+                            usa "Reenviar" + motivo (histórico fica preservado). */}
+                        {canManage && (
                           <button
                             onClick={removerArquivoChecklist}
                             disabled={arqUploading}
                             className="rounded-xl border border-red-200 bg-white p-2 hover:bg-red-50 transition"
-                            title="Excluir anexo"
+                            title="Excluir anexo (admin/gerente)"
                           >
                             {arqUploading ? (
                               <Loader2 className="text-red-500 animate-spin" size={16} />

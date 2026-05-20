@@ -31,6 +31,7 @@ import StatusPortalCliente from '@/app/vencimentos-fiscais/checklist/StatusPorta
 import { supabase } from '@/lib/supabase';
 import { formatBR } from '@/app/utils/date';
 import ModalBase from '@/app/components/ModalBase';
+import ModalMotivoReenvio from '@/app/components/ModalMotivoReenvio';
 import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
 import type {
   ChecklistFiscalItem, Departamento, Empresa, EmpresaEmailCliente, EmpresaObrigacaoConfig, Tributacao, UUID, VencimentoFiscal,
@@ -901,6 +902,16 @@ function ModalDetalheObrigacao({
     }
   }
 
+  // Abre PDF de uma versão específica do histórico (arquivoStoragePath do evento).
+  async function abrirPdfHistorico(storagePath: string) {
+    try {
+      const url = await getChecklistArquivoSignedUrl(storagePath);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      onErro(err instanceof Error ? err.message : 'Falha ao abrir arquivo.');
+    }
+  }
+
   const envios = checklistItem?.enviosHistorico ?? [];
 
   return (
@@ -1090,6 +1101,20 @@ function ModalDetalheObrigacao({
                               para <span className="font-medium">{ev.destinatarios.join(', ')}</span>
                             </div>
                           )}
+                          {ev.motivoReenvio && (
+                            <div className="mt-1 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 px-1.5 py-1 text-[10px] text-amber-800 dark:text-amber-200">
+                              <span className="font-semibold">Motivo do reenvio:</span> {ev.motivoReenvio}
+                            </div>
+                          )}
+                          {ev.arquivoStoragePath && (
+                            <button
+                              type="button"
+                              onClick={() => void abrirPdfHistorico(ev.arquivoStoragePath!)}
+                              className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                            >
+                              <ExternalLink size={9} /> Ver PDF desta versão
+                            </button>
+                          )}
                           {ev.erro && (
                             <div className="mt-1 rounded bg-red-100 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 px-1.5 py-1 text-[10px] text-red-700 dark:text-red-300">
                               {ev.erro}
@@ -1251,6 +1276,26 @@ function ModalEnviarGuia({
   const [carregandoEmails, setCarregandoEmails] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const [motivoForcar, setMotivoForcar] = useState('');
+  // Estado do modal de reenvio (quando há envio anterior — HTTP 409 da API).
+  // Usa resolver pattern: enviar() aguarda promise; modal chama resolver no
+  // confirm/cancel pra continuar o fluxo.
+  const [modalReenvio, setModalReenvio] = useState<{
+    enviadoEm: string | null;
+    enviadoPorNome: string | null;
+    destinatarios: string[];
+    resolver: (motivo: string | null) => void;
+  } | null>(null);
+
+  function pedirMotivoReenvio(meta: { enviadoEm?: unknown; enviadoPorNome?: unknown; destinatarios?: unknown }): Promise<string | null> {
+    return new Promise((resolve) => {
+      setModalReenvio({
+        enviadoEm: typeof meta.enviadoEm === 'string' ? meta.enviadoEm : null,
+        enviadoPorNome: typeof meta.enviadoPorNome === 'string' ? meta.enviadoPorNome : null,
+        destinatarios: Array.isArray(meta.destinatarios) ? (meta.destinatarios as string[]) : [],
+        resolver: resolve,
+      });
+    });
+  }
 
   useEffect(() => {
     if (naoEnviaCliente) {
@@ -1379,17 +1424,11 @@ function ModalEnviarGuia({
         });
       };
       let resp = await chamarMultiApi(false);
+      let motivoReenvio: string | null = null;
       if (resp.status === 409) {
         const erro = await resp.json().catch(() => ({}));
-        const meta = (erro?.meta ?? {}) as { enviadoEm?: string; enviadoPorNome?: string };
-        const dataAnt = meta.enviadoEm
-          ? new Date(meta.enviadoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
-          : '?';
-        const porQuem = meta.enviadoPorNome ? ` por ${meta.enviadoPorNome}` : '';
-        const confirmou = window.confirm(
-          `Esta obrigação já foi enviada em ${dataAnt}${porQuem}.\n\nConfirma reenviar?`,
-        );
-        if (!confirmou) {
+        motivoReenvio = await pedirMotivoReenvio(erro?.meta ?? {});
+        if (!motivoReenvio) {
           onErro('Envio cancelado.');
           return;
         }
@@ -1407,6 +1446,9 @@ function ModalEnviarGuia({
 
       // 4. Registra evento usando o envioId retornado (essencial pra o pixel
       //    de tracking de abertura conseguir achar e marcar como aberto).
+      // arquivoStoragePath aponta pro PRIMEIRO arquivo do batch (suficiente
+      // pra UI mostrar "esta versão"; os outros 4 ficam acessíveis via
+      // portal_documentos com mesmo checklist_id).
       await registrarEnvioChecklist({
         empresaId: empresa.id, mes, obrigacao: fiscal.nome,
         evento: {
@@ -1416,6 +1458,8 @@ function ModalEnviarGuia({
           remetenteEmail: env.de,
           destinatarios: env.enviadoPara,
           arquivoNome: `${arquivosMulti.length} arquivos: ${arquivosMulti.map((a) => a.file.name).join(', ')}`,
+          arquivoStoragePath: arquivosUpload[0]?.path,
+          motivoReenvio: motivoReenvio ?? undefined,
           sucesso: true,
           gmailMessageId: env.gmailMessageId,
           gmailThreadId: env.gmailThreadId,
@@ -1463,7 +1507,8 @@ function ModalEnviarGuia({
 
       // 3. Chama a API de envio (mesma usada pelo Checklist Mensal).
       // Se houver envio anterior com sucesso, o servidor retorna 409 com
-      // code='duplicado' — perguntamos pra usuária e reenviamos confirmando.
+      // code='duplicado' — perguntamos motivo via modal e reenviamos.
+      let motivoReenvio: string | null = null;
       let env = await enviarAnexoChecklist({
         empresaId: empresa.id,
         mes,
@@ -1476,14 +1521,8 @@ function ModalEnviarGuia({
         motivoForcar: precisaForcar ? motivoForcar.trim() : undefined,
       });
       if (!env.ok && env.code === 'duplicado') {
-        const dataAnt = typeof env.meta?.enviadoEm === 'string'
-          ? new Date(env.meta.enviadoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
-          : '?';
-        const porQuem = typeof env.meta?.enviadoPorNome === 'string' ? ` por ${env.meta.enviadoPorNome}` : '';
-        const confirmou = window.confirm(
-          `Esta guia já foi enviada em ${dataAnt}${porQuem}.\n\nConfirma reenviar?`,
-        );
-        if (!confirmou) {
+        motivoReenvio = await pedirMotivoReenvio(env.meta ?? {});
+        if (!motivoReenvio) {
           onErro('Envio cancelado.');
           return;
         }
@@ -1498,6 +1537,7 @@ function ModalEnviarGuia({
           forcarEnvio: precisaForcar,
           motivoForcar: precisaForcar ? motivoForcar.trim() : undefined,
           confirmarReenvio: true,
+          motivoReenvio,
         });
       }
 
@@ -1515,6 +1555,9 @@ function ModalEnviarGuia({
           remetenteEmail: env.ok ? env.de : undefined,
           destinatarios: env.ok ? env.enviadoPara : [],
           arquivoNome: arquivo.name,
+          // Path no Storage — preserva versão pra ver depois no histórico.
+          arquivoStoragePath: arquivoUrl,
+          motivoReenvio: motivoReenvio ?? undefined,
           sucesso: env.ok,
           erro: env.ok ? undefined : env.mensagem,
           gmailMessageId: env.ok ? env.gmailMessageId : undefined,
@@ -1905,6 +1948,18 @@ function ModalEnviarGuia({
           </button>
         </div>
       </div>
+
+      {/* Modal de motivo de reenvio (HTTP 409 do servidor) */}
+      {modalReenvio && (
+        <ModalMotivoReenvio
+          isOpen={true}
+          enviadoEm={modalReenvio.enviadoEm}
+          enviadoPorNome={modalReenvio.enviadoPorNome}
+          destinatariosAnteriores={modalReenvio.destinatarios}
+          onClose={() => { modalReenvio.resolver(null); setModalReenvio(null); }}
+          onConfirmar={(m) => { modalReenvio.resolver(m); setModalReenvio(null); }}
+        />
+      )}
     </ModalBase>
   );
 }
