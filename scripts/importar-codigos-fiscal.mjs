@@ -22,12 +22,13 @@ const isDryRun = process.argv.includes('--dry-run');
 // Trimestrais: count baixo é OK (vê PDF a cada 3 meses)
 const TRIMESTRAIS = new Set(['CSLL', 'IRPJ', 'DARF']);
 
-// Obrigações internas — não enviam ao cliente por padrão
+// Obrigações internas — não enviam ao cliente por padrão.
+// LIVROS FISCAIS NÃO entra aqui: o pessoal envia as 6 guias pelo Onvio
+// pra dar como concluído. DEMONSTR. APURAÇÃO continua interno (Créd. Pres.).
 const INTERNAS = new Set([
   'SPED ICMS/IPI',
   'SPED CONTRIBUIÇÕES',
   'REINF',
-  'LIVROS FISCAIS',
   'DEMONSTR. APURAÇÃO',
 ]);
 
@@ -107,12 +108,20 @@ async function main() {
   // Agrupa por empresa+obrigacao detectada
   const detectadas = new Map(); // key=empresaId|obrig, value={ empresaId, obrigacao, codigos:Set, razao, tipoRegime }
   const empresasComDeteccao = new Set();
+  // Empresas que apareceram no CSV mas SEM obrigação detectada (pasta vazia,
+  // sem 2026, sem pasta) — todas as obrigações vão pra inativa pra não
+  // aparecer na aba Envio cheia de "27 pend."
+  const empresasSemDeteccao = new Map(); // empresaId → razao
 
   for (const linha of linhas) {
     const empresaId = empresaIdPorCodigo.get(linha.codigo_empresa);
     if (!empresaId) continue;
-    if (!linha.obrigacao) continue;
-    // Pula linhas baixa confiança em obrigações NÃO trimestrais
+    if (!linha.obrigacao) {
+      if (!empresasSemDeteccao.has(empresaId)) {
+        empresasSemDeteccao.set(empresaId, linha.razao_social);
+      }
+      continue;
+    }
     if (linha.confianca === 'baixa' && !TRIMESTRAIS.has(linha.obrigacao)) continue;
 
     const obrigCanon = canonicalizar(linha.obrigacao);
@@ -124,7 +133,14 @@ async function main() {
         codigos: new Set(),
         razao: linha.razao_social,
         tipoRegime: linha.tipo_regime,
+        exemploArquivo: linha.exemplo || null,
+        exemploTrecho: linha.trecho || null,
       });
+    } else {
+      // Mantém primeiro exemplo (mais "limpo" pq vem antes no CSV)
+      const det = detectadas.get(key);
+      if (!det.exemploArquivo) det.exemploArquivo = linha.exemplo || null;
+      if (!det.exemploTrecho) det.exemploTrecho = linha.trecho || null;
     }
     const cods = linha.codigos.split('|').map((c) => c.trim()).filter(Boolean);
     for (const c of cods) detectadas.get(key).codigos.add(c);
@@ -165,7 +181,18 @@ async function main() {
     }
   }
 
+  // Pra empresas SEM detecção (pasta vazia/inexistente), marca TODAS as
+  // obrigações (regime normal + SN + internas) como inativas. Assim a aba
+  // Envio não mostra "27 pend." pra empresas sem documentos.
+  for (const [empresaId, razao] of empresasSemDeteccao) {
+    const todas = new Set([...TODAS_REGIME_NORMAL, ...TODAS_INTERNAS, ...TODAS_SN]);
+    for (const obrig of todas) {
+      naoDetectadas.push({ empresaId, obrigacao: obrig, razao });
+    }
+  }
+
   console.log(`🚫 ${naoDetectadas.length} obrigações serão marcadas como inativas (não detectadas no servidor)`);
+  console.log(`   ↳ ${empresasSemDeteccao.size} empresas SEM detecção (pasta vazia/inexistente)`);
 
   if (isDryRun) {
     console.log('\n📊 Exemplos de detectadas:');
@@ -208,8 +235,10 @@ async function main() {
         codigos: [...d.codigos],
         nao_envia_cliente: INTERNAS.has(d.obrigacao),
         motivo: null,
+        exemplo_arquivo: d.exemploArquivo,
+        exemplo_trecho: d.exemploTrecho,
         alterada_em: now,
-        alterada_por_nome: 'import descobrir-codigos-fiscal v2',
+        alterada_por_nome: 'import descobrir-codigos-fiscal v3',
       }, { onConflict: 'empresa_id,obrigacao' });
     if (error) { console.error(`   ❌ ${d.razao} · ${d.obrigacao}: ${error.message}`); errDet++; }
     else okDet++;

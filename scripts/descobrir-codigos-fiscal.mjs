@@ -177,16 +177,19 @@ const REGRAS_NOME = [
 function detectarObrigacaoEmSN(filename) {
   const obrig = detectarObrigacao(filename);
   if (obrig) return obrig;
-  if (/\brecibo\b/i.test(filename)) return 'RECIBO DAS';
-  if (/relat[oó]rio.*difal|relat[oó]rio.*aliq|^rel\s+difal/i.test(filename)) return 'DIFERENCIAL DE ALIQUOTA';
-  if (/rel\s+icms\s+ant/i.test(filename)) return 'ICMS ANTECIPADO';
+  const norm = filename.normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (/\brecibo\b/i.test(norm)) return 'RECIBO DAS';
+  if (/relat[oó]rio.*difal|relat[oó]rio.*aliq|^rel\s+difal/i.test(norm)) return 'DIFERENCIAL DE ALIQUOTA';
+  if (/rel\s+icms\s+ant/i.test(norm)) return 'ICMS ANTECIPADO';
   return null;
 }
 
 function detectarObrigacao(filename) {
+  // Normaliza acentos pra regex bater em "ALÍQUOTA" igual "ALIQUOTA"
+  const norm = filename.normalize('NFD').replace(/[̀-ͯ]/g, '');
   for (const regra of REGRAS_NOME) {
     for (const re of regra.padroes) {
-      if (re.test(filename)) return regra.obrigacao;
+      if (re.test(norm)) return regra.obrigacao;
     }
   }
   return null;
@@ -298,12 +301,15 @@ async function escanearEstabelecimento(base) {
   }
 
   // ── 1) FECHAMENTO / SIMPLES NACIONAL — guias por nome ─────────────────
+  // tipoRegime só é marcado se o ano corrente tem PDFs de verdade (não basta
+  // a pasta existir — empresa pode ter migrado de regime e deixado a antiga
+  // vazia).
   const fech = acharSubpasta(base, ['FECHAMENTO']);
   if (fech) {
-    tipoRegimeSet.add('normal');
     const anoPath = join(base, fech, ANO_ALVO);
     if (existsSync(anoPath)) {
       const arqs = listarArquivosRec(anoPath, 3).filter((a) => a.ext === 'pdf');
+      if (arqs.length > 0) tipoRegimeSet.add('normal');
       for (const a of arqs) {
         const obrig = detectarObrigacao(a.nome);
         if (obrig) addObrigacao(obrig, a.nome, a.full);
@@ -313,12 +319,11 @@ async function escanearEstabelecimento(base) {
 
   const sn = acharSubpasta(base, ['SIMPLES NACIONAL']);
   if (sn) {
-    tipoRegimeSet.add('sn');
     const anoPath = join(base, sn, ANO_ALVO);
     if (existsSync(anoPath)) {
       const arqs = listarArquivosRec(anoPath, 3).filter((a) => a.ext === 'pdf');
+      if (arqs.length > 0) tipoRegimeSet.add('sn');
       for (const a of arqs) {
-        // Detector específico de SN — "RECIBO" sozinho vira RECIBO DAS
         const obrig = detectarObrigacaoEmSN(a.nome);
         if (obrig) addObrigacao(obrig, a.nome, a.full);
       }
@@ -442,16 +447,21 @@ async function escanearEstabelecimento(base) {
   let cnpjDetectado = null;
   for (const [obrig, info] of Object.entries(obrigacoes)) {
     if (obrig === 'DARF') {
+      let primeiroTexto = null;
       for (const p of info.exemplosPath.slice(0, 3)) {
         const texto = await extrairTextoPdf(p);
+        if (!primeiroTexto) primeiroTexto = texto;
         for (const c of extrairTodosCodigosDarf(texto)) info.codigos.add(c);
         if (!cnpjDetectado) cnpjDetectado = extrairCnpjDoTexto(texto);
       }
+      // Trecho do primeiro PDF pra preview
+      info.exemploTrecho = primeiroTexto ? primeiroTexto.slice(0, 500).replace(/\s+/g, ' ').trim() : null;
     } else if (info.exemplosPath.length > 0) {
       const texto = await extrairTextoPdf(info.exemplosPath[0]);
       const c = extrairCodigoDoTexto(texto, obrig);
       if (c) info.codigos.add(c);
       if (!cnpjDetectado) cnpjDetectado = extrairCnpjDoTexto(texto);
+      info.exemploTrecho = texto ? texto.slice(0, 500).replace(/\s+/g, ' ').trim() : null;
     }
   }
 
@@ -622,7 +632,7 @@ async function main() {
   }
 
   // ── gera CSV ──────────────────────────────────────────────────────────
-  const linhas = ['codigo_empresa;razao_social;cnpj;estado;tipo_regime;pasta_servidor;obrigacao;codigos;confianca;quantidade;exemplo'];
+  const linhas = ['codigo_empresa;razao_social;cnpj;estado;tipo_regime;pasta_servidor;obrigacao;codigos;confianca;quantidade;exemplo;trecho'];
   for (const r of resultados) {
     const e = r.empresa;
     if (Object.keys(r.obrigacoes || {}).length === 0) {
@@ -630,16 +640,17 @@ async function main() {
         e.codigo, esc(e.razao_social), e.cnpj, e.estado, r.tipoRegime ?? '',
         r.pasta ?? 'NAO ENCONTRADA', '', '', '', '',
         r.semPasta ? 'pasta nao encontrada' : 'nenhuma obrigacao detectada',
+        '',
       ].join(';'));
       continue;
     }
     for (const [obrig, info] of Object.entries(r.obrigacoes)) {
-      // Trimestrais (CSLL/IRPJ/DARF): count 1 ainda é OK
       const trimestral = ['CSLL', 'IRPJ', 'DARF'].includes(obrig);
       const confianca = info.count >= 2 ? 'alta' : (trimestral ? 'alta-trim' : 'baixa');
       linhas.push([
         e.codigo, esc(e.razao_social), e.cnpj, e.estado, r.tipoRegime,
         r.pasta, obrig, info.codigosArr.join('|'), confianca, info.count, esc(info.exemplos[0] || ''),
+        esc((info.exemploTrecho || '').slice(0, 500)),
       ].join(';'));
     }
   }
