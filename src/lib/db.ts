@@ -2309,6 +2309,13 @@ export interface EnviarAnexoChecklistInput {
   arquivoNome: string;
   /** Id da linha de checklist_fiscal — habilita pixel de tracking de abertura. */
   checklistId?: UUID;
+  /** Códigos de receita esperados (de empresa_obrigacoes_config) — usado na revalidação. */
+  codigosEsperados?: string[];
+  /** Confirma reenvio quando já existe envio anterior com sucesso (passa 409). */
+  confirmarReenvio?: boolean;
+  /** Admin/gerente força envio mesmo com bloqueios no PDF (precisa motivo). */
+  forcarEnvio?: boolean;
+  motivoForcar?: string;
 }
 
 export interface EnviarAnexoChecklistResultado {
@@ -2327,6 +2334,10 @@ export interface EnviarAnexoChecklistResultado {
 export interface EnviarAnexoChecklistFalha {
   ok: false;
   mensagem: string;
+  /** Categoria do erro pra UI tratar de forma específica. */
+  code?: 'duplicado' | 'rate_limit' | 'permissao' | 'validacao_pdf';
+  /** Dados auxiliares (ex: data do envio anterior pra confirmação). */
+  meta?: Record<string, unknown>;
 }
 
 /**
@@ -2351,7 +2362,11 @@ export async function enviarAnexoChecklist(
     const mensagem = typeof json?.error === 'string' && json.error
       ? json.error
       : `Falha ao enviar (HTTP ${res.status}).`;
-    return { ok: false, mensagem };
+    const code = typeof json?.code === 'string'
+      ? (json.code as EnviarAnexoChecklistFalha['code'])
+      : undefined;
+    const meta = json?.meta && typeof json.meta === 'object' ? json.meta as Record<string, unknown> : undefined;
+    return { ok: false, mensagem, code, meta };
   }
   return {
     ok: true,
@@ -3586,6 +3601,8 @@ interface EmpresaObrigacaoConfigRow {
   motivo: string | null;
   codigos: string[] | null;
   nao_envia_cliente: boolean | null;
+  exemplo_arquivo: string | null;
+  exemplo_trecho: string | null;
   alterada_em: string;
   alterada_por_id: string | null;
   alterada_por_nome: string | null;
@@ -3599,6 +3616,8 @@ function toEmpresaObrigacaoConfig(row: EmpresaObrigacaoConfigRow): EmpresaObriga
     motivo: row.motivo,
     codigos: Array.isArray(row.codigos) ? row.codigos : [],
     naoEnviaCliente: Boolean(row.nao_envia_cliente),
+    exemploArquivo: row.exemplo_arquivo,
+    exemploTrecho: row.exemplo_trecho,
     alteradaEm: row.alterada_em,
     alteradaPorId: row.alterada_por_id,
     alteradaPorNome: row.alterada_por_nome,
@@ -3618,6 +3637,65 @@ export async function fetchEmpresaObrigacoesConfig(empresaId: UUID): Promise<Emp
 }
 
 /**
+ * Retorna o Set de IDs de empresas que têm PELO MENOS UMA obrigação ATIVA
+ * cadastrada. Usado pela aba Envio pra esconder empresas que não estão sendo
+ * processadas (não tem pasta no T:, não é cliente ativo).
+ */
+export async function fetchEmpresasComObrigacaoAtiva(): Promise<Set<UUID>> {
+  const ids = new Set<UUID>();
+  const PAGE = 1000;
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('empresa_obrigacoes_config')
+      .select('empresa_id')
+      .eq('ativa', true)
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      if (hasMissingTable(error)) return ids;
+      throw error;
+    }
+    const lote = (data ?? []) as { empresa_id: string }[];
+    for (const r of lote) ids.add(r.empresa_id);
+    if (lote.length < PAGE) break;
+    offset += PAGE;
+    if (offset > 100_000) break;
+  }
+  return ids;
+}
+
+/**
+ * Pra cada empresa, retorna o conjunto de obrigações ATIVAS cadastradas.
+ * Usado pela sidebar da aba Envio pra mostrar o total correto (ex: "3/5"
+ * em vez de "3/20" — onde 20 era o total de obrigações possíveis do regime).
+ */
+export async function fetchObrigacoesAtivasPorEmpresa(): Promise<Map<UUID, Set<string>>> {
+  const map = new Map<UUID, Set<string>>();
+  const PAGE = 1000;
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('empresa_obrigacoes_config')
+      .select('empresa_id, obrigacao')
+      .eq('ativa', true)
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      if (hasMissingTable(error)) return map;
+      throw error;
+    }
+    const lote = (data ?? []) as { empresa_id: string; obrigacao: string }[];
+    for (const r of lote) {
+      if (!map.has(r.empresa_id)) map.set(r.empresa_id, new Set());
+      map.get(r.empresa_id)!.add(r.obrigacao);
+    }
+    if (lote.length < PAGE) break;
+    offset += PAGE;
+    if (offset > 100_000) break;
+  }
+  return map;
+}
+
+/**
  * Upserta a configuração de uma obrigação de uma empresa. Se o resultado for
  * "default total" (ativa=true E codigos vazios), apaga a linha pra manter
  * a tabela só com exceções.
@@ -3632,27 +3710,17 @@ export async function upsertEmpresaObrigacaoConfig(payload: {
   currentUserId?: UUID | null;
   currentUserNome?: string;
 }): Promise<EmpresaObrigacaoConfig | null> {
+  // Sempre upsertar (nunca apagar). Apagar quando "default" causava bug: o
+  // usuário desmarcava algo no modal Configurar e a empresa perdia a obrigação
+  // toda. Mantemos sempre a linha pra preservar o estado configurado.
   const codigos = (payload.codigos ?? []).map((c) => c.trim()).filter(Boolean);
-  const naoEnviaCliente = payload.naoEnviaCliente ?? false;
-  const isDefault = payload.ativa && codigos.length === 0 && !naoEnviaCliente;
-
-  if (isDefault) {
-    const { error } = await supabase
-      .from('empresa_obrigacoes_config')
-      .delete()
-      .eq('empresa_id', payload.empresaId)
-      .eq('obrigacao', payload.obrigacao);
-    if (error) throw error;
-    return null;
-  }
-
   const row = {
     empresa_id: payload.empresaId,
     obrigacao: payload.obrigacao,
     ativa: payload.ativa,
     motivo: payload.motivo?.trim() || null,
     codigos,
-    nao_envia_cliente: naoEnviaCliente,
+    nao_envia_cliente: payload.naoEnviaCliente ?? false,
     alterada_em: new Date().toISOString(),
     alterada_por_id: payload.currentUserId ?? null,
     alterada_por_nome: payload.currentUserNome?.trim() || null,

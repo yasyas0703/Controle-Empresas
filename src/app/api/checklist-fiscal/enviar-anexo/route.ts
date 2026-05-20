@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { google } from 'googleapis';
 import { randomUUID } from 'node:crypto';
 import { getOAuthClient, decryptToken } from '@/lib/googleOAuth';
-import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendPushToCliente } from '@/lib/webPush';
 import { vencimentoDoMes, vencimentoDoMesSn } from '@/app/utils/regrasVencimentosFiscais';
+import {
+  autenticarRequest, assertPodeEnviar, checkRateLimit, buscarEnvioAnterior,
+  validarPdfNoServidor, carregarEmpresaCompleta, getSupabaseAdmin, isErroApi,
+} from '../_shared';
 
 export const runtime = 'nodejs';
 
@@ -20,13 +22,6 @@ function resolveBaseUrl(req: Request): string | null {
   return `${proto}://${host}`;
 }
 
-function getBearerToken(req: Request): string | null {
-  const header = req.headers.get('authorization') || req.headers.get('Authorization');
-  if (!header) return null;
-  const m = header.match(/^Bearer\s+(.+)$/i);
-  return m?.[1] ?? null;
-}
-
 interface SendPayload {
   empresaId: string;
   mes: string;        // YYYY-MM
@@ -37,6 +32,14 @@ interface SendPayload {
   // de abertura no HTML. Se não vier, o email é enviado sem rastreamento
   // (degradação graciosa — primeiro envio antes do upload, por exemplo).
   checklistId?: string;
+  // Códigos de receita esperados (de empresa_obrigacoes_config). Usado na
+  // revalidação do PDF no servidor.
+  codigosEsperados?: string[];
+  // Quando o usuário confirma reenviar uma guia já enviada antes.
+  confirmarReenvio?: boolean;
+  // Quando admin/gerente força envio mesmo com bloqueios na validação.
+  forcarEnvio?: boolean;
+  motivoForcar?: string;
 }
 
 function formatComp(iso?: string | null): string {
@@ -122,25 +125,12 @@ function buildMime(params: {
 
 export async function POST(req: Request) {
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!supabaseUrl || !anonKey) {
-      return NextResponse.json({ error: 'Supabase não configurado' }, { status: 500 });
+    // ─── 0. Auth ───────────────────────────────────────────────────────
+    const auth = await autenticarRequest(req);
+    if (isErroApi(auth)) {
+      return NextResponse.json({ error: auth.error, code: auth.code }, { status: auth.status });
     }
-
-    const token = getBearerToken(req);
-    if (!token) {
-      return NextResponse.json({ error: 'Sessão ausente' }, { status: 401 });
-    }
-
-    const authClient = createClient(supabaseUrl, anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    });
-    const { data: authData, error: authError } = await authClient.auth.getUser(token);
-    if (authError || !authData.user) {
-      return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
-    }
-    const userId = authData.user.id;
+    const userId = auth.userId;
 
     const body = (await req.json().catch(() => null)) as SendPayload | null;
     if (!body || !body.empresaId || !body.mes || !body.obrigacao || !body.arquivoPath || !body.arquivoNome) {
@@ -152,7 +142,35 @@ export async function POST(req: Request) {
 
     const admin = getSupabaseAdmin();
 
-    // 1. Carrega token Gmail do usuário
+    // ─── 1. Permissão: funcionário comum só envia das empresas dele ───
+    const perm = await assertPodeEnviar(admin, userId, body.empresaId);
+    if (isErroApi(perm)) {
+      return NextResponse.json({ error: perm.error, code: perm.code }, { status: perm.status });
+    }
+
+    // ─── 2. Rate limit: máx 30 envios/min por usuário ──────────────────
+    const rl = await checkRateLimit(admin, userId);
+    if (isErroApi(rl)) {
+      return NextResponse.json({ error: rl.error, code: rl.code }, { status: rl.status });
+    }
+
+    // ─── 3. Guard de envio duplicado ───────────────────────────────────
+    if (!body.confirmarReenvio) {
+      const anterior = await buscarEnvioAnterior(admin, body.empresaId, body.mes, body.obrigacao);
+      if (anterior) {
+        const dataFmt = new Date(anterior.enviadoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+        return NextResponse.json(
+          {
+            error: `Já enviado em ${dataFmt}${anterior.enviadoPorNome ? ' por ' + anterior.enviadoPorNome : ''}. Confirme se quer reenviar.`,
+            code: 'duplicado',
+            meta: { enviadoEm: anterior.enviadoEm, enviadoPorNome: anterior.enviadoPorNome, destinatarios: anterior.destinatarios },
+          },
+          { status: 409 },
+        );
+      }
+    }
+
+    // ─── 4. Carrega token Gmail do usuário ────────────────────────────
     const { data: tokenRow, error: tokenErr } = await admin
       .from('usuario_gmail_tokens')
       .select('email, refresh_token_enc, revoked')
@@ -178,32 +196,22 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Carrega empresa e emails
-    const [empresaRes, emailsRes] = await Promise.all([
-      admin
-        .from('empresas')
-        .select('id, codigo, razao_social, apelido, cnpj, estado, cidade, vencimentos_fiscais')
-        .eq('id', body.empresaId)
-        .maybeSingle(),
+    // 5. Carrega empresa completa (pra validação) + emails + role do user
+    const [empresaResult, emailsRes, userRoleRes] = await Promise.all([
+      carregarEmpresaCompleta(admin, body.empresaId),
       admin.from('empresa_emails_cliente').select('email').eq('empresa_id', body.empresaId).eq('ativo', true),
+      admin.from('usuarios').select('role').eq('id', userId).maybeSingle(),
     ]);
 
-    if (empresaRes.error || !empresaRes.data) {
-      return NextResponse.json({ error: 'Empresa não encontrada.' }, { status: 404 });
+    if (isErroApi(empresaResult)) {
+      return NextResponse.json({ error: empresaResult.error }, { status: empresaResult.status });
     }
     if (emailsRes.error) {
       return NextResponse.json({ error: 'Erro ao consultar emails da empresa.' }, { status: 500 });
     }
-
-    const empresa = empresaRes.data as {
-      codigo: string;
-      razao_social?: string | null;
-      apelido?: string | null;
-      cnpj?: string | null;
-      estado?: string | null;
-      cidade?: string | null;
-      vencimentos_fiscais?: { nome?: string; vencimento?: string | null }[] | null;
-    };
+    const empresa = empresaResult;
+    const role = (userRoleRes.data as { role?: string } | null)?.role;
+    const podeForcar = role === 'admin' || role === 'gerente';
 
     // Calcula o vencimento da obrigação no mês alvo (body.mes = "YYYY-MM").
     // 1ª tentativa: regras automáticas do Fiscal (ICMS, SPED, IPI etc.)
@@ -219,7 +227,7 @@ export async function POST(req: Request) {
       const normalizar = (s: string) =>
         s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
       const obrigAlvo = normalizar(body.obrigacao);
-      const manual = (empresa.vencimentos_fiscais ?? []).find(
+      const manual = (empresa.vencimentosFiscais ?? []).find(
         (v) => v?.nome && normalizar(v.nome) === obrigAlvo,
       );
       return manual?.vencimento || null;
@@ -238,14 +246,33 @@ export async function POST(req: Request) {
       );
     }
 
-    // 3. Baixa o arquivo do storage
+    // 6. Baixa o arquivo do storage
     const { data: fileBlob, error: dlErr } = await admin.storage.from(BUCKET).download(body.arquivoPath);
     if (dlErr || !fileBlob) {
       return NextResponse.json({ error: 'Não foi possível baixar o arquivo do storage.' }, { status: 500 });
     }
     const fileBuffer = Buffer.from(await fileBlob.arrayBuffer());
 
-    // 4. Monta assunto/corpo (template genérico — checklist não tem template configurado)
+    // ─── 7. Revalida PDF no servidor (defesa em profundidade) ──────────
+    // O front já validou, mas DevTools permite burlar. Reaplica `validarGuia`
+    // pra garantir que o PDF realmente confere com a empresa+obrigação.
+    const validacao = await validarPdfNoServidor({
+      buffer: fileBuffer,
+      empresa,
+      obrigacao: body.obrigacao,
+      codigosEsperados: body.codigosEsperados ?? [],
+      forcarEnvio: !!body.forcarEnvio,
+      motivoForcar: body.motivoForcar,
+      podeForcar,
+    });
+    if (isErroApi(validacao)) {
+      return NextResponse.json(
+        { error: validacao.error, code: validacao.code, meta: validacao.meta },
+        { status: validacao.status },
+      );
+    }
+
+    // 8. Monta assunto/corpo (template genérico — checklist não tem template configurado)
     const empresaNome = empresa.razao_social || empresa.apelido || empresa.codigo;
     const competenciaLabel = formatComp(body.mes);
     const subject = `${body.obrigacao} — ${empresaNome} (${competenciaLabel})`;

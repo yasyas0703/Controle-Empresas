@@ -13,6 +13,7 @@
     "@react-pdf-viewer/default-layout": "^3.12.0",
     "@react-pdf-viewer/highlight": "^3.12.0",
     "@supabase/supabase-js": "^2.95.3",
+    "@types/react-window": "^1.8.8",
     "exceljs": "^4.4.0",
     "googleapis": "^171.4.0",
     "jspdf": "^4.2.0",
@@ -23,6 +24,7 @@
     "pdfjs-dist": "^3.4.120",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-window": "^2.2.7",
     "uuid": "^13.0.0",
     "web-push": "^3.6.7",
     "zod": "^4.3.6"
@@ -37,6 +39,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
+    "tsx": "^4.22.3",
     "typescript": "^5"
   }
 }

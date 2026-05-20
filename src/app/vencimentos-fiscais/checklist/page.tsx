@@ -214,7 +214,7 @@ export default function ChecklistFiscalPage() {
   // Aba SN segue só com a lista oficial.
   const obrigacoesAba: readonly string[] = aba === 'sn'
     ? VENCIMENTOS_FISCAIS_SN_NOMES
-    : [...VENCIMENTOS_FISCAIS_NOMES, ...OBRIGACOES_FISCAIS_CHECKLIST_EXTRAS];
+    : Array.from(new Set([...VENCIMENTOS_FISCAIS_NOMES, ...OBRIGACOES_FISCAIS_CHECKLIST_EXTRAS]));
 
   // Reseta filtro de obrigacao quando muda de aba (listas sao diferentes).
   useEffect(() => {

@@ -39,6 +39,14 @@ ALTER TABLE public.empresa_obrigacoes_config
 ALTER TABLE public.empresa_obrigacoes_config
   ADD COLUMN IF NOT EXISTS nao_envia_cliente BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Preview: guarda o nome do arquivo exemplo encontrado na pasta T: e um
+-- trecho do texto extraído. Permite Yasmin conferir visualmente que a
+-- detecção está correta no modal Configurar Obrigações.
+ALTER TABLE public.empresa_obrigacoes_config
+  ADD COLUMN IF NOT EXISTS exemplo_arquivo TEXT;
+ALTER TABLE public.empresa_obrigacoes_config
+  ADD COLUMN IF NOT EXISTS exemplo_trecho TEXT;
+
 CREATE INDEX IF NOT EXISTS empresa_obrigacoes_config_empresa_idx
   ON public.empresa_obrigacoes_config (empresa_id);
 

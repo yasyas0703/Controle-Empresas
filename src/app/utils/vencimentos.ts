@@ -1,4 +1,4 @@
-import type { HistoricoVencimentoItem, UUID, VencimentoFiscal } from '@/app/types';
+import type { HistoricoVencimentoItem, Tributacao, UUID, VencimentoFiscal } from '@/app/types';
 import { VENCIMENTOS_FISCAIS_NOMES, VENCIMENTOS_FISCAIS_SN_NOMES } from '@/app/types';
 import { isoNow } from '@/app/utils/date';
 import { proximoVencimento } from '@/app/utils/regrasVencimentosFiscais';
@@ -49,13 +49,32 @@ export function normalizarHistoricoVencimento(historico?: HistoricoVencimentoIte
 }
 
 /**
+ * Escolhe a lista de obrigações relevantes baseado no regime tributário:
+ *   - simples_nacional → só obrigações SN (DAS, SINTEGRA, DESTDA etc)
+ *   - lucro_real / lucro_presumido → só obrigações do regime federal
+ *   - null/undefined → união (default conservador, mostra tudo)
+ */
+function nomesPorTributacao(tributacao?: Tributacao | null): readonly string[] {
+  if (tributacao === 'simples_nacional') return VENCIMENTOS_FISCAIS_SN_NOMES;
+  if (tributacao === 'lucro_real' || tributacao === 'lucro_presumido') return VENCIMENTOS_FISCAIS_NOMES;
+  return TODOS_NOMES_FISCAIS;
+}
+
+/**
  * Garante que a empresa tenha um item para cada nome fixo de vencimento fiscal.
  * Mantém os já existentes (casando por `nome`) e anexa os que faltam com vencimento vazio.
+ *
+ * @param tributacao Se fornecida, filtra a lista pra mostrar só obrigações
+ * relevantes ao regime (SN ou normal). Se omitida, retorna a união completa.
  */
-export function garantirVencimentosFiscais(existentes?: VencimentoFiscal[] | null): VencimentoFiscal[] {
+export function garantirVencimentosFiscais(
+  existentes?: VencimentoFiscal[] | null,
+  tributacao?: Tributacao | null,
+): VencimentoFiscal[] {
   const atuais = Array.isArray(existentes) ? existentes : [];
   const porNome = new Map(atuais.map((v) => [v.nome, v]));
-  return TODOS_NOMES_FISCAIS.map((nome) => {
+  const nomesRelevantes = nomesPorTributacao(tributacao);
+  return nomesRelevantes.map((nome) => {
     const atual = porNome.get(nome);
     if (atual) {
       return {
@@ -77,14 +96,16 @@ export function garantirVencimentosFiscais(existentes?: VencimentoFiscal[] | nul
  * @param estado UF da empresa (ex.: 'MG'). Pode ser undefined.
  * @param cidade Cidade da empresa — usada para regras municipais (ISS).
  * @param referencia Data base para o cálculo (default = hoje). Útil pra testes.
+ * @param tributacao Filtra a lista pelo regime (SN ou normal). Omita pra retornar união.
  */
 export function garantirVencimentosFiscaisComRegras(
   existentes: VencimentoFiscal[] | null | undefined,
   estado: string | null | undefined,
   cidade?: string | null,
   referencia: Date = new Date(),
+  tributacao?: Tributacao | null,
 ): VencimentoFiscal[] {
-  const base = garantirVencimentosFiscais(existentes);
+  const base = garantirVencimentosFiscais(existentes, tributacao);
   return base.map((item) => {
     if (item.vencimento) return item; // usuário já preencheu manualmente
     const sugerido = proximoVencimento(item.nome, estado, referencia, cidade);

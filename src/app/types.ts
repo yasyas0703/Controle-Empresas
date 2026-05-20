@@ -526,6 +526,10 @@ export interface EmpresaObrigacaoConfig {
   codigos: string[];
   /** Obrigação interna do escritório — não envia pro cliente. UI esconde botão de envio. */
   naoEnviaCliente: boolean;
+  /** Nome do arquivo PDF exemplo encontrado pela descoberta automática. */
+  exemploArquivo: string | null;
+  /** Trecho do texto extraído do PDF exemplo, pra preview visual no modal Configurar. */
+  exemploTrecho: string | null;
   alteradaEm: string;
   alteradaPorId: UUID | null;
   alteradaPorNome: string | null;
