@@ -17,12 +17,25 @@ export async function GET(req: Request) {
   const state = url.searchParams.get('state');
   const oauthError = url.searchParams.get('error');
 
+  // DEBUG: log de TUDO que vem do Google no callback (remover depois)
+  console.log('[OAUTH DEBUG] callback ←', {
+    fullUrl: req.url,
+    hasCode: !!code,
+    codeLength: code?.length,
+    hasState: !!state,
+    oauthError,
+    errorDescription: url.searchParams.get('error_description'),
+    errorUri: url.searchParams.get('error_uri'),
+    allParams: Object.fromEntries(url.searchParams.entries()),
+  });
+
   // Pré-extrai o returnTo do state pra usar nos redirects de erro também.
   // Se state for inválido, cai no fallback /obrigacoes.
   const verified = state ? verifyState(state) : null;
   const target = verified?.returnTo ?? '/obrigacoes';
 
   if (oauthError) {
+    console.error('[OAUTH DEBUG] callback got error from Google:', oauthError, url.searchParams.get('error_description'));
     return redirectTo(target, { gmail: 'error', reason: oauthError });
   }
   if (!code || !state) {
@@ -75,6 +88,7 @@ export async function GET(req: Request) {
     return redirectTo(target, { gmail: 'connected', email: userInfo.email });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'unknown';
+    console.error('[OAUTH DEBUG] callback exchange_failed:', err);
     return redirectTo(target, { gmail: 'error', reason: 'exchange_failed', detail: message.slice(0, 100) });
   }
 }
