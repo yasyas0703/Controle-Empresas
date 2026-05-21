@@ -25,6 +25,43 @@ type RegimeAba = 'fiscal' | 'sn';
 
 type ChecklistKey = string; // `${empresaId}|${obrigacao}`
 
+// Meses em que o checklist usa os nomes ANTIGOS de obrigações
+// ('ICMS' único, 'PIS/COFINS' junto, 'CSLL/IRPJ' junto).
+// Motivo: o commit 31a4742 (19/05/2026) separou esses impostos
+// em obrigações distintas, mas só foi pra produção em 21/05.
+// O checklist do mês 2026-04 (marcado em maio) tinha ~400 checks
+// salvos com os nomes antigos. Pra não perder esses dados, esse
+// mês continua exibindo os nomes antigos. A partir de 2026-05 em
+// diante usa os nomes novos.
+const MESES_CHECKLIST_NOMES_ANTIGOS = new Set<string>(['2026-04']);
+
+// Lista de obrigações com os nomes ANTIGOS — usada só pelos meses
+// em MESES_CHECKLIST_NOMES_ANTIGOS. Mantém o mesmo ordenamento da
+// VENCIMENTOS_FISCAIS_NOMES atual, só com os impostos juntos.
+const VENCIMENTOS_FISCAIS_NOMES_LEGADO = [
+  'ICMS',
+  'SPED ICMS/IPI',
+  'IPI',
+  'GIA-ST/DIFAL',
+  'ICMS-ST/DIFAL',
+  'ISS - PRESTAÇÃO DE SERVIÇOS',
+  'ISS - SERVIÇOS TOMADOS',
+  'REINF',
+  'DARF-SERVIÇOS TOMADOS',
+  'PIS/COFINS',
+  'SPED CONTRIBUIÇÕES',
+  'CSLL/IRPJ',
+  'DIFERENCIAL DE ALIQUOTA',
+  'DAPI',
+  'DIME',
+] as const;
+
+function obrigacoesFiscaisPorMes(mes: string): readonly string[] {
+  return MESES_CHECKLIST_NOMES_ANTIGOS.has(mes)
+    ? VENCIMENTOS_FISCAIS_NOMES_LEGADO
+    : VENCIMENTOS_FISCAIS_NOMES;
+}
+
 function monthKey(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -212,9 +249,12 @@ export default function ChecklistFiscalPage() {
   // Lista de obrigações da aba ativa.
   // Aba Fiscal ganha colunas extras de controle interno (livros, demonstrativos).
   // Aba SN segue só com a lista oficial.
+  // Para meses em MESES_CHECKLIST_NOMES_ANTIGOS, usa os nomes antigos
+  // de impostos (ICMS, PIS/COFINS, CSLL/IRPJ juntos) — necessário pra
+  // exibir checks já marcados antes da renomeação de 21/05/2026.
   const obrigacoesAba: readonly string[] = aba === 'sn'
     ? VENCIMENTOS_FISCAIS_SN_NOMES
-    : Array.from(new Set([...VENCIMENTOS_FISCAIS_NOMES, ...OBRIGACOES_FISCAIS_CHECKLIST_EXTRAS]));
+    : Array.from(new Set([...obrigacoesFiscaisPorMes(mes), ...OBRIGACOES_FISCAIS_CHECKLIST_EXTRAS]));
 
   // Reseta filtro de obrigacao quando muda de aba (listas sao diferentes).
   useEffect(() => {
