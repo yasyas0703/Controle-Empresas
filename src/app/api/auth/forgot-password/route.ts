@@ -6,8 +6,13 @@ import { rateLimit, getClientIp } from '@/lib/rateLimit';
 
 export const runtime = 'nodejs';
 
-function generate6DigitCode(): string {
-  return randomInt(100000, 999999).toString();
+// 8 dígitos cobre 10^8 = ~26 bits. Com rate limit (5 envios/10min por IP)
+// e 5 tentativas por código, o atacante tem no máximo 25 chances numa janela
+// de 10 min — chance de acertar ≈ 2.5×10⁻⁷ por código emitido.
+// 6 dígitos (≈20 bits) era 100× menos seguro pra zero ganho de UX.
+function generateVerificationCode(): string {
+  // randomInt é [min, max), então 0..99999999 e pad pra 8 chars.
+  return randomInt(0, 100_000_000).toString().padStart(8, '0');
 }
 
 function hashCode(code: string): string {
@@ -43,7 +48,7 @@ function buildPasswordResetEmail(code: string) {
                     <tr>
                       <td align="center" style="padding:12px 0 24px;">
                         <div style="display:inline-block; background-color:#f0f5ff; border:2px dashed #2563eb; border-radius:10px; padding:18px 40px;">
-                          <span style="font-size:36px; font-weight:700; letter-spacing:8px; color:#1e3a5f; font-family:'Courier New', monospace;">
+                          <span style="font-size:32px; font-weight:700; letter-spacing:6px; color:#1e3a5f; font-family:'Courier New', monospace;">
                             ${code}
                           </span>
                         </div>
@@ -130,8 +135,8 @@ export async function POST(request: NextRequest) {
       return genericResponse;
     }
 
-    // Generate 6-digit code and hash it
-    const code = generate6DigitCode();
+    // Generate verification code and hash it (8 digits, ~26 bits entropy).
+    const code = generateVerificationCode();
     const codeHash = hashCode(code);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 

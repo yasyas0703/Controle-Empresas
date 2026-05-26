@@ -853,17 +853,17 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                         Código enviado!
                       </div>
                       <p className="text-xs text-blue-600">
-                        Enviamos um código de 6 dígitos para <strong>{forgotEmail}</strong>. Verifique sua caixa de entrada e spam.
+                        Enviamos um código de 8 dígitos para <strong>{forgotEmail}</strong>. Verifique sua caixa de entrada e spam.
                       </p>
                     </div>
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-2">Código de verificação</label>
                       <input
                         value={forgotCode}
-                        onChange={(e) => setForgotCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 text-center text-2xl font-mono tracking-[0.3em] focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
-                        placeholder="000000"
-                        maxLength={6}
+                        onChange={(e) => setForgotCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                        className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 text-center text-2xl font-mono tracking-[0.25em] focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                        placeholder="00000000"
+                        maxLength={8}
                         inputMode="numeric"
                       />
                     </div>
