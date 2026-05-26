@@ -920,7 +920,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                 ) : (
                   <>
                     <p className="text-sm text-gray-600">
-                      Digite o email da sua conta. Enviaremos um código de 6 dígitos para você redefinir sua senha.
+                      Digite o email da sua conta. Enviaremos um código de 8 dígitos para você redefinir sua senha.
                     </p>
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-2">Email</label>
