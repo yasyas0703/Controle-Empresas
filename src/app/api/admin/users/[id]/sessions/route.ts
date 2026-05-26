@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { isUuid } from '@/lib/uuid';
 
 export const runtime = 'nodejs';
 
@@ -40,7 +41,7 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   if (!authz.ok) return NextResponse.json({ error: authz.message }, { status: authz.status });
 
   const { id } = await ctx.params;
-  if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+  if (!isUuid(id)) return NextResponse.json({ error: 'Usuário não encontrado.' }, { status: 404 });
 
   // Não pode resetar a própria sessão nem a da desenvolvedora
   const devId = process.env.DEVELOPER_USER_ID;

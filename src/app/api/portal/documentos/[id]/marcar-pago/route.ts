@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { isUuid } from '@/lib/uuid';
 
 export const runtime = 'nodejs';
 
@@ -36,6 +37,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!token) return NextResponse.json({ error: 'Sessão ausente' }, { status: 401 });
 
     const { id: documentoId } = await params;
+    if (!isUuid(documentoId)) {
+      return NextResponse.json({ error: 'Guia não encontrada' }, { status: 404 });
+    }
     const body = (await req.json().catch(() => null)) as Payload | null;
     if (!body || (body.acao !== 'marcar' && body.acao !== 'desmarcar')) {
       return NextResponse.json({ error: 'Ação inválida.' }, { status: 400 });

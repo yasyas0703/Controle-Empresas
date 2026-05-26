@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { isUuid } from '@/lib/uuid';
 
 function getBearerToken(req: Request): string | null {
   const header = req.headers.get('authorization') || req.headers.get('Authorization');
@@ -62,7 +63,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!authz.ok) return NextResponse.json({ error: authz.message }, { status: authz.status });
 
   const { id } = await ctx.params;
-  if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+  if (!isUuid(id)) return NextResponse.json({ error: 'Usuário não encontrado.' }, { status: 404 });
 
   // Conta protegida: somente a própria desenvolvedora pode editar sua conta
   const devId = process.env.DEVELOPER_USER_ID;
@@ -177,7 +178,7 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   if (!authz.ok) return NextResponse.json({ error: authz.message }, { status: authz.status });
 
   const { id } = await ctx.params;
-  if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+  if (!isUuid(id)) return NextResponse.json({ error: 'Usuário não encontrado.' }, { status: 404 });
 
   // Ninguém pode excluir a si mesmo
   if (authz.callerId === id) {

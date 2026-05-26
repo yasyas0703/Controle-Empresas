@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendEmailViaUserGmail } from '@/lib/gmailSend';
 import { buildEmailAlteradoEmail, resolvePortalUrl } from '@/lib/portalOnboardingEmail';
+import { isUuid } from '@/lib/uuid';
 
 export const runtime = 'nodejs';
 
@@ -28,6 +29,9 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     if (!token) return NextResponse.json({ error: 'Sessão ausente' }, { status: 401 });
 
     const { id: clienteId } = await params;
+    if (!isUuid(clienteId)) {
+      return NextResponse.json({ error: 'Cliente não encontrado.' }, { status: 404 });
+    }
 
     const authClient = createClient(supabaseUrl, anonKey, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -152,6 +156,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (!token) return NextResponse.json({ error: 'Sessão ausente' }, { status: 401 });
 
     const { id: clienteId } = await params;
+    if (!isUuid(clienteId)) {
+      return NextResponse.json({ error: 'Cliente não encontrado.' }, { status: 404 });
+    }
     const body = (await req.json().catch(() => null)) as Payload | null;
     if (!body || (!body.email && body.nome_contato === undefined && body.telefone === undefined)) {
       return NextResponse.json(

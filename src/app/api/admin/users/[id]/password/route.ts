@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { rateLimit, getClientIp } from '@/lib/rateLimit';
+import { isUuid } from '@/lib/uuid';
 
 function getBearerToken(req: Request): string | null {
   const header = req.headers.get('authorization') || req.headers.get('Authorization');
@@ -69,7 +70,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   const { id } = await ctx.params;
-  if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+  if (!isUuid(id)) return NextResponse.json({ error: 'Usuário não encontrado.' }, { status: 404 });
 
   // Conta protegida: somente a própria desenvolvedora pode alterar sua senha
   if (devId && id === devId && authz.callerId !== devId) {
