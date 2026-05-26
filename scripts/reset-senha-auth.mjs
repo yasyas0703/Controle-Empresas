@@ -77,7 +77,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`✓ Senha resetada pra "${novaSenha}".`);
+  console.log('✓ Senha resetada com sucesso.');
 
   // 3) Testa logando com a senha nova
   const anonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
