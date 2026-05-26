@@ -109,11 +109,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       bodyHtml,
     });
 
+    // Senha provisória NUNCA volta na response (era vazamento via HTTP).
+    // Se email falhar, admin tenta de novo — gera nova senha + tenta enviar.
+    if (!sendResult.ok) {
+      console.warn('[clientes-portal/reenviar-senha] email não enviou — tentar de novo', {
+        cliente_id: clienteId,
+        empresa_id: clienteRow.empresa_id,
+        motivo: sendResult.error,
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       email_enviado: sendResult.ok,
       email_erro: sendResult.ok ? null : sendResult.error,
-      senha_provisoria: sendResult.ok ? null : senha,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro inesperado';

@@ -181,7 +181,6 @@ export async function POST(req: Request) {
         vinculou_existente: true,
         email_enviado: sendResult.ok,
         email_erro: sendResult.ok ? null : sendResult.error,
-        senha_provisoria: null, // não geramos senha, reutiliza a atual
       });
     }
 
@@ -240,6 +239,16 @@ export async function POST(req: Request) {
       bodyHtml,
     });
 
+    // Senha provisória NUNCA volta na response (era vazamento via HTTP).
+    // Se email falhar, admin deve usar "Reenviar senha" pra gerar nova + tentar de novo.
+    if (!sendResult.ok) {
+      console.warn('[clientes-portal/criar] email não enviou — usar reenviar-senha pra retry', {
+        cliente_id: clienteCriado?.id ?? created.user.id,
+        empresa_id: body.empresa_id,
+        motivo: sendResult.error,
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       cliente: {
@@ -250,7 +259,6 @@ export async function POST(req: Request) {
       vinculou_existente: false,
       email_enviado: sendResult.ok,
       email_erro: sendResult.ok ? null : sendResult.error,
-      senha_provisoria: sendResult.ok ? null : senha,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro inesperado';

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { CheckCircle2, Copy, KeyRound, Loader2, Pencil, Power, Search, Smartphone, Trash2, UserPlus, XCircle } from 'lucide-react';
+import { CheckCircle2, KeyRound, Loader2, Pencil, Power, Search, Smartphone, Trash2, UserPlus, XCircle } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { supabase } from '@/lib/supabase';
 
@@ -129,7 +129,8 @@ export default function ClientesPortalPage() {
       if (!json.email_enviado) {
         mostrarAlerta(
           'Email não enviado',
-          `Senha gerada mas não conseguimos enviar por email (${json.email_erro || 'erro desconhecido'}). Senha: ${json.senha_provisoria}`,
+          `Não conseguimos enviar a senha por email (${json.email_erro || 'erro desconhecido'}). ` +
+            'Verifique a conexão do Gmail no perfil e clique em "Reenviar" de novo — uma nova senha será gerada.',
           'aviso',
         );
       } else {
@@ -482,7 +483,7 @@ function ModalCriarAcesso({
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
   const [enviando, setEnviando] = useState(false);
-  const [resultado, setResultado] = useState<{ senha?: string; aviso?: string } | null>(null);
+  const [resultado, setResultado] = useState<{ aviso: string } | null>(null);
 
   async function submeter(e: FormEvent) {
     e.preventDefault();
@@ -518,13 +519,15 @@ function ModalCriarAcesso({
         ultimo_login_em: null,
         criado_em: new Date().toISOString(),
       };
-      if (!json.email_enviado && json.senha_provisoria) {
-        // Só tem senha provisória quando criou user novo no Auth. Pra mostrar
-        // pra menina copiar e mandar manualmente.
+      if (!json.email_enviado) {
+        // Email não foi enviado — admin precisa usar "Reenviar senha" da tabela
+        // pra tentar de novo. Senha NUNCA volta na response (era vazamento HTTP).
         setResultado({
-          senha: json.senha_provisoria,
-          aviso: `Acesso criado, mas não conseguimos enviar email automaticamente (${json.email_erro || 'erro desconhecido'}). Copie a senha abaixo e mande pro cliente manualmente.`,
+          aviso:
+            `Acesso criado, mas não conseguimos enviar o email automaticamente (${json.email_erro || 'erro desconhecido'}). ` +
+            'Feche este modal, localize o cliente na tabela e clique em "Reenviar senha" — uma nova senha será gerada e tentaremos enviar de novo.',
         });
+        onSuccess(novo);
       } else {
         const tipoMsg = json.vinculou_existente
           ? 'Email já tinha conta no sistema — vinculado a essa empresa também. O cliente continua usando a mesma senha.'
@@ -538,13 +541,6 @@ function ModalCriarAcesso({
       }
     } finally {
       setEnviando(false);
-    }
-  }
-
-  function copiarSenha() {
-    if (resultado?.senha) {
-      void navigator.clipboard.writeText(resultado.senha);
-      mostrarAlerta('Copiado', 'Senha copiada pra área de transferência.', 'sucesso');
     }
   }
 
@@ -570,15 +566,6 @@ function ModalCriarAcesso({
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
               {resultado.aviso}
             </div>
-            <div className="rounded-md bg-slate-100 p-3 text-center font-mono text-lg dark:bg-slate-800">
-              {resultado.senha}
-            </div>
-            <button
-              onClick={copiarSenha}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-            >
-              <Copy size={14} /> Copiar senha
-            </button>
             <button
               onClick={onClose}
               className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200"
