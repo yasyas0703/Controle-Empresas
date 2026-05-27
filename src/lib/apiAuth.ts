@@ -22,6 +22,23 @@ export function getBearerToken(req: Request): string | null {
   return m?.[1] ?? null;
 }
 
+/**
+ * Extrai o IP do cliente dos headers de proxy (x-forwarded-for, x-real-ip).
+ * Retorna `null` se nenhum header está presente — útil pra colunas
+ * nullable do banco (ex: `portal_acessos.ip`).
+ *
+ * Pra rate limiting que precisa de uma chave sempre-string, use
+ * `getClientIp` de `@/lib/rateLimit` (wrapper que retorna 'unknown' como
+ * fallback).
+ */
+export function getClientIpNullable(req: Request): string | null {
+  return (
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || req.headers.get('x-real-ip')
+    || null
+  );
+}
+
 export type ManagerAuth =
   | {
       ok: true;

@@ -2,22 +2,12 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { isUuid } from '@/lib/uuid';
-import { getBearerToken } from '@/lib/apiAuth';
+import { getBearerToken, getClientIpNullable } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 
 const BUCKET = 'portal-documentos';
 const SIGNED_URL_EXPIRES = 60; // segundos — link de download tem validade curta
-
-
-
-function getClientIp(req: Request): string | null {
-  return (
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    req.headers.get('x-real-ip') ||
-    null
-  );
-}
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -81,7 +71,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     }
 
     // 5. Registra acesso (await pra garantir que persiste em dev mode)
-    const ip = getClientIp(req);
+    const ip = getClientIpNullable(req);
     const userAgent = req.headers.get('user-agent')?.slice(0, 500) ?? null;
     const nowIso = new Date().toISOString();
 

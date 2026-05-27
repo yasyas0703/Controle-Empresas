@@ -34,10 +34,14 @@ export function rateLimit(
   return { ok: true, remaining: maxRequests - entry.count };
 }
 
+import { getClientIpNullable } from '@/lib/apiAuth';
+
+/**
+ * Versão "always-string" do IP do cliente — usa 'unknown' como fallback
+ * pra servir de chave de rate-limit (rate-limit nunca pode ter null como
+ * key). Delegação fina pra `getClientIpNullable` evitar duplicar a
+ * lógica de leitura dos headers.
+ */
 export function getClientIp(req: Request): string {
-  return (
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    req.headers.get('x-real-ip') ||
-    'unknown'
-  );
+  return getClientIpNullable(req) ?? 'unknown';
 }

@@ -2,19 +2,9 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { isUuid } from '@/lib/uuid';
-import { getBearerToken } from '@/lib/apiAuth';
+import { getBearerToken, getClientIpNullable } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
-
-
-
-function getClientIp(req: Request): string | null {
-  return (
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    req.headers.get('x-real-ip') ||
-    null
-  );
-}
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -71,7 +61,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       cliente_id: clienteRow.id,
       documento_id: documentoId,
       acao: 'visualizou',
-      ip: getClientIp(req),
+      ip: getClientIpNullable(req),
       user_agent: req.headers.get('user-agent')?.slice(0, 500) ?? null,
     });
 

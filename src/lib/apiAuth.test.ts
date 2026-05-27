@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getBearerToken, assertManager } from './apiAuth';
+import { getBearerToken, assertManager, getClientIpNullable } from './apiAuth';
 
 function makeReq(headers: Record<string, string>): Request {
   return new Request('http://x', { headers });
@@ -35,6 +35,36 @@ describe('getBearerToken', () => {
 
   it('null quando o header é só "Bearer" sem token', () => {
     expect(getBearerToken(makeReq({ Authorization: 'Bearer' }))).toBeNull();
+  });
+});
+
+describe('getClientIpNullable', () => {
+  it('pega o primeiro IP de x-forwarded-for (cadeia de proxies)', () => {
+    const ip = getClientIpNullable(makeReq({ 'x-forwarded-for': '1.2.3.4, 5.6.7.8, 9.10.11.12' }));
+    expect(ip).toBe('1.2.3.4');
+  });
+
+  it('faz trim de espaços', () => {
+    expect(getClientIpNullable(makeReq({ 'x-forwarded-for': '  1.2.3.4  , 5.6.7.8' }))).toBe('1.2.3.4');
+  });
+
+  it('cai pra x-real-ip se x-forwarded-for ausente', () => {
+    expect(getClientIpNullable(makeReq({ 'x-real-ip': '9.9.9.9' }))).toBe('9.9.9.9');
+  });
+
+  it('prefere x-forwarded-for quando os dois existem', () => {
+    expect(
+      getClientIpNullable(makeReq({ 'x-forwarded-for': '1.1.1.1', 'x-real-ip': '9.9.9.9' })),
+    ).toBe('1.1.1.1');
+  });
+
+  it('null se nenhum header presente', () => {
+    expect(getClientIpNullable(makeReq({}))).toBeNull();
+  });
+
+  it('null se x-forwarded-for é string vazia', () => {
+    // Edge case: proxy mal configurado pode mandar header vazio
+    expect(getClientIpNullable(makeReq({ 'x-forwarded-for': '' }))).toBeNull();
   });
 });
 
