@@ -13,6 +13,7 @@ import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import ModalLimiares from '@/app/components/ModalLimiares';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
 import { sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
+import { DEPT_COLORS } from '@/app/utils/constants';
 
 type StatusVenc = 'vencido' | 'critico' | 'atencao' | 'proximo' | 'ok' | 'renovado';
 
@@ -47,17 +48,6 @@ const statusConfig: Record<StatusVenc, { label: string; bg: string; text: string
   proximo: { label: 'PRÓXIMO', bg: 'bg-green-50', text: 'text-green-700', dot: 'bg-green-500', border: 'border-green-200' },
   ok: { label: 'EM DIA', bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500', border: 'border-emerald-200' },
   renovado: { label: 'RENOVADO', bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-500', border: 'border-blue-200' },
-};
-
-const DEPT_COLORS: Record<number, { bg: string; text: string; border: string }> = {
-  0: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
-  1: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200' },
-  2: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200' },
-  3: { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
-  4: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
-  5: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
-  6: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200' },
-  7: { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200' },
 };
 
 export default function VencimentosPage() {

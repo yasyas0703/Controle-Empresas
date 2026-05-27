@@ -18,23 +18,13 @@ import { getDepartamentoSlugDoUsuario } from '@/app/utils/departamento';
 import { exportEmpresasPdf, exportEmpresasResumoPdf } from '@/lib/exportPdf';
 import { exportEmpresasXlsx } from '@/lib/exportXlsx';
 import { comparePtBr, sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
+import { DEPT_COLORS } from '@/app/utils/constants';
 
 function canEditEmpresa(currentUserId: UUID | null, canManage: boolean, empresa: Empresa): boolean {
   if (canManage) return true;
   if (!currentUserId) return false;
   return Object.values(empresa.responsaveis || {}).some((uid) => uid === currentUserId);
 }
-
-const DEPT_COLORS: Record<number, { bg: string; text: string; border: string }> = {
-  0: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
-  1: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200' },
-  2: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200' },
-  3: { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
-  4: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
-  5: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
-  6: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200' },
-  7: { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200' },
-};
 
 type DashboardRiskItem = {
   empresaId: UUID;
