@@ -2,9 +2,22 @@ import { google } from 'googleapis';
 import { getOAuthClient, decryptToken } from '@/lib/googleOAuth';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
+/**
+ * Strip de CRLF de qualquer valor que vai pra header de email. Sem isso,
+ * se algum caller passa `subject` ou `to` com `\r\n` (vindo de razao_social
+ * controlada por user autenticado), atacante pode injetar headers extras
+ * (Bcc: evil@x.com). É CRLF Injection clássico em SMTP.
+ *
+ * Aplicado em TODOS os campos que viram parte do header (from, to, subject).
+ */
+function stripCrlf(text: string): string {
+  return text.replace(/[\r\n]/g, ' ').trim();
+}
+
 function encodeRfc2047(text: string): string {
-  if (/^[\x00-\x7F]*$/.test(text)) return text;
-  return `=?UTF-8?B?${Buffer.from(text, 'utf8').toString('base64')}?=`;
+  const safe = stripCrlf(text);
+  if (/^[\x00-\x7F]*$/.test(safe)) return safe;
+  return `=?UTF-8?B?${Buffer.from(safe, 'utf8').toString('base64')}?=`;
 }
 
 function buildSimpleMime(params: {
@@ -15,9 +28,13 @@ function buildSimpleMime(params: {
   bodyHtml: string;
 }): string {
   const altBoundary = `----=_Alt_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+  // Sanitiza CRLF em TODOS os campos do header — defesa contra
+  // CRLF injection (ex: razao_social com `\r\nBcc:` injetaria Bcc).
+  const safeTo = params.to.map(stripCrlf).join(', ');
+  const safeFrom = stripCrlf(params.from);
   const headers = [
-    `From: ${params.from}`,
-    `To: ${params.to.join(', ')}`,
+    `From: ${safeFrom}`,
+    `To: ${safeTo}`,
     `Subject: ${encodeRfc2047(params.subject)}`,
     'MIME-Version: 1.0',
     `Content-Type: multipart/alternative; boundary="${altBoundary}"`,

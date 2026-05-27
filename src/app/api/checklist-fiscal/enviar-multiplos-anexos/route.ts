@@ -55,9 +55,19 @@ function formatComp(iso?: string | null): string {
   return `${meses[Number(m)]}/${y}`;
 }
 
+// Strip CRLF — defesa contra header injection no email.
+function stripCrlf(text: string): string {
+  return text.replace(/[\r\n]/g, ' ').trim();
+}
+
 function encodeRfc2047(text: string): string {
-  if (/^[\x00-\x7F]*$/.test(text)) return text;
-  return `=?UTF-8?B?${Buffer.from(text, 'utf8').toString('base64')}?=`;
+  const safe = stripCrlf(text);
+  if (/^[\x00-\x7F]*$/.test(safe)) return safe;
+  return `=?UTF-8?B?${Buffer.from(safe, 'utf8').toString('base64')}?=`;
+}
+
+function sanitizeMimeFilename(name: string): string {
+  return stripCrlf(name).replace(/"/g, '');
 }
 
 function mimeTypeFromFilename(filename: string): string {
@@ -89,8 +99,8 @@ function buildMimeMulti(params: {
   const altBoundary = `----=_Alt_${Math.random().toString(36).slice(2)}_${Date.now()}`;
 
   const headers = [
-    `From: ${params.from}`,
-    `To: ${params.to.join(', ')}`,
+    `From: ${stripCrlf(params.from)}`,
+    `To: ${params.to.map(stripCrlf).join(', ')}`,
     `Subject: ${encodeRfc2047(params.subject)}`,
     'MIME-Version: 1.0',
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
@@ -118,11 +128,13 @@ function buildMimeMulti(params: {
   const attParts = params.attachments.map((att) => {
     const b64 = att.content.toString('base64');
     const wrapped = b64.match(/.{1,76}/g)?.join('\r\n') ?? b64;
+    const safeFilename = sanitizeMimeFilename(att.filename);
+    const safeMime = stripCrlf(att.mime);
     return [
       `--${boundary}`,
-      `Content-Type: ${att.mime}; name="${att.filename}"`,
+      `Content-Type: ${safeMime}; name="${safeFilename}"`,
       'Content-Transfer-Encoding: base64',
-      `Content-Disposition: attachment; filename="${att.filename}"`,
+      `Content-Disposition: attachment; filename="${safeFilename}"`,
       '',
       wrapped,
     ].join('\r\n');
