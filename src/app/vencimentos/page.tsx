@@ -10,6 +10,7 @@ import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
 import type { HistoricoVencimentoItem, UUID, Limiares } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
+import { useEntityLoaders } from '@/app/hooks/useEntityLoaders';
 import ModalLimiares from '@/app/components/ModalLimiares';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
 import { sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
@@ -77,12 +78,7 @@ export default function VencimentosPage() {
   // Vencimentos fiscais foram removidos desta aba — vivem agora só em
   // /vencimentos-fiscais. Aqui ficou só Documento + RET por empresa.
 
-  const getDepName = (dId: string) => departamentos.find((d) => d.id === dId)?.nome ?? '';
-  const getDepIndex = (dId: string) => departamentos.findIndex((d) => d.id === dId);
-  const getUserName = (uId: string | null) => {
-    if (!uId) return '';
-    return usuarios.find((u) => u.id === uId)?.nome ?? '';
-  };
+  const { getDepName, getDepIndex, getUserName } = useEntityLoaders();
 
   // Build all vencimento items
   const allItems: VencimentoItem[] = useMemo(() => {

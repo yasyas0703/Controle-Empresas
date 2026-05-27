@@ -8,6 +8,7 @@ import { detectTipoEstabelecimento, detectTipoInscricao, formatarDocumento, getT
 import type { Empresa, UUID, Limiares, HistoricoVencimentoItem } from '@/app/types';
 import { LIMIARES_DEFAULTS, FORMAS_ENVIO } from '@/app/types';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
+import { useEntityLoaders } from '@/app/hooks/useEntityLoaders';
 import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
@@ -403,12 +404,7 @@ export default function DashboardPage() {
 
   const hasFilters = search || depId || responsavelId || tipoEstabelecimento || tipoDocumento || regimeFederal || servico || tagFiltro || estado || statusVenc;
 
-  const getDepName = (dId: string) => departamentos.find(d => d.id === dId)?.nome ?? '';
-  const getDepIndex = (dId: string) => departamentos.findIndex(d => d.id === dId);
-  const getUserName = (uId: string | null) => {
-    if (!uId) return '';
-    return usuarios.find(u => u.id === uId)?.nome ?? '';
-  };
+  const { getDepName, getDepIndex, getUserName } = useEntityLoaders();
 
   return (
     <div className="space-y-6">

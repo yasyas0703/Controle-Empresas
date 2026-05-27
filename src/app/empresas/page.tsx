@@ -14,6 +14,7 @@ import ModalImportarResponsabilidadesPorDep from '@/app/components/ModalImportar
 import ModalEncontrarCnpjs from '@/app/components/ModalEncontrarCnpjs';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
+import { useEntityLoaders } from '@/app/hooks/useEntityLoaders';
 import { sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
 import { DEPT_COLORS } from '@/app/utils/constants';
 
@@ -28,12 +29,7 @@ export default function EmpresasPage() {
 
   const [limiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
 
-  const getDepName = (dId: string) => departamentos.find(d => d.id === dId)?.nome ?? '';
-  const getDepIndex = (dId: string) => departamentos.findIndex(d => d.id === dId);
-  const getUserName = (uId: string | null) => {
-    if (!uId) return '';
-    return usuarios.find(u => u.id === uId)?.nome ?? '';
-  };
+  const { getDepName, getDepIndex, getUserName } = useEntityLoaders();
 
   const [search, setSearch] = useState('');
   const [searchCodigo, setSearchCodigo] = useState('');
