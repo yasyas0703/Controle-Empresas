@@ -187,6 +187,21 @@ function loadPdfjs(): PdfjsLib {
   return lib;
 }
 
+/**
+ * Checa os 4 primeiros bytes do buffer pra confirmar que é um PDF de
+ * verdade: `%PDF` (0x25, 0x50, 0x44, 0x46). Defesa contra arquivos
+ * renomeados (`.exe` → `.pdf`, `.html` → `.pdf`) que poderiam burlar
+ * a validação caindo no fallback "PDF não-legível" do pdfjs.
+ *
+ * PDFs reais SEMPRE começam com %PDF (especificação ISO 32000-1).
+ * PDFs scaneados, criptografados ou corrompidos também têm o magic
+ * byte — só falham depois, na extração de texto.
+ */
+function temAssinaturaPdf(buffer: Buffer): boolean {
+  if (buffer.length < 4) return false;
+  return buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46;
+}
+
 export async function extrairTextoPdfServidor(buffer: Buffer, maxPaginas = 3): Promise<string> {
   const pdfjs = loadPdfjs();
   const data = new Uint8Array(buffer);
@@ -219,12 +234,33 @@ export async function validarPdfNoServidor(opts: {
   motivoForcar?: string;
   podeForcar: boolean;
 }): Promise<{ ok: true; resultado: ResultadoValidacao } | ErroApi> {
+  // Magic-byte check ANTES de tentar pdfjs. Sem isso, um arquivo .exe
+  // renomeado .pdf cairia no catch abaixo (pdfjs falha em parse) e o
+  // fallback aceitaria como "PDF não-legível" — guia mentirosa indo
+  // pro cliente. Magic-byte é a primeira barreira de defesa.
+  if (!temAssinaturaPdf(opts.buffer)) {
+    return {
+      error: 'O arquivo enviado não é um PDF válido (assinatura %PDF ausente).',
+      status: 422,
+      code: 'validacao_pdf',
+      meta: {
+        bloqueios: [{
+          motivo: 'Arquivo não é PDF',
+          detalhe: 'Os primeiros bytes do arquivo não correspondem ao formato PDF. Pode ser um arquivo renomeado (.exe, .html, .zip) ou um upload corrompido.',
+        }],
+        perfilUsado: null,
+      },
+    };
+  }
+
   let texto = '';
   try {
     texto = await extrairTextoPdfServidor(opts.buffer);
   } catch (err) {
     console.error('[validar_pdf] falha ao extrair texto:', err);
     // PDF ilegível (imagem scaneada, criptografado) — não bloqueia mas registra aviso.
+    // Esse caminho só é atingido por PDFs reais (magic-byte ok) que pdfjs não
+    // consegue parsear — scanned, password-protected, ou versão muito antiga.
     return {
       ok: true,
       resultado: {

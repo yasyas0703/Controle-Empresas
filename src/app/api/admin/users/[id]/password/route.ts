@@ -47,11 +47,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   // Gerentes só podem resetar senha de usuários comuns. Sem isso, um gerente
-  // comprometido podia tomar a conta de outro gerente do mesmo nível ou
-  // tentar contra admin (que já está bloqueado acima). Self-reset sempre
-  // permitido. Dev/ghost passam porque o assertManager devolveu callerRole
-  // possivelmente vazio mas isPrivileged=true — confere as duas coisas.
-  const isPrivileged = (devId && authz.callerId === devId) || (ghostId && authz.callerId === ghostId);
+  // comprometido podia tomar a conta de outro gerente do mesmo nível.
+  // Reusa `isPrivileged` declarado acima (admin/dev/ghost) — admin não cai
+  // aqui (callerRole === 'gerente' filtra), então o efeito é "gerente puro
+  // que não é dev/ghost".
   if (
     authz.callerRole === 'gerente'
     && !isPrivileged
