@@ -46,6 +46,21 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: 'Não foi possível alterar a senha.' }, { status: 403 });
   }
 
+  // Gerentes só podem resetar senha de usuários comuns. Sem isso, um gerente
+  // comprometido podia tomar a conta de outro gerente do mesmo nível ou
+  // tentar contra admin (que já está bloqueado acima). Self-reset sempre
+  // permitido. Dev/ghost passam porque o assertManager devolveu callerRole
+  // possivelmente vazio mas isPrivileged=true — confere as duas coisas.
+  const isPrivileged = (devId && authz.callerId === devId) || (ghostId && authz.callerId === ghostId);
+  if (
+    authz.callerRole === 'gerente'
+    && !isPrivileged
+    && authz.callerId !== id
+    && (targetProfile?.role === 'gerente' || targetProfile?.role === 'admin')
+  ) {
+    return NextResponse.json({ error: 'Não foi possível alterar a senha.' }, { status: 403 });
+  }
+
   let body: { senha: string };
   try {
     body = (await req.json()) as { senha: string };
