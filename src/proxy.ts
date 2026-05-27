@@ -37,15 +37,28 @@ function isPublicPath(pathname: string): boolean {
   // busca essa URL sem cookie. URL já é capability token (UUIDs).
   if (pathname.startsWith('/api/checklist-fiscal/track-open/')) return true;
 
+  // Endpoint chamado pelo daemon local que olha a pasta T:/Fiscal. Autentica
+  // via header X-Machine-Token (env AUTO_ENVIO_TOKEN) — não usa cookie staff.
+  if (pathname === '/api/checklist-fiscal/auto-enviar') return true;
+
   return false;
 }
 
-function addSecurityHeaders(response: NextResponse): NextResponse {
+function addSecurityHeaders(response: NextResponse, pathname: string): NextResponse {
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('X-XSS-Protection', '1; mode=block');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+
+  // APIs nunca devem ficar em cache de CDN/proxy por padrão — respostas
+  // têm dados de sessão, tokens, listas pessoais. Setamos como DEFAULT:
+  // se a rota seta seu próprio Cache-Control (ex: /api/cnpj/[cnpj] cacheia
+  // 24h propositalmente), o header da rota vence.
+  if (pathname.startsWith('/api/')) {
+    response.headers.set('Cache-Control', 'no-store, max-age=0');
+  }
+
   return response;
 }
 
@@ -82,7 +95,7 @@ export function proxy(request: NextRequest) {
   }
 
   // 3. Security headers em todas as respostas
-  return addSecurityHeaders(NextResponse.next());
+  return addSecurityHeaders(NextResponse.next(), pathname);
 }
 
 export const config = {
