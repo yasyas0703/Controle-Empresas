@@ -1912,16 +1912,6 @@ export async function setObrigacaoHabilitacao(payload: {
   return toObrigacaoOverride(data as ObrigacaoOverrideRow);
 }
 
-// Mantido por compatibilidade — equivalente a setObrigacaoHabilitacao(habilitada=true).
-export async function habilitarObrigacao(payload: {
-  empresaId: UUID;
-  obrigacao: string;
-  porId?: UUID | null;
-  porNome?: string | null;
-}): Promise<ObrigacaoOverride> {
-  return setObrigacaoHabilitacao({ ...payload, habilitada: true });
-}
-
 export async function fetchChecklistFiscalByMes(mes: string): Promise<ChecklistFiscalItem[]> {
   const PAGE = 1000;
   const todas: ChecklistFiscalRow[] = [];
@@ -1945,17 +1935,6 @@ export async function fetchChecklistFiscalByMes(mes: string): Promise<ChecklistF
   return todas.map((row) => toChecklistItem(row));
 }
 
-export async function fetchChecklistFiscalMesesDisponiveis(): Promise<string[]> {
-  const { data, error } = await supabase
-    .from('checklist_fiscal')
-    .select('mes');
-  if (error) throw error;
-  const set = new Set<string>();
-  for (const row of (data ?? []) as { mes: string }[]) {
-    if (row.mes) set.add(row.mes);
-  }
-  return Array.from(set).sort().reverse();
-}
 
 export async function upsertChecklistFiscal(payload: {
   empresaId: UUID;
@@ -3297,8 +3276,11 @@ export async function upsertChecklistValidacaoKeyword(input: {
   if (error) throw error;
 }
 
-export async function setObrigacaoEmpresas(obrigacaoId: UUID, empresasIds: UUID[]): Promise<void> {
-  // Carrega vínculos atuais
+// Função interna do db: substitui completamente os vínculos
+// empresa↔obrigação de uma obrigação. Não exportada — só upsertObrigacao
+// chama. Pra adicionar/remover empresas individualmente, use as funções
+// que mexem em `empresa_obrigacoes_config` em vez dessa tabela legada.
+async function setObrigacaoEmpresas(obrigacaoId: UUID, empresasIds: UUID[]): Promise<void> {
   const { data: atuais, error: errAtuais } = await supabase
     .from('obrigacao_empresas')
     .select('empresa_id')
@@ -3645,34 +3627,6 @@ export async function fetchEmpresaObrigacoesConfig(empresaId: UUID): Promise<Emp
 }
 
 /**
- * Retorna o Set de IDs de empresas que têm PELO MENOS UMA obrigação ATIVA
- * cadastrada. Usado pela aba Envio pra esconder empresas que não estão sendo
- * processadas (não tem pasta no T:, não é cliente ativo).
- */
-export async function fetchEmpresasComObrigacaoAtiva(): Promise<Set<UUID>> {
-  const ids = new Set<UUID>();
-  const PAGE = 1000;
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabase
-      .from('empresa_obrigacoes_config')
-      .select('empresa_id')
-      .eq('ativa', true)
-      .range(offset, offset + PAGE - 1);
-    if (error) {
-      if (hasMissingTable(error)) return ids;
-      throw error;
-    }
-    const lote = (data ?? []) as { empresa_id: string }[];
-    for (const r of lote) ids.add(r.empresa_id);
-    if (lote.length < PAGE) break;
-    offset += PAGE;
-    if (offset > 100_000) break;
-  }
-  return ids;
-}
-
-/**
  * Pra cada empresa, retorna o conjunto de obrigações ATIVAS cadastradas.
  * Usado pela sidebar da aba Envio pra mostrar o total correto (ex: "3/5"
  * em vez de "3/20" — onde 20 era o total de obrigações possíveis do regime).
@@ -3740,18 +3694,6 @@ export async function upsertEmpresaObrigacaoConfig(payload: {
     .single();
   if (error) throw error;
   return toEmpresaObrigacaoConfig(data as EmpresaObrigacaoConfigRow);
-}
-
-/** Alias retrocompat — só liga/desliga. */
-export async function setEmpresaObrigacaoAtiva(payload: {
-  empresaId: UUID;
-  obrigacao: string;
-  ativa: boolean;
-  motivo?: string | null;
-  currentUserId?: UUID | null;
-  currentUserNome?: string;
-}): Promise<EmpresaObrigacaoConfig | null> {
-  return upsertEmpresaObrigacaoConfig(payload);
 }
 
 function hasMissingTable(err: unknown): boolean {

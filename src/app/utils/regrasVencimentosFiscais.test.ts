@@ -209,7 +209,7 @@ describe('proximoVencimentoEmpresa', () => {
   });
 
   it('empresa sem estado nem cidade → usa só default', () => {
-    const empresa = { estado: null, cidade: null };
+    const empresa = { estado: undefined, cidade: undefined };
     const ref = new Date(2026, 4, 5);
     expect(proximoVencimentoEmpresa(empresa, 'PIS', ref)).toBe('2026-05-25');
   });
