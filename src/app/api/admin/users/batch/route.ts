@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
-import { getBearerToken } from '@/lib/apiAuth';
+import { assertManager } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 // Aumentar timeout para bulk operations
@@ -26,38 +25,6 @@ type BatchResult = {
 
 
 
-async function assertManager(req: Request) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!supabaseUrl || !anonKey) {
-    return { ok: false as const, status: 500, message: 'Supabase env não configurado no servidor' };
-  }
-
-  const token = getBearerToken(req);
-  if (!token) return { ok: false as const, status: 401, message: 'Missing Authorization Bearer token' };
-
-  const authClient = createClient(supabaseUrl, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  });
-
-  const { data, error } = await authClient.auth.getUser(token);
-  if (error || !data.user) return { ok: false as const, status: 401, message: 'Sessão expirada. Faça login novamente.' };
-
-  const admin = getSupabaseAdmin();
-  const { data: profile, error: profileError } = await admin
-    .from('usuarios')
-    .select('id, role, ativo')
-    .eq('id', data.user.id)
-    .maybeSingle();
-
-  if (profileError) return { ok: false as const, status: 500, message: 'Erro interno.' };
-  if (!profile || !profile.ativo || (profile.role !== 'gerente' && profile.role !== 'admin')) {
-    return { ok: false as const, status: 403, message: 'Apenas gerentes podem executar esta ação' };
-  }
-
-  return { ok: true as const, userId: data.user.id };
-}
-
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -68,7 +35,10 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * UMA ÚNICA verificação de permissão. Delays internos entre criações.
  */
 export async function POST(req: Request) {
-  const authz = await assertManager(req);
+  // allowPrivileged: false mantém o comportamento original — bulk de
+  // usuários não passa pra dev/ghost sem role gerente/admin (operação
+  // estritamente administrativa, não automação).
+  const authz = await assertManager(req, { allowPrivileged: false });
   if (!authz.ok) return NextResponse.json({ error: authz.message }, { status: authz.status });
 
   let body: { users: UserPayload[] };

@@ -1,48 +1,8 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { rateLimit, getClientIp } from '@/lib/rateLimit';
 import { isUuid } from '@/lib/uuid';
-import { getBearerToken } from '@/lib/apiAuth';
-
-
-
-async function assertManager(req: Request) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!supabaseUrl || !anonKey) {
-    return { ok: false as const, status: 500, message: 'Supabase env não configurado no servidor' };
-  }
-
-  const token = getBearerToken(req);
-  if (!token) return { ok: false as const, status: 401, message: 'Missing Authorization Bearer token' };
-
-  const authClient = createClient(supabaseUrl, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  });
-
-  const { data, error } = await authClient.auth.getUser(token);
-  if (error || !data.user) return { ok: false as const, status: 401, message: 'Sessão expirada. Faça login novamente.' };
-
-  const admin = getSupabaseAdmin();
-  const { data: profile, error: profileError } = await admin
-    .from('usuarios')
-    .select('id, role, ativo')
-    .eq('id', data.user.id)
-    .maybeSingle();
-
-  if (profileError) return { ok: false as const, status: 500, message: 'Erro interno.' };
-
-  const ghostId = process.env.GHOST_USER_ID;
-  const devId = process.env.DEVELOPER_USER_ID;
-  const isPrivileged = (ghostId && data.user.id === ghostId) || (devId && data.user.id === devId);
-
-  if (!profile || !profile.ativo || (!isPrivileged && profile.role !== 'gerente' && profile.role !== 'admin')) {
-    return { ok: false as const, status: 403, message: 'Apenas gerentes podem executar esta ação' };
-  }
-
-  return { ok: true as const, callerId: data.user.id, callerRole: profile.role as string };
-}
+import { assertManager } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 
