@@ -179,8 +179,9 @@ export default function ModalDetalhesEmpresa({
       document.body.removeChild(a);
       URL.revokeObjectURL(blobUrl);
     } catch {
-      // Fallback: abrir em nova aba se fetch falhar (CORS)
-      window.open(url, '_blank');
+      // Fallback: abrir em nova aba se fetch falhar (CORS).
+      // noopener,noreferrer = defesa contra tabnabbing.
+      window.open(url, '_blank', 'noopener,noreferrer');
     }
   }, []);
 
@@ -733,7 +734,7 @@ export default function ModalDetalhesEmpresa({
                                     onClick={async () => {
                                       try {
                                         const url = await getVencimentoFiscalSignedUrl(f.arquivoUrl!);
-                                        if (url) window.open(url, '_blank');
+                                        if (url) window.open(url, '_blank', 'noopener,noreferrer');
                                       } catch {
                                         mostrarAlerta('Arquivo indisponível', 'Não foi possível abrir o arquivo.', 'erro');
                                       }
