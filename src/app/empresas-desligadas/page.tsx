@@ -81,7 +81,6 @@ export default function EmpresasDesligadasPage() {
         </div>
       </div>
 
-      {/* Lista */}
       {filtradas.length === 0 ? (
         <div className="rounded-2xl bg-white p-10 shadow-sm text-center">
           <Archive size={36} className="mx-auto text-gray-300 mb-2" />

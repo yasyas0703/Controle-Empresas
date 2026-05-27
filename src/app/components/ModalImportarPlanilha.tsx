@@ -162,6 +162,7 @@ function parseFile(text: string): ParsedRow[] {
     'Parcelamentos': [20],
     'Pessoal': [21],
   };
+  
 
   let headerCols: string[];
   const deptColsByCanonical = new Map<CanonicalDept, number[]>();
