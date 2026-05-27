@@ -29,8 +29,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-sans-family), system-ui, sans-serif;
+  --font-mono: var(--font-mono-family), ui-monospace, SFMono-Regular, Menlo, monospace;
   /* Breakpoint extra pra telas bem pequenas (iPhone SE / mini Android) */
   --breakpoint-xs: 380px;
 }
@@ -46,10 +46,17 @@ html {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
   overflow-x: hidden;
   max-width: 100%;
   -webkit-text-size-adjust: 100%;
+}
+
+/* Numéricos com mono + tabular-nums (CNPJ, datas, valores, contadores).
+   Definida aqui na Etapa 1 — ainda não aplicada em componentes. */
+.ct-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Mobile-friendly tap targets */
