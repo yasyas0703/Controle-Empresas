@@ -15,6 +15,7 @@ import ModalEncontrarCnpjs from '@/app/components/ModalEncontrarCnpjs';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import { useEntityLoaders } from '@/app/hooks/useEntityLoaders';
+import { usePagination } from '@/app/hooks/usePagination';
 import { sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
 import { DEPT_COLORS } from '@/app/utils/constants';
 
@@ -25,7 +26,7 @@ function canEditEmpresa(currentUserId: UUID | null, canManage: boolean, empresa:
 }
 
 export default function EmpresasPage() {
-  const { empresas, currentUserId, canManage, removerEmpresa, departamentos, usuarios, tags: tagsCadastradas } = useSistema();
+  const { empresas, currentUserId, canManage, removerEmpresa, tags: tagsCadastradas } = useSistema();
 
   const [limiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
 
@@ -34,8 +35,6 @@ export default function EmpresasPage() {
   const [search, setSearch] = useState('');
   const [searchCodigo, setSearchCodigo] = useState('');
   const [tagFiltro, setTagFiltro] = useState('');
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useLocalStorageState<number>('triar-empresas-per-page', 50);
 
   const allTags = useMemo(() => {
     const set = new Set<string>();
@@ -70,19 +69,13 @@ export default function EmpresasPage() {
       .sort((a, b) => (a.razao_social || a.apelido || '').localeCompare(b.razao_social || b.apelido || ''));
   }, [empresas, search, searchCodigo, tagFiltro]);
 
-  // Paginação — reseta pra página 1 quando filtros ou tamanho de página mudam
+  const pagination = usePagination(filtered, { storageKey: 'triar-empresas-per-page' });
+  const { page: pageClamped, perPage, setPage, setPerPage, totalPages, sliced: filteredVisivel } = pagination;
+
+  // Reseta pra página 1 quando filtros ou tamanho de página mudam
   useEffect(() => {
     setPage(1);
-  }, [search, searchCodigo, tagFiltro, perPage]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
-  const pageClamped = Math.min(page, totalPages);
-  const sliceInicio = (pageClamped - 1) * perPage;
-  const sliceFim = sliceInicio + perPage;
-  const filteredVisivel = useMemo(
-    () => filtered.slice(sliceInicio, sliceFim),
-    [filtered, sliceInicio, sliceFim]
-  );
+  }, [search, searchCodigo, tagFiltro, perPage, setPage]);
 
   const selectableIds = useMemo(() => {
     return filtered.filter((e) => canEditEmpresa(currentUserId, canManage, e)).map((e) => e.id);
@@ -147,7 +140,7 @@ export default function EmpresasPage() {
               <div className="text-sm text-gray-500">
                 {filtered.length === 0 ? '0 empresa(s)' : (
                   <>
-                    Mostrando <span className="font-bold text-gray-700">{sliceInicio + 1}–{Math.min(sliceFim, filtered.length)}</span> de <span className="font-bold text-gray-700">{filtered.length}</span> empresa(s)
+                    Mostrando <span className="font-bold text-gray-700">{(pageClamped - 1) * perPage + 1}–{Math.min(pageClamped * perPage, filtered.length)}</span> de <span className="font-bold text-gray-700">{filtered.length}</span> empresa(s)
                   </>
                 )} • Use o Dashboard para filtros avançados
               </div>

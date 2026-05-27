@@ -11,6 +11,7 @@ import type { HistoricoVencimentoItem, UUID, Limiares } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import { useEntityLoaders } from '@/app/hooks/useEntityLoaders';
+import { usePagination } from '@/app/hooks/usePagination';
 import ModalLimiares from '@/app/components/ModalLimiares';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
 import { sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
@@ -70,10 +71,6 @@ export default function VencimentosPage() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [historicoItem, setHistoricoItem] = useState<VencimentoItem | null>(null);
   const [savingHistorico, setSavingHistorico] = useState(false);
-
-  // Paginação da lista por empresa (50 por página, configurável)
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useLocalStorageState<number>('triar-vencimentos-per-page', 50);
 
   // Vencimentos fiscais foram removidos desta aba — vivem agora só em
   // /vencimentos-fiscais. Aqui ficou só Documento + RET por empresa.
@@ -266,16 +263,13 @@ export default function VencimentosPage() {
     });
   }, [filtered, orderBy, orderDir]);
 
+  const pagination = usePagination(empresasAgrupadas, { storageKey: 'triar-vencimentos-per-page' });
+  const { page: pageClamped, perPage, setPage, setPerPage, totalPages, sliced: empresasVisiveis } = pagination;
+
   // Reseta pra página 1 quando filtros/ordem/perPage mudam
   useEffect(() => {
     setPage(1);
-  }, [search, filtroStatus, filtroDep, filtroResp, filtroTipo, filtroTag, meusVencimentos, orderBy, orderDir, perPage]);
-
-  const totalPages = Math.max(1, Math.ceil(empresasAgrupadas.length / perPage));
-  const pageClamped = Math.min(page, totalPages);
-  const sliceInicio = (pageClamped - 1) * perPage;
-  const sliceFim = sliceInicio + perPage;
-  const empresasVisiveis = empresasAgrupadas.slice(sliceInicio, sliceFim);
+  }, [search, filtroStatus, filtroDep, filtroResp, filtroTipo, filtroTag, meusVencimentos, orderBy, orderDir, perPage, setPage]);
 
   const sortedDepartamentos = useMemo(() => sortByPtBr(departamentos, (d) => d.nome), [departamentos]);
 
@@ -709,7 +703,7 @@ export default function VencimentosPage() {
             {/* Paginação */}
             <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-gray-200">
               <span className="text-gray-600">
-                Mostrando <span className="font-bold text-gray-800">{sliceInicio + 1}–{Math.min(sliceFim, empresasAgrupadas.length)}</span> de <span className="font-bold text-gray-800">{empresasAgrupadas.length}</span> empresa(s)
+                Mostrando <span className="font-bold text-gray-800">{(pageClamped - 1) * perPage + 1}–{Math.min(pageClamped * perPage, empresasAgrupadas.length)}</span> de <span className="font-bold text-gray-800">{empresasAgrupadas.length}</span> empresa(s)
               </span>
 
               <div className="flex items-center gap-2 flex-wrap">
