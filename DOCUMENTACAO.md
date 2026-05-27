@@ -232,7 +232,6 @@ Todas as rotas administrativas exigem:
 | `ModalCadastrarEmpresa` | Formulário completo de cadastro/edição de empresa |
 | `ModalDetalhesEmpresa` | Visualização completa com documentos, RETs, responsáveis, observações |
 | `ModalImportarPlanilha` | Drag & drop + parsing + preview + importação em massa |
-| `ModalImportarResponsabilidadesFiscal` | Importação específica de responsáveis |
 | `ModalAdicionarDocumento` | Upload com nome e validade |
 | `ConfirmModal` | Modal de confirmação com variantes (danger, warning, info, restore) |
 | `ToastStack` | Sistema de alertas toast empilhados |
