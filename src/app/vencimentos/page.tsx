@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Shield, Search, Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
-  FileText, CalendarClock, Filter, XCircle, Eye, User, Settings,
+  FileText, CalendarClock, Filter, XCircle, User, Settings,
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
@@ -12,13 +12,7 @@ import { LIMIARES_DEFAULTS } from '@/app/types';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import ModalLimiares from '@/app/components/ModalLimiares';
 import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
-import { supabase } from '@/lib/supabase';
 import { sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
-
-function mesAtualKey(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
 
 type StatusVenc = 'vencido' | 'critico' | 'atencao' | 'proximo' | 'ok' | 'renovado';
 

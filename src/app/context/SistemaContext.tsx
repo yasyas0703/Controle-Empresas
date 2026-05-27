@@ -12,8 +12,8 @@ import type {
   UUID,
   VencimentoFiscal,
 } from '@/app/types';
-import { daysUntil, formatBR, isoNow } from '@/app/utils/date';
-import { criarHistoricoVencimentoItem, garantirVencimentosFiscais, garantirVencimentosFiscaisComRegras, limparTagVencimento, normalizarHistoricoVencimento } from '@/app/utils/vencimentos';
+import { formatBR, isoNow } from '@/app/utils/date';
+import { criarHistoricoVencimentoItem, garantirVencimentosFiscais, limparTagVencimento, normalizarHistoricoVencimento } from '@/app/utils/vencimentos';
 import * as db from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 

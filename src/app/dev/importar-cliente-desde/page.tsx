@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import {
-  AlertTriangle, Archive, ArrowLeft, Calendar, CheckCircle2, FileSpreadsheet, FileText,
+  AlertTriangle, Archive, ArrowLeft, Calendar, CheckCircle2, FileText,
   Loader2, PowerOff, ShieldAlert, Upload,
 } from 'lucide-react';
 import Link from 'next/link';

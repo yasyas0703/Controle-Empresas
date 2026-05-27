@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { Plus, Trash2, Tag as TagIcon, ChevronDown, ChevronUp, Search, Link2, Unlink, Building2, Pencil, Check, X } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import ConfirmModal from '@/app/components/ConfirmModal';
-import type { Tag, TagCor, UUID } from '@/app/types';
+import type { Tag, TagCor } from '@/app/types';
 
 const TAG_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   red: { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-300' },

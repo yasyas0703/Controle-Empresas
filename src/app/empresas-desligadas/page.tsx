@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import {
-  AlertTriangle, Archive, Calendar, Eye, PowerOff, RotateCcw, Search, ShieldAlert, Trash2, XCircle,
+  Archive, Calendar, Eye, PowerOff, RotateCcw, Search, ShieldAlert, Trash2,
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import ConfirmModal from '@/app/components/ConfirmModal';

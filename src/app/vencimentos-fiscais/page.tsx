@@ -16,7 +16,6 @@ import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento'
 import ModalLimiares from '@/app/components/ModalLimiares';
 import { sortByPtBr } from '@/lib/sort';
 import { fetchChecklistFiscalByMes } from '@/lib/db';
-import { supabase } from '@/lib/supabase';
 import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
 
 function mesAtualKey(): string {
