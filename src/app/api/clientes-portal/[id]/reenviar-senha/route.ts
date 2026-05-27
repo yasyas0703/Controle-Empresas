@@ -4,15 +4,11 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendEmailViaUserGmail } from '@/lib/gmailSend';
 import { buildOnboardingEmail, gerarSenhaTemporaria, resolvePortalUrl } from '@/lib/portalOnboardingEmail';
 import { isUuid } from '@/lib/uuid';
+import { getBearerToken } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 
-function getBearerToken(req: Request): string | null {
-  const header = req.headers.get('authorization') || req.headers.get('Authorization');
-  if (!header) return null;
-  const m = header.match(/^Bearer\s+(.+)$/i);
-  return m?.[1] ?? null;
-}
+
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {

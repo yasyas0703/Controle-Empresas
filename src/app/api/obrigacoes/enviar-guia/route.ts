@@ -3,17 +3,13 @@ import { createClient } from '@supabase/supabase-js';
 import { google } from 'googleapis';
 import { getOAuthClient, decryptToken } from '@/lib/googleOAuth';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { getBearerToken } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 
 const GUIA_BUCKET = 'documentos';
 
-function getBearerToken(req: Request): string | null {
-  const header = req.headers.get('authorization') || req.headers.get('Authorization');
-  if (!header) return null;
-  const m = header.match(/^Bearer\s+(.+)$/i);
-  return m?.[1] ?? null;
-}
+
 
 interface SendPayload {
   empresaId: string;

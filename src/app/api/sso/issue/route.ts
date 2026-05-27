@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { getBearerToken } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,12 +11,7 @@ function b64urlEncode(buf: Buffer): string {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
-function getBearerToken(req: Request): string | null {
-  const header = req.headers.get('authorization') || req.headers.get('Authorization');
-  if (!header) return null;
-  const m = header.match(/^Bearer\s+(.+)$/i);
-  return m?.[1] ?? null;
-}
+
 
 async function getAuthenticatedUserEmail(req: Request): Promise<
   { ok: true; email: string } | { ok: false; status: number; message: string }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { getBearerToken } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 // Aumentar timeout para bulk operations
@@ -23,12 +24,7 @@ type BatchResult = {
   status: 'created' | 'existing' | 'failed';
 };
 
-function getBearerToken(req: Request): string | null {
-  const header = req.headers.get('authorization') || req.headers.get('Authorization');
-  if (!header) return null;
-  const m = header.match(/^Bearer\s+(.+)$/i);
-  return m?.[1] ?? null;
-}
+
 
 async function assertManager(req: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

@@ -1,15 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getOAuthClient, signState, GMAIL_SCOPES } from '@/lib/googleOAuth';
+import { getBearerToken } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 
-function getBearerToken(req: Request): string | null {
-  const header = req.headers.get('authorization') || req.headers.get('Authorization');
-  if (!header) return null;
-  const m = header.match(/^Bearer\s+(.+)$/i);
-  return m?.[1] ?? null;
-}
+
 
 export async function POST(req: Request) {
   try {

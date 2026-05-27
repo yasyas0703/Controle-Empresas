@@ -8,15 +8,11 @@ import {
   gerarSenhaTemporaria,
   resolvePortalUrl,
 } from '@/lib/portalOnboardingEmail';
+import { getBearerToken } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 
-function getBearerToken(req: Request): string | null {
-  const header = req.headers.get('authorization') || req.headers.get('Authorization');
-  if (!header) return null;
-  const m = header.match(/^Bearer\s+(.+)$/i);
-  return m?.[1] ?? null;
-}
+
 
 interface Payload {
   empresa_id: string;

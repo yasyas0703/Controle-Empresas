@@ -2,18 +2,14 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { isUuid } from '@/lib/uuid';
+import { getBearerToken } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
 
 const BUCKET = 'portal-documentos';
 const SIGNED_URL_EXPIRES = 60; // segundos — link de download tem validade curta
 
-function getBearerToken(req: Request): string | null {
-  const header = req.headers.get('authorization') || req.headers.get('Authorization');
-  if (!header) return null;
-  const m = header.match(/^Bearer\s+(.+)$/i);
-  return m?.[1] ?? null;
-}
+
 
 function getClientIp(req: Request): string | null {
   return (

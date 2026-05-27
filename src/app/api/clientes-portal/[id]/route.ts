@@ -4,15 +4,9 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendEmailViaUserGmail } from '@/lib/gmailSend';
 import { buildEmailAlteradoEmail, resolvePortalUrl } from '@/lib/portalOnboardingEmail';
 import { isUuid } from '@/lib/uuid';
+import { getBearerToken } from '@/lib/apiAuth';
 
 export const runtime = 'nodejs';
-
-function getBearer(req: Request): string | null {
-  const header = req.headers.get('authorization') || req.headers.get('Authorization');
-  if (!header) return null;
-  const m = header.match(/^Bearer\s+(.+)$/i);
-  return m?.[1] ?? null;
-}
 
 // DELETE: remove o acesso desta empresa em definitivo. Se for o último
 // acesso do auth_user e ele NÃO for usuária do escritório, deleta também
@@ -25,7 +19,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       return NextResponse.json({ error: 'Supabase não configurado' }, { status: 500 });
     }
 
-    const token = getBearer(req);
+    const token = getBearerToken(req);
     if (!token) return NextResponse.json({ error: 'Sessão ausente' }, { status: 401 });
 
     const { id: clienteId } = await params;
@@ -127,12 +121,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   }
 }
 
-function getBearerToken(req: Request): string | null {
-  const header = req.headers.get('authorization') || req.headers.get('Authorization');
-  if (!header) return null;
-  const m = header.match(/^Bearer\s+(.+)$/i);
-  return m?.[1] ?? null;
-}
+
 
 interface Payload {
   email?: string;
