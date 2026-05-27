@@ -13,6 +13,7 @@ import { api } from '@/app/utils/api';
 import { garantirVencimentosFiscais, garantirVencimentosFiscaisComRegras } from '@/app/utils/vencimentos';
 import { uploadDocumentoArquivo, getVencimentoFiscalSignedUrl } from '@/lib/db';
 import { sortByPtBr, sortStringsPtBr } from '@/lib/sort';
+import { formatRetNumber } from '@/app/utils/formatting';
 
 const MAX_FISCAL_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -28,14 +29,6 @@ interface ModalCadastrarEmpresaProps {
 function newId(): UUID {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
   return `id_${Math.random().toString(16).slice(2)}_${Date.now()}`;
-}
-
-/** Formata número do RET no padrão XX.XXXXXXXXX-XX (13 dígitos) */
-function formatRetNumber(value: string): string {
-  const digits = value.replace(/\D/g, '').slice(0, 13);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 11) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}.${digits.slice(2, 11)}-${digits.slice(11)}`;
 }
 
 const TAG_COLORS: Record<TagCor, { bg: string; text: string; border: string }> = {

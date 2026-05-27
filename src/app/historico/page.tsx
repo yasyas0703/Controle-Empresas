@@ -6,15 +6,7 @@ import { useSistema } from '@/app/context/SistemaContext';
 import { formatBR } from '@/app/utils/date';
 import type { LogEntry } from '@/app/types';
 import { sortByPtBr, sortResponsaveisByNome } from '@/lib/sort';
-
-/** Formata número do RET no padrão XX.XXXXXXXXX-XX (13 dígitos) */
-function formatRetNumber(value: string): string {
-  if (!value) return '';
-  const digits = value.replace(/\D/g, '').slice(0, 13);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 11) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}.${digits.slice(2, 11)}-${digits.slice(11)}`;
-}
+import { formatRetNumber } from '@/app/utils/formatting';
 
 /** Labels amigáveis para os campos da empresa */
 const FIELD_LABELS: Record<string, string> = {

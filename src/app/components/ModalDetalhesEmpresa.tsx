@@ -18,16 +18,9 @@ import { getDocumentoSignedUrl, getVencimentoFiscalSignedUrl, uploadDocumentoArq
 import { sortResponsaveisByNome } from '@/lib/sort';
 import { getDepartamentoSlugDoUsuario, type DepartamentoSlug } from '@/app/utils/departamento';
 import { useFileDropZone } from '@/app/hooks/useFileDropZone';
+import { formatRetNumber } from '@/app/utils/formatting';
 
 const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
-
-/** Formata número do RET no padrão XX.XXXXXXXXX-XX (13 dígitos) */
-function formatRetNumber(value: string): string {
-  const digits = value.replace(/\D/g, '').slice(0, 13);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 11) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}.${digits.slice(2, 11)}-${digits.slice(11)}`;
-}
 
 const VIS_BADGE: Record<string, { icon: React.ReactNode; label: string; cls: string }> = {
   publico: { icon: <Globe size={11} />, label: 'Público', cls: 'bg-green-100 text-green-700' },
