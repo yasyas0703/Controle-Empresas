@@ -53,7 +53,7 @@ const statusConfig: Record<StatusVenc, { label: string; bg: string; text: string
 };
 
 export default function VencimentosPage() {
-  const { empresas, departamentos, usuarios, currentUserId, canManage, atualizarEmpresa, atualizarDocumento, mostrarAlerta, tags: tagsCadastradas } = useSistema();
+  const { empresas, departamentos, usuarios, currentUserId, canManage, atualizarEmpresa, atualizarDocumento, mostrarAlerta } = useSistema();
 
   const [limiares, setLimiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
   const [showLimiares, setShowLimiares] = useState(false);
@@ -68,7 +68,6 @@ export default function VencimentosPage() {
   const [orderBy, setOrderBy] = useState<'dias' | 'empresa' | 'tipo'>('dias');
   const [orderDir, setOrderDir] = useState<'asc' | 'desc'>('asc');
 
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [historicoItem, setHistoricoItem] = useState<VencimentoItem | null>(null);
   const [savingHistorico, setSavingHistorico] = useState(false);
 
@@ -286,12 +285,6 @@ export default function VencimentosPage() {
     else { setOrderBy(col); setOrderDir('asc'); }
   };
 
-  const toggleRow = (key: string) => setExpandedRows((prev) => {
-    const next = new Set(prev);
-    if (next.has(key)) next.delete(key); else next.add(key);
-    return next;
-  });
-
   const SortIcon = ({ col }: { col: typeof orderBy }) => {
     if (orderBy !== col) return null;
     return orderDir === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
@@ -395,26 +388,6 @@ export default function VencimentosPage() {
 
     const header = [['Status', 'Dias', 'Código', 'Empresa', 'Tipo', 'Nome', 'Vencimento', 'Responsáveis']];
     const rows = buildExportRows(filtered);
-    const _unusedRows = filtered.map((item) => {
-      const responsaveis = sortResponsaveisByNome(
-        Object.entries(item.responsaveis)
-          .filter(([, uid]) => uid)
-          .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid) }))
-          .filter((r) => r.dep && r.user)
-      )
-        .map(({ dep, user }) => `${dep}: ${user}`)
-        .join(' | ');
-      return [
-        statusConfig[item.status].label,
-        item.dias < 0 ? `${Math.abs(item.dias)}d atrás` : `${item.dias}d`,
-        item.empresaCodigo,
-        item.empresaNome,
-        item.tipo,
-        item.nome,
-        formatBR(item.vencimento),
-        responsaveis,
-      ];
-    });
 
     autoTable(doc, {
       head: header,
