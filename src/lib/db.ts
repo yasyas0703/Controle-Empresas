@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { validarUploadCompleto } from '@/lib/fileValidation';
 import type {
   AnotacaoContexto,
   AnotacaoTipo,
@@ -1226,19 +1227,13 @@ export async function insertDocumento(empresaId: UUID, doc: Omit<DocumentoEmpres
 }
 
 export async function uploadDocumentoArquivo(empresaId: UUID, file: File): Promise<string> {
-  // Validação de tamanho (max 10MB)
-  const MAX_SIZE = 10 * 1024 * 1024;
-  if (file.size > MAX_SIZE) {
-    throw new Error('O arquivo excede o limite de 10MB.');
-  }
-
-  // Validação de tipo
   const ALLOWED_EXTENSIONS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg', 'txt'];
+  const validacao = await validarUploadCompleto(file, {
+    maxSize: 10 * 1024 * 1024,
+    allowExt: ALLOWED_EXTENSIONS,
+  });
+  if (!validacao.ok) throw new Error(validacao.motivo);
   const ext = (file.name.split('.').pop() ?? '').toLowerCase();
-
-  if (!ALLOWED_EXTENSIONS.includes(ext)) {
-    throw new Error(`Tipo de arquivo não permitido (.${ext}). Permitidos: ${ALLOWED_EXTENSIONS.join(', ')}`);
-  }
 
   const BUCKET = 'documentos';
   const path = `empresas/${empresaId}/${newUUID()}.${ext || 'bin'}`;
@@ -2059,13 +2054,12 @@ export async function uploadChecklistArquivo(
   file: File,
   autor: AutorAcao,
 ): Promise<{ arquivoUrl: string; arquivoNome: string; item: ChecklistFiscalItem }> {
-  if (file.size > CHECKLIST_ARQUIVO_MAX_SIZE) {
-    throw new Error('O arquivo excede o limite de 10MB.');
-  }
+  const validacao = await validarUploadCompleto(file, {
+    maxSize: CHECKLIST_ARQUIVO_MAX_SIZE,
+    allowExt: CHECKLIST_ARQUIVO_EXT,
+  });
+  if (!validacao.ok) throw new Error(validacao.motivo);
   const ext = (file.name.split('.').pop() ?? '').toLowerCase();
-  if (!CHECKLIST_ARQUIVO_EXT.includes(ext)) {
-    throw new Error(`Tipo de arquivo não permitido (.${ext}). Permitidos: ${CHECKLIST_ARQUIVO_EXT.join(', ')}`);
-  }
 
   // Slug seguro pra obrigacao (sem barra, acento etc.)
   const obrSlug = obrigacao.toLowerCase()
@@ -2934,13 +2928,12 @@ export async function uploadExtrato(payload: {
   uploadedPorNome?: string;
 }): Promise<ExtratoArquivo> {
   const { file } = payload;
-  if (file.size > EXTRATO_MAX_SIZE) {
-    throw new Error('O arquivo excede o limite de 25MB.');
-  }
+  const validacao = await validarUploadCompleto(file, {
+    maxSize: EXTRATO_MAX_SIZE,
+    allowExt: EXTRATO_ALLOWED_EXT,
+  });
+  if (!validacao.ok) throw new Error(validacao.motivo);
   const ext = (file.name.split('.').pop() ?? '').toLowerCase();
-  if (!EXTRATO_ALLOWED_EXT.includes(ext)) {
-    throw new Error(`Tipo de arquivo não permitido (.${ext}). Permitidos: ${EXTRATO_ALLOWED_EXT.join(', ')}`);
-  }
 
   const path = `extratos/${payload.empresaId}/${payload.contaBancariaId}/${payload.mes}/${newUUID()}.${ext || 'bin'}`;
   const { error: upErr } = await supabase.storage.from(STORAGE_BUCKET).upload(path, file, { upsert: false });
@@ -3452,13 +3445,12 @@ export async function uploadGuiaPdf(payload: {
   competencia: string;          // 'YYYY-MM'
 }): Promise<string> {
   const { file, empresaId, obrigacaoId, competencia } = payload;
-  if (file.size > GUIA_MAX_SIZE) {
-    throw new Error('A guia excede o limite de 25MB.');
-  }
+  const validacao = await validarUploadCompleto(file, {
+    maxSize: GUIA_MAX_SIZE,
+    allowExt: GUIA_ALLOWED_EXT,
+  });
+  if (!validacao.ok) throw new Error(validacao.motivo);
   const ext = (file.name.split('.').pop() ?? '').toLowerCase();
-  if (!GUIA_ALLOWED_EXT.includes(ext)) {
-    throw new Error(`Apenas PDF é aceito (recebido .${ext}).`);
-  }
   const path = `obrigacoes/${empresaId}/${obrigacaoId}/${competencia}/${newUUID()}.${ext}`;
   const { error } = await supabase.storage.from(GUIA_BUCKET).upload(path, file, { upsert: false });
   if (error) {
