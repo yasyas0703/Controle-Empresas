@@ -107,56 +107,69 @@ export default function ModalHistoricoVencimento({
       isOpen={open}
       onClose={onClose}
       labelledBy="historico-vencimento-title"
-      dialogClassName="w-full max-w-3xl bg-white rounded-2xl shadow-2xl outline-none max-h-[92vh] overflow-y-auto"
+      dialogClassName="w-full max-w-3xl bg-[var(--surface-2)] rounded-[var(--radius-md)] border border-[var(--border)] shadow-[0_8px_24px_rgba(0,0,0,0.18)] outline-none max-h-[92vh] overflow-y-auto"
       zIndex={1500}
     >
-      <div className="rounded-2xl">
-        <div className="bg-gradient-to-r from-slate-800 to-slate-700 p-4 sm:p-6 rounded-t-2xl sticky top-0 z-10">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h3 id="historico-vencimento-title" className="text-xl font-bold text-white">
-                Histórico do Vencimento
-              </h3>
-              <div className="text-sm text-slate-200">
-                {item.empresaCodigo} • {item.empresaNome}
+      <div>
+        <div className="border-b border-[var(--border-subtle)] p-5 sticky top-0 z-10 bg-[var(--surface-2)]">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] shrink-0">
+                <History size={18} />
+              </div>
+              <div className="min-w-0">
+                <h3 id="historico-vencimento-title" className="text-base font-bold text-[var(--text-1)] tracking-tight">
+                  Histórico do Vencimento
+                </h3>
+                <div className="text-xs text-[var(--text-3)] mt-0.5 truncate">
+                  <span className="ct-num text-[var(--text-2)]">{item.empresaCodigo}</span> · {item.empresaNome}
+                </div>
               </div>
             </div>
-            <button onClick={onClose} className="text-white hover:bg-white/10 p-2 rounded-lg">
-              <X size={20} />
+            <button
+              onClick={onClose}
+              className="rounded-md p-2 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition shrink-0"
+              aria-label="Fechar"
+            >
+              <X size={18} />
             </button>
           </div>
         </div>
 
-        <div className="p-4 sm:p-6 space-y-6">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex flex-wrap items-center gap-2 mb-3">
-              <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border ${item.statusClassName}`}>
+        <div className="p-5 space-y-5">
+          {/* Info do vencimento */}
+          <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-3)] p-4">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <span className={`inline-flex items-center rounded-sm px-2 py-0.5 text-xs font-semibold border ${item.statusClassName}`}>
                 {item.statusLabel}
               </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 border border-slate-200">
-                <CalendarClock size={12} />
+              <span className="inline-flex items-center gap-1 rounded-sm bg-[var(--surface-2)] px-2 py-0.5 text-xs font-semibold text-[var(--text-2)] border border-[var(--border)]">
+                <CalendarClock size={11} />
                 {item.tipo}
               </span>
             </div>
-            <div className="text-lg font-bold text-slate-900">{item.nome}</div>
-            <div className="text-sm text-slate-600 mt-1">
-              Vencimento: <span className="font-semibold text-slate-900">{formatBR(item.vencimento)}</span>
-              {' • '}
-              {item.dias < 0 ? `${Math.abs(item.dias)} dia(s) em atraso` : `${item.dias} dia(s) restantes`}
+            <div className="text-base font-bold text-[var(--text-1)] tracking-tight">{item.nome}</div>
+            <div className="text-sm text-[var(--text-2)] mt-1">
+              Vencimento: <span className="font-semibold text-[var(--text-1)] ct-num">{formatBR(item.vencimento)}</span>
+              {' · '}
+              <span className="ct-num">
+                {item.dias < 0 ? `${Math.abs(item.dias)} dia(s) em atraso` : `${item.dias} dia(s) restantes`}
+              </span>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+          {/* Tag */}
+          <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] p-4">
             <div className="flex items-center gap-2 mb-3">
-              <Tag size={16} className="text-violet-700" />
-              <div className="font-semibold text-violet-900">Tag atual</div>
+              <Tag size={14} className="text-[var(--text-3)]" />
+              <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-3)]">Tag atual</div>
             </div>
             <input
               value={tagVencimento}
               onChange={(e) => setTagVencimento(e.target.value)}
               disabled={!canEdit || saving}
               placeholder="Ex.: Renovação solicitada"
-              className="w-full rounded-xl border border-violet-200 bg-white px-4 py-3 text-sm text-slate-900 disabled:bg-slate-100"
+              className="ct-input disabled:opacity-60"
             />
             {canEdit && tagVencimento.trim() && (
               <div className="mt-2 flex justify-end">
@@ -164,13 +177,13 @@ export default function ModalHistoricoVencimento({
                   type="button"
                   disabled={saving}
                   onClick={() => setTagVencimento('')}
-                  className="text-xs font-semibold text-violet-700 hover:text-violet-900 disabled:opacity-50"
+                  className="text-xs font-semibold text-[var(--brand)] hover:text-[var(--brand-strong)] disabled:opacity-50 transition-colors"
                 >
                   Limpar tag
                 </button>
               </div>
             )}
-            <div className="flex flex-wrap gap-2 mt-3">
+            <div className="flex flex-wrap gap-1.5 mt-3">
               {tagsCadastradas.map((tag) => {
                 const colors = TAG_COLOR_MAP[tag.cor] ?? TAG_COLOR_MAP.slate;
                 const isSelected = tagVencimento === tag.nome;
@@ -180,36 +193,40 @@ export default function ModalHistoricoVencimento({
                     type="button"
                     disabled={!canEdit || saving}
                     onClick={() => setTagVencimento(tag.nome)}
-                    className={`rounded-full border px-3 py-1 text-xs font-bold transition disabled:opacity-50 ${
-                      isSelected
-                        ? `${colors.bg} ${colors.text} ${colors.border} ring-2 ring-offset-1 ring-violet-400`
-                        : `${colors.bg} ${colors.text} ${colors.border} hover:opacity-80`
+                    className={`rounded-sm border px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50 ${colors.bg} ${colors.text} ${colors.border} ${
+                      isSelected ? 'ring-2 ring-offset-1 ring-offset-[var(--surface-2)] ring-[var(--text-1)]' : 'hover:opacity-80'
                     }`}
                   >
                     {tag.nome}
                   </button>
                 );
               })}
-              {TAGS_RAPIDAS_PADRAO.filter((t) => !tagsCadastradas.some((tc) => tc.nome === t)).map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  disabled={!canEdit || saving}
-                  onClick={() => setTagVencimento(tag)}
-                  className={`rounded-full border border-violet-200 bg-white px-3 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-100 disabled:opacity-50 ${
-                    tagVencimento === tag ? 'ring-2 ring-offset-1 ring-violet-400 bg-violet-100' : ''
-                  }`}
-                >
-                  {tag}
-                </button>
-              ))}
+              {TAGS_RAPIDAS_PADRAO.filter((t) => !tagsCadastradas.some((tc) => tc.nome === t)).map((tag) => {
+                const isSelected = tagVencimento === tag;
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    disabled={!canEdit || saving}
+                    onClick={() => setTagVencimento(tag)}
+                    className={`rounded-sm border px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                      isSelected
+                        ? 'bg-[var(--brand-soft)] text-[var(--brand-strong)] border-[var(--brand)] ring-2 ring-offset-1 ring-offset-[var(--surface-2)] ring-[var(--brand)]'
+                        : 'bg-[var(--surface-3)] text-[var(--text-2)] border-[var(--border)] hover:bg-[var(--surface-3)] hover:text-[var(--text-1)] hover:border-[var(--border-strong)]'
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4">
+          {/* Adicionar andamento */}
+          <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] p-4">
             <div className="flex items-center gap-2 mb-3">
-              <Plus size={16} className="text-cyan-700" />
-              <div className="font-semibold text-cyan-900">Adicionar andamento</div>
+              <Plus size={14} className="text-[var(--text-3)]" />
+              <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-3)]">Adicionar andamento</div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <input
@@ -217,14 +234,14 @@ export default function ModalHistoricoVencimento({
                 onChange={(e) => setTitulo(e.target.value)}
                 disabled={!canEdit || saving}
                 placeholder="Ex.: Solicitei renovação"
-                className="rounded-xl border border-cyan-200 bg-white px-4 py-3 text-sm text-slate-900 disabled:bg-slate-100"
+                className="ct-input disabled:opacity-60"
               />
               <input
                 type="date"
                 value={dataEvento}
                 onChange={(e) => setDataEvento(e.target.value)}
                 disabled={!canEdit || saving}
-                className="rounded-xl border border-cyan-200 bg-white px-4 py-3 text-sm text-slate-900 disabled:bg-slate-100"
+                className="ct-input disabled:opacity-60"
               />
             </div>
             <textarea
@@ -233,14 +250,14 @@ export default function ModalHistoricoVencimento({
               disabled={!canEdit || saving}
               rows={3}
               placeholder="Detalhes opcionais do andamento"
-              className="mt-3 w-full rounded-xl border border-cyan-200 bg-white px-4 py-3 text-sm text-slate-900 resize-none disabled:bg-slate-100"
+              className="ct-input mt-3 resize-none disabled:opacity-60"
             />
             <div className="mt-3 flex justify-end">
               <button
                 type="button"
                 onClick={adicionarHistorico}
                 disabled={!canEdit || saving || !titulo.trim()}
-                className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="ct-btn-primary"
               >
                 <Plus size={16} />
                 Adicionar ao histórico
@@ -248,25 +265,31 @@ export default function ModalHistoricoVencimento({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="flex items-center gap-2 mb-4">
-              <History size={16} className="text-slate-700" />
-              <div className="font-semibold text-slate-900">Linha do tempo</div>
+          {/* Linha do tempo */}
+          <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <History size={14} className="text-[var(--text-3)]" />
+              <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-3)]">Linha do tempo</div>
             </div>
             {historico.length === 0 ? (
-              <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+              <div className="rounded-[var(--radius)] bg-[var(--surface-3)] border border-[var(--border)] p-4 text-sm text-[var(--text-3)]">
                 Nenhum andamento registrado ainda.
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {historico.map((itemHistorico) => (
-                  <div key={itemHistorico.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div
+                    key={itemHistorico.id}
+                    className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-3)] p-3"
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="font-semibold text-slate-900">{itemHistorico.titulo}</div>
-                        <div className="text-xs text-slate-500 mt-1">
-                          {itemHistorico.dataEvento ? formatBR(itemHistorico.dataEvento) : formatBR(itemHistorico.criadoEm)}
-                          {itemHistorico.autorNome ? ` • ${itemHistorico.autorNome}` : ''}
+                        <div className="font-semibold text-[var(--text-1)]">{itemHistorico.titulo}</div>
+                        <div className="text-xs text-[var(--text-3)] mt-1">
+                          <span className="ct-num">
+                            {itemHistorico.dataEvento ? formatBR(itemHistorico.dataEvento) : formatBR(itemHistorico.criadoEm)}
+                          </span>
+                          {itemHistorico.autorNome ? ` · ${itemHistorico.autorNome}` : ''}
                         </div>
                       </div>
                       {canEdit && (
@@ -274,15 +297,15 @@ export default function ModalHistoricoVencimento({
                           type="button"
                           disabled={saving}
                           onClick={() => setConfirmDeleteHistoricoId(itemHistorico.id)}
-                          className="rounded-lg p-2 text-red-500 hover:bg-red-50 disabled:opacity-50"
+                          className="rounded-md p-2 text-[var(--text-3)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:opacity-50 transition-colors shrink-0"
                           title="Remover registro"
                         >
-                          <Trash2 size={16} />
+                          <Trash2 size={14} />
                         </button>
                       )}
                     </div>
                     {itemHistorico.descricao && (
-                      <div className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{itemHistorico.descricao}</div>
+                      <div className="mt-2 text-sm text-[var(--text-2)] whitespace-pre-wrap">{itemHistorico.descricao}</div>
                     )}
                   </div>
                 ))}
@@ -290,19 +313,15 @@ export default function ModalHistoricoVencimento({
             )}
           </div>
 
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
+          <div className="flex gap-2 pt-2">
+            <button type="button" onClick={onClose} className="ct-btn-secondary flex-1">
               Fechar
             </button>
             <button
               type="button"
               onClick={salvar}
               disabled={!canEdit || saving}
-              className="flex-1 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="ct-btn-primary flex-1"
             >
               {saving ? 'Salvando...' : 'Salvar alterações'}
             </button>
