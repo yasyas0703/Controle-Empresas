@@ -427,7 +427,7 @@ export default function DashboardPage() {
               <AlertTriangle className="text-white" size={28} />
             </div>
             <div>
-              <div className="text-xl font-black text-white">⚠️ {vencidos.length} VENCIDO(S)!</div>
+              <div className="text-xl font-black text-white">{vencidos.length} VENCIDO(S)!</div>
               <div className="text-sm text-red-100">Estes documentos/RETs JÁ VENCERAM — ação imediata necessária!</div>
             </div>
           </div>
@@ -488,9 +488,19 @@ export default function DashboardPage() {
             <div>
               <div className="text-lg font-bold text-red-800 dark:text-white">{criticos.length + atencao.length} Próximo(s) a Vencer</div>
               <div className="text-sm text-red-600 dark:text-rose-100">
-                {criticos.length > 0 && <span className="font-bold">🔴 {criticos.length} crítico(s) (≤{limiares.critico}d)</span>}
+                {criticos.length > 0 && (
+                  <span className="font-bold inline-flex items-center gap-1.5">
+                    <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-red-500 dark:bg-red-300" />
+                    {criticos.length} crítico(s) (≤{limiares.critico}d)
+                  </span>
+                )}
                 {criticos.length > 0 && atencao.length > 0 && ' • '}
-                {atencao.length > 0 && <span>🟡 {atencao.length} em atenção (≤{limiares.atencao}d)</span>}
+                {atencao.length > 0 && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-amber-500 dark:bg-amber-300" />
+                    {atencao.length} em atenção (≤{limiares.atencao}d)
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -549,7 +559,10 @@ export default function DashboardPage() {
               <Clock className="text-green-600 dark:text-white" size={22} />
             </div>
             <div>
-              <div className="text-lg font-bold text-green-800 dark:text-white">🟢 {proximo.length} Próximo(s) (≤{limiares.proximo} dias)</div>
+              <div className="text-lg font-bold text-green-800 dark:text-white inline-flex items-center gap-2">
+                <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-full bg-green-500 dark:bg-green-300" />
+                {proximo.length} Próximo(s) (≤{limiares.proximo} dias)
+              </div>
               <div className="text-sm text-green-600 dark:text-emerald-100">Estes documentos/RETs vencem nos próximos {limiares.atencao + 1} a {limiares.proximo} dias</div>
             </div>
           </div>

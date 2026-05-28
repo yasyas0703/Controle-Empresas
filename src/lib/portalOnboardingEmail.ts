@@ -50,7 +50,7 @@ export function buildOnboardingEmail(params: {
   const bodyHtml = `
 <div style="font-family: Arial, sans-serif; max-width: 580px; margin: 0 auto; color: #0f172a;">
   <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 20px 24px; border-radius: 8px 8px 0 0; color: white;">
-    <h1 style="margin: 0; font-size: 20px;">${params.reenvio ? '🔑 Nova senha' : '👋 Bem-vindo(a) ao Portal Triar'}</h1>
+    <h1 style="margin: 0; font-size: 20px;">${params.reenvio ? 'Nova senha' : 'Bem-vindo(a) ao Portal Triar'}</h1>
     <p style="margin: 4px 0 0; opacity: 0.9; font-size: 14px;">${escapeHtml(params.empresaNome)}</p>
   </div>
 
@@ -133,7 +133,7 @@ export function buildEmpresaAdicionalEmail(params: {
   const bodyHtml = `
 <div style="font-family: Arial, sans-serif; max-width: 580px; margin: 0 auto; color: #0f172a;">
   <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 20px 24px; border-radius: 8px 8px 0 0; color: white;">
-    <h1 style="margin: 0; font-size: 20px;">➕ Nova empresa no seu acesso</h1>
+    <h1 style="margin: 0; font-size: 20px;">Nova empresa no seu acesso</h1>
     <p style="margin: 4px 0 0; opacity: 0.9; font-size: 14px;">${escapeHtml(params.empresaNome)}</p>
   </div>
   <div style="background: white; padding: 24px; border: 1px solid #e5e7eb; border-top: 0; border-radius: 0 0 8px 8px;">
@@ -194,7 +194,7 @@ export function buildEmailAlteradoEmail(params: {
   const bodyHtml = `
 <div style="font-family: Arial, sans-serif; max-width: 580px; margin: 0 auto; color: #0f172a;">
   <div style="background: linear-gradient(135deg, #475569 0%, #334155 100%); padding: 20px 24px; border-radius: 8px 8px 0 0; color: white;">
-    <h1 style="margin: 0; font-size: 20px;">✉️ Email de acesso alterado</h1>
+    <h1 style="margin: 0; font-size: 20px;">Email de acesso alterado</h1>
     <p style="margin: 4px 0 0; opacity: 0.9; font-size: 14px;">Portal Triar Contabilidade</p>
   </div>
   <div style="background: white; padding: 24px; border: 1px solid #e5e7eb; border-top: 0; border-radius: 0 0 8px 8px;">

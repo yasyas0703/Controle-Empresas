@@ -795,7 +795,8 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
             {!empresaCadastrada && (
               <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                 <p className="text-sm text-yellow-800">
-                  ⚠️ <strong>Empresa não cadastrada:</strong> Os campos CNPJ e Razão Social são opcionais.
+                  <AlertTriangle size={14} className="inline-block align-text-bottom mr-1" />
+                  <strong>Empresa não cadastrada:</strong> Os campos CNPJ e Razão Social são opcionais.
                   Complete estas informações quando a empresa for oficializada.
                 </p>
               </div>

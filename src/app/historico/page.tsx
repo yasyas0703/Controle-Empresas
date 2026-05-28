@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ClipboardList, UserCircle, Search, ChevronDown, ChevronUp, ArrowRight, Calendar, Trash2, CheckSquare, Square } from 'lucide-react';
+import { ClipboardList, UserCircle, Search, ChevronDown, ChevronUp, ArrowRight, Calendar, Trash2, CheckSquare, Square, Pencil } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { formatBR } from '@/app/utils/date';
 import type { LogEntry } from '@/app/types';
@@ -441,7 +441,9 @@ export default function HistoricoPage() {
                     {c.type === 'changed' && (
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-semibold">✎ Alterado</span>
+                          <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-semibold inline-flex items-center gap-1">
+                            <Pencil size={10} /> Alterado
+                          </span>
                           <span className="font-semibold text-gray-700">{c.ret}</span>
                         </div>
                         {c.detail && <div className="text-gray-500 ml-[80px] mt-0.5">{c.detail}</div>}

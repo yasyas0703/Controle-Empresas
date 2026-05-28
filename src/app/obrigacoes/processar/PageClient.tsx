@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft, Building2, Calendar, CheckCircle2, FileSpreadsheet,
+  AlertTriangle, ArrowLeft, Building2, Calendar, CheckCircle2, FileSpreadsheet,
   FileText, Loader2, Mail, ShieldAlert, Sparkles, Trash2, Upload, XCircle,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -431,8 +431,8 @@ export default function ProcessarGuiasClient() {
           </ul>
 
           {itensProntos.length === itens.length && itens.every((it) => it.status === 'importado') && (
-            <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">
-              ✅ Todos os arquivos foram importados.
+            <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800 inline-flex items-center gap-2">
+              <CheckCircle2 size={16} /> Todos os arquivos foram importados.
             </div>
           )}
         </div>
@@ -481,7 +481,10 @@ function ItemCard({
           </div>
 
           {item.status === 'erro' && item.erro && (
-            <div className="text-xs text-red-700 mt-1">⚠ {item.erro}</div>
+            <div className="text-xs text-red-700 mt-1 inline-flex items-start gap-1">
+              <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+              <span>{item.erro}</span>
+            </div>
           )}
 
           {item.status === 'pronto' && (
@@ -564,7 +567,10 @@ function ItemCard({
           )}
 
           {item.emailErro && (
-            <div className="mt-1 text-xs text-red-700">⚠ Email: {item.emailErro}</div>
+            <div className="mt-1 text-xs text-red-700 inline-flex items-start gap-1">
+              <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+              <span>Email: {item.emailErro}</span>
+            </div>
           )}
         </div>
 

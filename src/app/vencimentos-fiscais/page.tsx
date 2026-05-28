@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Grid3x3, Search, XCircle, Filter, CalendarClock, Users, AlertTriangle, Shield, CheckCircle2,
+  Grid3x3, Search, XCircle, Filter, CalendarClock, Users, AlertTriangle, Shield, CheckCircle2, Check,
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, formatBR } from '@/app/utils/date';
@@ -553,7 +553,7 @@ export default function VencimentosFiscaisPage() {
                               {l.piorStatus === 'feito' ? (
                                 <div className="flex flex-col items-center justify-center h-full">
                                   <span className="text-[8px] font-black uppercase tracking-wide opacity-90 mb-0.5">FEITO</span>
-                                  <span className="text-lg leading-none">✓</span>
+                                  <Check size={20} strokeWidth={3} aria-hidden />
                                   <span className="text-[8px] font-bold opacity-80 mt-0.5">tudo do mês</span>
                                 </div>
                               ) : (
@@ -568,7 +568,7 @@ export default function VencimentosFiscaisPage() {
                                   </div>
                                   <div className="font-black text-sm leading-none tabular-nums">
                                     {l.diasMaisUrgente === null ? '-' :
-                                      l.diasMaisUrgente < 0 ? `${Math.abs(l.diasMaisUrgente)}d⬇` :
+                                      l.diasMaisUrgente < 0 ? `${l.diasMaisUrgente}d` :
                                       l.diasMaisUrgente === 0 ? 'HOJE' :
                                       `${l.diasMaisUrgente}d`}
                                   </div>

@@ -35,12 +35,12 @@ function tipoDoAlerta(marco: Marco): 'aviso' | 'erro' {
 
 function tituloAgregado(marco: Marco, total: number): string {
   if (marco === 'd-2') {
-    return `⚠️ ${total} ${total === 1 ? 'obrigação vence' : 'obrigações vencem'} em 2 dias`;
+    return `${total} ${total === 1 ? 'obrigação vence' : 'obrigações vencem'} em 2 dias`;
   }
   if (marco === 'd-0') {
-    return `🚨 ${total} ${total === 1 ? 'obrigação vence' : 'obrigações vencem'} HOJE`;
+    return `${total} ${total === 1 ? 'obrigação vence' : 'obrigações vencem'} HOJE`;
   }
-  return `🔥 ${total} ${total === 1 ? 'obrigação atrasada' : 'obrigações atrasadas'}`;
+  return `${total} ${total === 1 ? 'obrigação atrasada' : 'obrigações atrasadas'}`;
 }
 
 interface CandidatoOut {

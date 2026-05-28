@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Archive, CheckCircle2, Download, Eye, Mail, Smartphone } from 'lucide-react';
+import { AlertTriangle, Archive, CheckCircle2, Download, Eye, Mail, Smartphone } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type DocumentoLinha = {
@@ -162,13 +162,21 @@ function CardDocumento({ doc, ativo }: { doc: DocumentoLinha; ativo: boolean }) 
       {ativo && (
         <div className="mt-2 border-t border-slate-200/70 pt-2 text-[11px] font-medium text-slate-700">
           {doc.marcado_pago_em ? (
-            <span className="text-emerald-700">✅ Cliente confirmou pagamento.</span>
+            <span className="text-emerald-700 inline-flex items-center gap-1.5">
+              <CheckCircle2 size={13} /> Cliente confirmou pagamento.
+            </span>
           ) : doc.baixado_em ? (
-            <span className="text-blue-700">⬇️ Cliente já baixou — aguardando pagamento.</span>
+            <span className="text-blue-700 inline-flex items-center gap-1.5">
+              <Download size={13} /> Cliente já baixou — aguardando pagamento.
+            </span>
           ) : doc.visualizado_em ? (
-            <span className="text-amber-700">👁️ Cliente abriu mas não baixou ainda.</span>
+            <span className="text-amber-700 inline-flex items-center gap-1.5">
+              <Eye size={13} /> Cliente abriu mas não baixou ainda.
+            </span>
           ) : (
-            <span className="text-red-700">⚠️ Cliente ainda não acessou esta guia no portal.</span>
+            <span className="text-red-700 inline-flex items-center gap-1.5">
+              <AlertTriangle size={13} /> Cliente ainda não acessou esta guia no portal.
+            </span>
           )}
         </div>
       )}

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Trash2, RotateCcw, AlertTriangle, Clock, Building2, Search, Eraser, FileText, MessageSquare, Filter, ShieldCheck } from 'lucide-react';
+import { Trash2, RotateCcw, AlertTriangle, Clock, Building2, Search, Eraser, FileText, MessageSquare, Filter, ShieldCheck, Paperclip } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { formatarDocumento, detectTipoInscricao } from '@/app/utils/validation';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
@@ -275,7 +275,9 @@ export default function LixeiraPage() {
                         <div className="text-sm text-gray-500 mt-0.5">
                           Validade: {new Date(item.documento.validade).toLocaleDateString('pt-BR')}
                           {item.documento.arquivoUrl && (
-                            <span className="ml-2 text-orange-600 font-semibold text-xs">📎 Com arquivo anexo</span>
+                            <span className="ml-2 inline-flex items-center gap-1 text-orange-600 font-semibold text-xs">
+                              <Paperclip size={11} /> Com arquivo anexo
+                            </span>
                           )}
                         </div>
                       </div>

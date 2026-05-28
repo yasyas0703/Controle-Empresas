@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle, Archive, ArrowLeft, Banknote, CheckCircle2, FileSpreadsheet, FileText,
-  Loader2, ShieldAlert, Sparkles, Upload, XCircle,
+  HelpCircle, Lightbulb, Loader2, Search, ShieldAlert, Sparkles, Upload, XCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useSistema } from '@/app/context/SistemaContext';
@@ -532,8 +532,8 @@ export default function ImportarExtratosContabilPage() {
             className="rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800 px-3 py-2 text-xs font-bold transition disabled:opacity-50 inline-flex items-center gap-2"
             title="Inspecionar a estrutura crua do XLSX (debug — pra entender por que cores não estão sendo detectadas)"
           >
-            {debugando && <Loader2 size={14} className="animate-spin" />}
-            {debugando ? 'Inspecionando...' : '🔍 Inspecionar XLSX (debug)'}
+            {debugando ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+            {debugando ? 'Inspecionando...' : 'Inspecionar XLSX (debug)'}
           </button>
         </div>
 
@@ -598,7 +598,10 @@ export default function ImportarExtratosContabilPage() {
                     </div>
                     <p className="text-[11px] text-slate-700 mb-3">
                       O código da planilha hoje pertence a outra empresa. Cada uma será cadastrada como <strong>{criarComoAtivas ? 'empresa ATIVA' : 'desligada histórica'}</strong> com código sintético próprio (tipo <code className="font-mono bg-slate-200 px-1 rounded">71-A</code>).
-                      <strong className="block mt-1 text-amber-700">⚠ Revise as do topo (similaridade alta) — podem ser a mesma empresa só com nome abreviado. Se for, desmarque e ajuste o cadastro existente depois.</strong>
+                      <strong className="block mt-1 text-amber-700 inline-flex items-start gap-1">
+                        <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+                        <span>Revise as do topo (similaridade alta) — podem ser a mesma empresa só com nome abreviado. Se for, desmarque e ajuste o cadastro existente depois.</span>
+                      </strong>
                     </p>
 
                     {/* Filtro de similaridade mínima */}
@@ -646,7 +649,8 @@ export default function ImportarExtratosContabilPage() {
                               </div>
                               {a.melhorPalpite && (
                                 <div className="text-amber-700 mt-1 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                                  🤔 Pode ser duplicata de: <strong>{a.melhorPalpite.codigo}</strong> {a.melhorPalpite.nome || a.melhorPalpite.apelido}
+                                  <HelpCircle size={12} className="inline-block align-text-bottom mr-1" />
+                                  Pode ser duplicata de: <strong>{a.melhorPalpite.codigo}</strong> {a.melhorPalpite.nome || a.melhorPalpite.apelido}
                                   {a.melhorPalpite.apelido && a.melhorPalpite.nome && a.melhorPalpite.apelido !== a.melhorPalpite.nome && ` (${a.melhorPalpite.apelido})`}
                                   <span className="ml-1 text-amber-600 font-bold">{Math.round(a.melhorPalpite.similaridade * 100)}%</span>
                                 </div>
@@ -698,7 +702,8 @@ export default function ImportarExtratosContabilPage() {
                               </div>
                               {a.melhorPalpite && (
                                 <div className="text-amber-700 mt-1 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-[11px]">
-                                  🤔 Pode ser duplicata de: <strong>{a.melhorPalpite.codigo}</strong> {a.melhorPalpite.nome || a.melhorPalpite.apelido}
+                                  <HelpCircle size={12} className="inline-block align-text-bottom mr-1" />
+                                  Pode ser duplicata de: <strong>{a.melhorPalpite.codigo}</strong> {a.melhorPalpite.nome || a.melhorPalpite.apelido}
                                   {a.melhorPalpite.apelido && a.melhorPalpite.nome && a.melhorPalpite.apelido !== a.melhorPalpite.nome && ` (${a.melhorPalpite.apelido})`}
                                   <span className="ml-1 text-amber-600 font-bold">{Math.round(a.melhorPalpite.similaridade * 100)}%</span>
                                 </div>
@@ -871,8 +876,9 @@ export default function ImportarExtratosContabilPage() {
                   </div>
                 )}
 
-                <p className="text-[10px] text-amber-700 mt-2">
-                  💡 Tem o mesmo log no console do navegador (F12 → Console) com tabelas filtráveis.
+                <p className="text-[10px] text-amber-700 mt-2 inline-flex items-start gap-1">
+                  <Lightbulb size={12} className="shrink-0 mt-0.5" />
+                  <span>Tem o mesmo log no console do navegador (F12 → Console) com tabelas filtráveis.</span>
                 </p>
               </details>
             );

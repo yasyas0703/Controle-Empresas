@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Check, FileText, Loader2, Plus, Trash2, Upload, X } from 'lucide-react';
+import { Check, FileText, Lightbulb, Loader2, Plus, Trash2, Upload, X } from 'lucide-react';
 import ModalBase from '@/app/components/ModalBase';
 import { extrairTextoPdf } from '@/app/utils/extrairTextoPdf';
 import { sugerirPalavrasChave, type SugestaoPalavraChave } from '@/app/utils/sugerirPalavrasChave';
@@ -253,7 +253,9 @@ export default function ModalConfigurarValidacao({
 
             {/* Dica */}
             <div className="mt-5 rounded-md border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
-              <strong className="font-semibold">💡 Dica:</strong> escolhe 2-3 palavras/siglas que aparecem <em>só</em> nesse tipo de guia (ex: <code>ICMS</code>, <code>GIA</code>). Evita palavras genéricas como "guia" ou "imposto" que aparecem em várias.
+              <strong className="font-semibold inline-flex items-center gap-1">
+                <Lightbulb size={12} /> Dica:
+              </strong> escolhe 2-3 palavras/siglas que aparecem <em>só</em> nesse tipo de guia (ex: <code>ICMS</code>, <code>GIA</code>). Evita palavras genéricas como "guia" ou "imposto" que aparecem em várias.
             </div>
 
             {erroSalvar && (

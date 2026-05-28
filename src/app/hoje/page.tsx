@@ -285,16 +285,20 @@ export default function HojePage() {
     return chaves.map((k) => ({ chave: k, itens: map.get(k)! }));
   }, [itens]);
 
-  function tituloGrupo(chave: string): { label: string; subtitle?: string } {
-    if (chave === 'vencidos') return { label: '🚨 Vencidos', subtitle: 'Ação imediata' };
+  function tituloGrupo(chave: string): { label: string; subtitle?: string; icon?: React.ReactNode } {
+    if (chave === 'vencidos') return {
+      label: 'Vencidos',
+      subtitle: 'Ação imediata',
+      icon: <AlertTriangle size={14} className="text-red-600 dark:text-red-400" />,
+    };
     const n = Number(chave);
     const hoje = new Date();
     const data = new Date(hoje);
     data.setDate(hoje.getDate() + n);
     const dataLabel = data.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
-    if (n === 0) return { label: `📌 Hoje`, subtitle: dataLabel };
-    if (n === 1) return { label: `⏰ Amanhã`, subtitle: dataLabel };
-    return { label: `📅 Daqui ${n} dias`, subtitle: dataLabel };
+    if (n === 0) return { label: 'Hoje', subtitle: dataLabel };
+    if (n === 1) return { label: 'Amanhã', subtitle: dataLabel };
+    return { label: `Daqui ${n} dias`, subtitle: dataLabel };
   }
 
   function toggleTipo(t: Tipo) {
@@ -516,10 +520,10 @@ function GrupoDia({
   chave: string;
   itens: ItemHoje[];
   usuarios: { id: UUID; nome: string }[];
-  tituloFn: (k: string) => { label: string; subtitle?: string };
+  tituloFn: (k: string) => { label: string; subtitle?: string; icon?: React.ReactNode };
 }) {
   const [aberto, setAberto] = useState(true);
-  const { label, subtitle } = tituloFn(chave);
+  const { label, subtitle, icon } = tituloFn(chave);
   return (
     <section className="rounded-2xl bg-white shadow-sm border border-gray-100 overflow-hidden dark:bg-slate-900 dark:border-slate-800">
       <button
@@ -527,7 +531,10 @@ function GrupoDia({
         className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-slate-800/50 hover:bg-gray-100 dark:hover:bg-slate-800 transition"
       >
         <div className="text-left">
-          <div className="text-sm font-bold text-gray-900 dark:text-gray-100">{label}</div>
+          <div className="text-sm font-bold text-gray-900 dark:text-gray-100 inline-flex items-center gap-1.5">
+            {icon}
+            {label}
+          </div>
           {subtitle && <div className="text-[11px] text-gray-500 dark:text-gray-400 capitalize">{subtitle}</div>}
         </div>
         <div className="flex items-center gap-2">
