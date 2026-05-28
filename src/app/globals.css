@@ -447,7 +447,9 @@ select option {
 .dark .border-red-200,
 .dark .border-indigo-200,
 .dark .border-cyan-200,
-.dark .border-teal-200 { border-color: var(--border) !important; }
+.dark .border-teal-200,
+.dark .border-rose-200,
+.dark .border-pink-200 { border-color: var(--border) !important; }
 
 /* Borders 300/400 — usadas em chips/pílulas de status */
 .dark .border-red-300 { border-color: #6e3340 !important; }
