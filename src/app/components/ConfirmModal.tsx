@@ -19,43 +19,36 @@ interface ConfirmModalProps {
 
 const variantConfig: Record<ConfirmVariant, {
   icon: typeof Trash2;
-  iconBg: string;
-  iconColor: string;
-  confirmBg: string;
-  confirmHover: string;
-  ringColor: string;
+  chipBg: string;
+  chipText: string;
+  confirmClass: string;
 }> = {
   danger: {
     icon: Trash2,
-    iconBg: 'bg-red-100',
-    iconColor: 'text-red-600',
-    confirmBg: 'bg-red-600',
-    confirmHover: 'hover:bg-red-700',
-    ringColor: 'ring-red-100',
+    chipBg: 'bg-[var(--danger-soft)]',
+    chipText: 'text-[var(--danger)]',
+    confirmClass:
+      'inline-flex items-center justify-center gap-2 rounded-[var(--radius)] px-4 py-2.5 text-sm font-semibold text-white bg-[var(--danger)] border border-[var(--danger)] hover:brightness-[0.92] transition',
   },
   warning: {
     icon: AlertTriangle,
-    iconBg: 'bg-amber-100',
-    iconColor: 'text-amber-600',
-    confirmBg: 'bg-amber-600',
-    confirmHover: 'hover:bg-amber-700',
-    ringColor: 'ring-amber-100',
+    chipBg: 'bg-[var(--warn-soft)]',
+    chipText: 'text-[var(--warn)]',
+    confirmClass:
+      'inline-flex items-center justify-center gap-2 rounded-[var(--radius)] px-4 py-2.5 text-sm font-semibold text-white bg-[var(--warn)] border border-[var(--warn)] hover:brightness-[0.92] transition',
   },
   info: {
     icon: HelpCircle,
-    iconBg: 'bg-blue-100',
-    iconColor: 'text-blue-600',
-    confirmBg: 'bg-blue-600',
-    confirmHover: 'hover:bg-blue-700',
-    ringColor: 'ring-blue-100',
+    chipBg: 'bg-[var(--brand-soft)]',
+    chipText: 'text-[var(--brand-strong)]',
+    confirmClass: 'ct-btn-primary',
   },
   restore: {
     icon: RotateCcw,
-    iconBg: 'bg-emerald-100',
-    iconColor: 'text-emerald-600',
-    confirmBg: 'bg-emerald-600',
-    confirmHover: 'hover:bg-emerald-700',
-    ringColor: 'ring-emerald-100',
+    chipBg: 'bg-[var(--ok-soft)]',
+    chipText: 'text-[var(--ok)]',
+    confirmClass:
+      'inline-flex items-center justify-center gap-2 rounded-[var(--radius)] px-4 py-2.5 text-sm font-semibold text-white bg-[var(--ok)] border border-[var(--ok)] hover:brightness-[0.92] transition',
   },
 };
 
@@ -83,44 +76,35 @@ export default function ConfirmModal({
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
 
       <div
-        className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden"
-        style={{ animation: 'confirmScaleIn 0.25s cubic-bezier(0.21, 1.02, 0.73, 1)' }}
+        className="relative w-full max-w-md bg-[var(--surface-2)] rounded-[var(--radius-md)] border border-[var(--border)] overflow-hidden"
+        style={{ boxShadow: 'var(--shadow-pop)', animation: 'confirmScaleIn 0.25s cubic-bezier(0.21, 1.02, 0.73, 1)' }}
       >
-        {/* Close button */}
         <button
           onClick={onCancel}
-          className="absolute top-4 right-4 rounded-lg p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition z-10"
+          className="absolute top-3 right-3 rounded-md p-1.5 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition z-10"
+          aria-label="Fechar"
         >
           <X size={16} />
         </button>
 
-        <div className="p-4 sm:p-6">
-          {/* Icon */}
+        <div className="p-5 sm:p-6">
           <div className="flex justify-center mb-4">
-            <div className={`h-16 w-16 rounded-2xl ${cfg.iconBg} flex items-center justify-center ring-8 ${cfg.ringColor}`}>
-              <Icon size={28} className={cfg.iconColor} />
+            <div className={`h-12 w-12 rounded-md ${cfg.chipBg} ${cfg.chipText} flex items-center justify-center`}>
+              <Icon size={22} />
             </div>
           </div>
 
-          {/* Title */}
           <div className="text-center">
-            <h3 className="text-lg font-bold text-gray-900">{title}</h3>
-            <p className="text-sm text-gray-500 mt-2 leading-relaxed">{message}</p>
+            <h3 className="text-base font-bold text-[var(--text-1)] tracking-tight">{title}</h3>
+            <p className="text-sm text-[var(--text-2)] mt-2 leading-relaxed">{message}</p>
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="px-4 sm:px-6 pb-4 sm:pb-6 flex gap-3">
-          <button
-            onClick={onCancel}
-            className="flex-1 rounded-xl px-4 py-3 bg-gray-100 hover:bg-gray-200 text-sm font-bold text-gray-700 transition"
-          >
+        <div className="px-5 sm:px-6 pb-5 sm:pb-6 flex gap-2">
+          <button onClick={onCancel} className="ct-btn-secondary flex-1">
             {cancelText}
           </button>
-          <button
-            onClick={() => { onConfirm(); }}
-            className={`flex-1 rounded-xl px-4 py-3 ${cfg.confirmBg} ${cfg.confirmHover} text-sm font-bold text-white transition shadow-sm`}
-          >
+          <button onClick={() => { onConfirm(); }} className={`${cfg.confirmClass} flex-1`}>
             {confirmText}
           </button>
         </div>
