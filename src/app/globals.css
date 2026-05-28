@@ -130,6 +130,132 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* ─────────────────────────────────────────────────────────
+   Utilitárias .ct-* (Etapa 5 — botões, badges, inputs).
+   Definidas em @layer components pra Tailwind utility classes
+   (w-full, px-X, etc) poderem sobrepor quando precisar.
+   ───────────────────────────────────────────────────────── */
+@layer components {
+  /* Botões — guia §5.2 */
+  .ct-btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background-color: var(--brand);
+    color: #ffffff;
+    border: 1px solid var(--brand);
+    border-radius: var(--radius);
+    padding: 0.625rem 1rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    transition: background-color 150ms ease, border-color 150ms ease;
+  }
+  .ct-btn-primary:hover:not(:disabled) {
+    background-color: var(--brand-strong);
+    border-color: var(--brand-strong);
+  }
+  .ct-btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+
+  .ct-btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background-color: var(--surface-2);
+    color: var(--text-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.625rem 1rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    transition: background-color 150ms ease;
+  }
+  .ct-btn-secondary:hover:not(:disabled) { background-color: var(--surface-3); }
+  .ct-btn-secondary:disabled { opacity: 0.55; cursor: not-allowed; }
+
+  .ct-btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background-color: transparent;
+    color: var(--text-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    padding: 0.5rem 0.75rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+  .ct-btn-ghost:hover:not(:disabled) {
+    background-color: var(--surface-3);
+    color: var(--text-1);
+  }
+  .ct-btn-ghost:disabled { opacity: 0.55; cursor: not-allowed; }
+
+  .ct-btn-danger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background-color: var(--danger);
+    color: #ffffff;
+    border: 1px solid var(--danger);
+    border-radius: var(--radius);
+    padding: 0.625rem 1rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    transition: filter 150ms ease;
+  }
+  .ct-btn-danger:hover:not(:disabled) { filter: brightness(0.92); }
+  .ct-btn-danger:disabled { opacity: 0.55; cursor: not-allowed; }
+
+  /* Input — guia §5.3.
+     Color/placeholder/dark-bg ficam controlados pelas regras globais
+     (input { color !important }, .dark input { ... !important }) até
+     as etapas seguintes limparem isso. */
+  .ct-input {
+    width: 100%;
+    background-color: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.625rem 0.75rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+  .ct-input:focus {
+    outline: none;
+    border-color: var(--brand);
+    box-shadow: 0 0 0 1px var(--brand);
+  }
+  .ct-input:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  /* Badges — guia §5.5 */
+  .ct-badge {
+    display: inline-flex;
+    align-items: center;
+    background-color: var(--surface-3);
+    color: var(--text-2);
+    border-radius: var(--radius-sm);
+    padding: 0.125rem 0.5rem;
+    font-size: 0.6875rem;
+    line-height: 1rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .ct-badge-brand { background-color: var(--brand-soft); color: var(--brand-strong); }
+  .ct-badge-danger { background-color: var(--danger-soft); color: var(--danger); }
+  .ct-badge-warn { background-color: var(--warn-soft); color: var(--warn); }
+  .ct-badge-ok { background-color: var(--ok-soft); color: var(--ok); }
+}
+
 /* Mobile-friendly tap targets */
 @media (max-width: 640px) {
 

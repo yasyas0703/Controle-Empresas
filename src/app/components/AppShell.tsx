@@ -822,17 +822,20 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       {showLogin && (
         <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4" onMouseDown={(e) => e.currentTarget === e.target && setShowLogin(false)}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
-            <div className="bg-gradient-to-r from-cyan-600 to-teal-600 p-6">
+          <div
+            className="relative w-full max-w-md rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] overflow-hidden"
+            style={{ boxShadow: 'var(--shadow-pop)' }}
+          >
+            <div className="border-b border-[var(--border-subtle)] p-6">
               <div className="flex items-center gap-3">
-                <div className="h-12 w-12 rounded-xl bg-white/20 flex items-center justify-center">
+                <div className="h-12 w-12 rounded-[var(--radius)] bg-[var(--surface-3)] flex items-center justify-center">
                   <Image src="/triar.png" alt="Triar" width={36} height={36} />
                 </div>
                 <div>
-                  <div className="text-lg font-bold text-white">
+                  <div className="text-lg font-bold text-[var(--text-1)]">
                     {showForgot ? 'Recuperar Senha' : 'Entrar no Sistema'}
                   </div>
-                  <div className="text-xs text-cyan-200 mt-0.5">Controle de Empresas</div>
+                  <div className="text-xs text-[var(--text-3)] mt-0.5">Controle de Empresas</div>
                 </div>
               </div>
             </div>
@@ -852,7 +855,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                     </div>
                     <button
                       onClick={resetForgotState}
-                      className="w-full rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 text-white px-4 py-3 font-bold hover:from-cyan-700 hover:to-teal-700 shadow-lg transition"
+                      className="ct-btn-primary w-full"
                     >
                       Ir para o Login
                     </button>
@@ -873,7 +876,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                       <input
                         value={forgotCode}
                         onChange={(e) => setForgotCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                        className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 text-center text-2xl font-mono tracking-[0.25em] focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                        className="ct-input ct-num text-center text-2xl tracking-[0.25em]"
                         placeholder="00000000"
                         maxLength={8}
                         inputMode="numeric"
@@ -885,7 +888,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                         type="password"
                         value={forgotNewPassword}
                         onChange={(e) => setForgotNewPassword(e.target.value)}
-                        className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                        className="ct-input"
                         placeholder="Mínimo 8 caracteres"
                       />
                     </div>
@@ -895,7 +898,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                         type="password"
                         value={forgotConfirmPassword}
                         onChange={(e) => setForgotConfirmPassword(e.target.value)}
-                        className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                        className="ct-input"
                         placeholder="Repita a nova senha"
                         onKeyDown={(e) => e.key === 'Enter' && handleResetPassword()}
                       />
@@ -911,7 +914,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                     <button
                       onClick={handleResetPassword}
                       disabled={forgotResetLoading}
-                      className="w-full rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 text-white px-4 py-3 font-bold hover:from-cyan-700 hover:to-teal-700 shadow-lg transition disabled:opacity-50"
+                      className="ct-btn-primary w-full"
                     >
                       {forgotResetLoading ? (
                         <span className="inline-flex items-center gap-2">
@@ -924,7 +927,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                     </button>
                     <button
                       onClick={resetForgotState}
-                      className="w-full text-sm text-gray-500 hover:text-gray-700 font-semibold transition"
+                      className="ct-btn-ghost w-full"
                     >
                       Cancelar
                     </button>
@@ -939,7 +942,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                       <input
                         value={forgotEmail}
                         onChange={(e) => setForgotEmail(e.target.value)}
-                        className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                        className="ct-input"
                         placeholder="email@empresa.com"
                         onKeyDown={(e) => e.key === 'Enter' && handleForgotPassword()}
                       />
@@ -947,7 +950,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                     <button
                       onClick={handleForgotPassword}
                       disabled={forgotLoading}
-                      className="w-full rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 text-white px-4 py-3 font-bold hover:from-cyan-700 hover:to-teal-700 shadow-lg transition disabled:opacity-50"
+                      className="ct-btn-primary w-full"
                     >
                       {forgotLoading ? (
                         <span className="inline-flex items-center gap-2">
@@ -960,7 +963,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                     </button>
                     <button
                       onClick={resetForgotState}
-                      className="w-full text-sm text-gray-500 hover:text-gray-700 font-semibold transition"
+                      className="ct-btn-ghost w-full"
                     >
                       Voltar ao Login
                     </button>
@@ -974,7 +977,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                   <input
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                    className="ct-input"
                     placeholder="email@empresa.com"
                   />
                 </div>
@@ -985,14 +988,14 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                       type={showSenha ? 'text' : 'password'}
                       value={senha}
                       onChange={(e) => setSenha(e.target.value)}
-                      className="w-full rounded-xl bg-gray-50 px-4 py-3 pr-12 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                      className="ct-input pr-12"
                       placeholder="Senha"
                       onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
                     />
                     <button
                       type="button"
                       onClick={() => setShowSenha((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 p-1"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-3)] hover:text-[var(--text-1)] p-1"
                       aria-label={showSenha ? 'Ocultar senha' : 'Mostrar senha'}
                       tabIndex={-1}
                     >
@@ -1002,13 +1005,13 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                 </div>
                 <button
                   onClick={handleLogin}
-                  className="w-full rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 text-white px-4 py-3 font-bold hover:from-cyan-700 hover:to-teal-700 shadow-lg transition"
+                  className="ct-btn-primary w-full"
                 >
                   Entrar
                 </button>
                 <button
                   onClick={() => { resetForgotState(); setShowForgot(true); setForgotEmail(email); }}
-                  className="w-full text-sm text-cyan-600 hover:text-cyan-700 font-semibold transition"
+                  className="ct-btn-ghost w-full text-[var(--brand)] hover:text-[var(--brand-strong)]"
                 >
                   Esqueci minha senha
                 </button>
