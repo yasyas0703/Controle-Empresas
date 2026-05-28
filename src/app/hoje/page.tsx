@@ -308,20 +308,20 @@ export default function HojePage() {
   return (
     <div className="space-y-4 max-w-4xl mx-auto pb-8">
       {/* Header */}
-      <div className="rounded-2xl bg-gradient-to-br from-cyan-500 to-teal-500 p-5 sm:p-6 text-white shadow-md dark:from-cyan-600 dark:to-teal-700">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] p-5 sm:p-6">
         <div className="flex items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <Sparkles size={20} />
-              <h1 className="text-xl sm:text-2xl font-black">Hoje</h1>
+              <Sparkles size={20} className="text-[var(--brand)]" />
+              <h1 className="text-xl sm:text-2xl font-bold text-[var(--text-1)] tracking-tight">Hoje</h1>
             </div>
-            <p className="mt-1 text-sm text-cyan-50">
+            <p className="mt-1 text-sm text-[var(--text-2)] leading-relaxed">
               {currentUser?.nome ? `${currentUser.nome}, o ` : 'O '}painel de hoje mostra as obrigações que estão vencendo para suas empresas nos próximos dias, pra você não esquecer de nada importante.
             </p>
           </div>
           <button
             onClick={() => setConfigAberta((v) => !v)}
-            className="rounded-lg bg-white/15 p-2 hover:bg-white/25 transition shrink-0"
+            className="rounded-md p-2 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition shrink-0"
             aria-label="Configurar"
             title="Configurar"
           >
@@ -444,10 +444,12 @@ export default function HojePage() {
 
       {/* Lista agrupada */}
       {itens.length === 0 ? (
-        <div className="rounded-2xl bg-white p-10 text-center border border-gray-100 dark:bg-slate-900 dark:border-slate-800">
-          <CheckCircle size={48} className="mx-auto text-emerald-400 mb-3" />
-          <p className="font-bold text-gray-800 dark:text-gray-100">Nada pendente no período</p>
-          <p className="text-sm text-gray-500 mt-1">
+        <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-10 text-center border border-[var(--border)]">
+          <div className="inline-flex items-center justify-center h-12 w-12 rounded-md bg-[var(--ok-soft)] text-[var(--ok)] mb-3">
+            <CheckCircle size={26} />
+          </div>
+          <p className="font-bold text-[var(--text-1)] tracking-tight">Nada pendente no período</p>
+          <p className="text-sm text-[var(--text-2)] mt-1">
             {efetivoApenasMinhas
               ? 'Você não tem obrigações nos próximos dias. Aproveita pra avançar em outras coisas.'
               : 'Nenhuma empresa tem obrigação vencendo nesse período.'}
@@ -490,26 +492,43 @@ function ResumoCard({ cor, icon, label, count }: {
   label: string;
   count: number;
 }) {
-  // Card amarelo usa texto escuro forçado (inline style) porque o globals.css
-  // do projeto sobrescreve text-amber-900 no dark mode pra amarelo claro,
-  // que ficaria ilegível em cima do gradient amarelo.
-  const corCls = {
-    red: 'from-red-500 to-rose-500 text-white',
-    orange: 'from-orange-400 to-amber-500 text-white',
-    amber: 'from-amber-300 to-yellow-400',
-    cyan: 'from-cyan-400 to-teal-500 text-white',
+  // Vencidos = danger; Hoje = warn (urgente hoje); Amanhã = warn suave;
+  // Próximos = neutro. Cor só pra marcar urgência real.
+  const config = {
+    red: {
+      chipBg: 'bg-[var(--danger-soft)]',
+      chipText: 'text-[var(--danger)]',
+      valueColor: 'text-[var(--danger)]',
+      borderColor: 'border-[var(--danger)]/40',
+    },
+    orange: {
+      chipBg: 'bg-[var(--warn-soft)]',
+      chipText: 'text-[var(--warn)]',
+      valueColor: 'text-[var(--warn)]',
+      borderColor: 'border-[var(--warn)]/40',
+    },
+    amber: {
+      chipBg: 'bg-[var(--warn-soft)]',
+      chipText: 'text-[var(--warn)]',
+      valueColor: 'text-[var(--text-1)]',
+      borderColor: 'border-[var(--border)]',
+    },
+    cyan: {
+      chipBg: 'bg-[var(--surface-3)]',
+      chipText: 'text-[var(--text-2)]',
+      valueColor: 'text-[var(--text-1)]',
+      borderColor: 'border-[var(--border)]',
+    },
   }[cor];
-  const textoEscuro = cor === 'amber';
   return (
-    <div
-      className={`rounded-xl bg-gradient-to-br ${corCls} p-3 shadow-sm`}
-      style={textoEscuro ? { color: '#451a03' } : undefined}
-    >
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-bold uppercase tracking-wider opacity-90">{label}</span>
-        <span className="opacity-90">{icon}</span>
+    <div className={`rounded-[var(--radius)] bg-[var(--surface-2)] border p-3 ${config.borderColor}`}>
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-3)] leading-snug">{label}</span>
+        <div className={`shrink-0 inline-flex items-center justify-center h-7 w-7 rounded-md ${config.chipBg} ${config.chipText}`}>
+          {icon}
+        </div>
       </div>
-      <div className="text-2xl font-black mt-1">{count}</div>
+      <div className={`ct-num font-bold text-2xl mt-2 ${config.valueColor} leading-none`}>{count}</div>
     </div>
   );
 }

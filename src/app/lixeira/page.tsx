@@ -100,25 +100,24 @@ export default function LixeiraPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-4 sm:p-6 border border-[var(--border)]">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4 flex-wrap">
           <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center shadow-md">
-              <Trash2 className="text-white" size={22} />
+            <div className="h-11 w-11 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] flex items-center justify-center shrink-0">
+              <Trash2 size={22} />
             </div>
             <div>
-              <div className="text-2xl font-bold text-gray-900">Lixeira</div>
-              <div className="text-sm text-gray-500">
-                {allItems.length === 0 ? 'Nenhum item na lixeira' : `${allItems.length} item(ns) na lixeira`}
+              <div className="text-2xl font-bold text-[var(--text-1)] tracking-tight">Lixeira</div>
+              <div className="text-sm text-[var(--text-2)]">
+                {allItems.length === 0 ? 'Nenhum item na lixeira' : (
+                  <><span className="ct-num font-semibold text-[var(--text-1)]">{allItems.length}</span> item(ns) na lixeira</>
+                )}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {allItems.length > 0 && canManage && (
-              <button
-                onClick={() => { setConfirmClear(true); }}
-                className="flex items-center gap-2 rounded-xl px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold transition shadow-sm"
-              >
+              <button onClick={() => { setConfirmClear(true); }} className="ct-btn-danger">
                 <Eraser size={16} />
                 Esvaziar Lixeira
               </button>
@@ -130,55 +129,42 @@ export default function LixeiraPage() {
         {allItems.length > 0 && (
           <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3 flex-wrap">
             <div className="relative flex-1 min-w-0 sm:min-w-[200px] max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-3)] pointer-events-none" size={16} />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Buscar na lixeira..."
-                className="w-full rounded-xl bg-gray-50 pl-10 pr-4 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-red-300 focus:bg-white transition"
+                className="ct-input pl-10"
               />
             </div>
 
-            <div className="flex items-center gap-1.5">
-              <Filter size={14} className="text-gray-400" />
-              <button
-                onClick={() => setFiltroTipo('todos')}
-                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${filtroTipo === 'todos' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              >
-                Todos ({allItems.length})
-              </button>
-              {countByTipo.empresa > 0 && (
-                <button
-                  onClick={() => setFiltroTipo('empresa')}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition flex items-center gap-1 ${filtroTipo === 'empresa' ? 'bg-red-600 text-white' : 'bg-red-50 text-red-700 hover:bg-red-100'}`}
-                >
-                  <Building2 size={12} /> Empresas ({countByTipo.empresa})
-                </button>
-              )}
-              {countByTipo.documento > 0 && (
-                <button
-                  onClick={() => setFiltroTipo('documento')}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition flex items-center gap-1 ${filtroTipo === 'documento' ? 'bg-orange-600 text-white' : 'bg-orange-50 text-orange-700 hover:bg-orange-100'}`}
-                >
-                  <FileText size={12} /> Documentos ({countByTipo.documento})
-                </button>
-              )}
-              {countByTipo.observacao > 0 && (
-                <button
-                  onClick={() => setFiltroTipo('observacao')}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition flex items-center gap-1 ${filtroTipo === 'observacao' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
-                >
-                  <MessageSquare size={12} /> Observações ({countByTipo.observacao})
-                </button>
-              )}
-              {countByTipo.ret > 0 && (
-                <button
-                  onClick={() => setFiltroTipo('ret')}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition flex items-center gap-1 ${filtroTipo === 'ret' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
-                >
-                  <ShieldCheck size={12} /> RETs ({countByTipo.ret})
-                </button>
-              )}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <Filter size={14} className="text-[var(--text-3)]" />
+              {([
+                { val: 'todos', label: 'Todos', count: allItems.length, icon: null },
+                { val: 'empresa', label: 'Empresas', count: countByTipo.empresa, icon: <Building2 size={12} /> },
+                { val: 'documento', label: 'Documentos', count: countByTipo.documento, icon: <FileText size={12} /> },
+                { val: 'observacao', label: 'Observações', count: countByTipo.observacao, icon: <MessageSquare size={12} /> },
+                { val: 'ret', label: 'RETs', count: countByTipo.ret, icon: <ShieldCheck size={12} /> },
+              ] as const).map((f) => {
+                if (f.val !== 'todos' && f.count === 0) return null;
+                const active = filtroTipo === f.val;
+                return (
+                  <button
+                    key={f.val}
+                    onClick={() => setFiltroTipo(f.val)}
+                    className={`inline-flex items-center gap-1 rounded-[var(--radius)] px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      active
+                        ? 'bg-[var(--brand-soft)] text-[var(--brand-strong)] border border-[var(--brand)]'
+                        : 'bg-[var(--surface-3)] text-[var(--text-2)] border border-transparent hover:bg-[var(--surface-3)] hover:text-[var(--text-1)]'
+                    }`}
+                  >
+                    {f.icon}
+                    <span>{f.label}</span>
+                    <span className="ct-num opacity-70">({f.count})</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -186,12 +172,12 @@ export default function LixeiraPage() {
 
       {/* Aviso */}
       {items.length > 0 && (
-        <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 flex items-start gap-3">
-          <AlertTriangle size={20} className="text-amber-500 mt-0.5 shrink-0" />
+        <div className="rounded-[var(--radius)] bg-[var(--warn-soft)] border-l-4 border-[var(--warn)] p-4 flex items-start gap-3">
+          <AlertTriangle size={18} className="text-[var(--warn)] mt-0.5 shrink-0" />
           <div>
-            <div className="text-sm font-bold text-amber-800">Itens na lixeira podem ser restaurados</div>
-            <div className="text-xs text-amber-600 mt-0.5">
-              Restaure itens excluídos ou exclua permanentemente. <strong>Itens com mais de 10 dias são removidos automaticamente.</strong>
+            <div className="text-sm font-semibold text-[var(--text-1)]">Itens na lixeira podem ser restaurados</div>
+            <div className="text-xs text-[var(--text-2)] mt-0.5">
+              Restaure itens excluídos ou exclua permanentemente. <strong className="font-semibold text-[var(--text-1)]">Itens com mais de 10 dias são removidos automaticamente.</strong>
             </div>
           </div>
         </div>
@@ -199,12 +185,12 @@ export default function LixeiraPage() {
 
       {/* Items */}
       {items.length === 0 ? (
-        <div className="rounded-2xl bg-white shadow-sm p-16 text-center">
-          <div className="h-16 w-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
-            <Trash2 size={32} className="text-gray-300" />
+        <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] p-16 text-center">
+          <div className="h-14 w-14 rounded-md bg-[var(--surface-3)] flex items-center justify-center mx-auto mb-4">
+            <Trash2 size={26} className="text-[var(--text-3)]" />
           </div>
-          <div className="text-lg font-bold text-gray-400">Lixeira vazia</div>
-          <div className="text-sm text-gray-400 mt-1">Itens excluídos aparecerão aqui</div>
+          <div className="text-lg font-bold text-[var(--text-1)] tracking-tight">Lixeira vazia</div>
+          <div className="text-sm text-[var(--text-2)] mt-1">Itens excluídos aparecerão aqui.</div>
         </div>
       ) : (
         <div className="space-y-3">
