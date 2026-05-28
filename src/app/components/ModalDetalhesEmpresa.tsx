@@ -511,30 +511,19 @@ export default function ModalDetalhesEmpresa({
                     .filter(Boolean) as { dep: string; user: string | null; depIdx: number }[]
                 );
 
-                if (mapped.length === 0) return <div className="text-sm text-gray-600">Nenhum responsável vinculado.</div>;
-
-                const DEPT_C: Record<number, { bg: string; text: string; border: string }> = {
-                  0: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
-                  1: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200' },
-                  2: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200' },
-                  3: { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
-                  4: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
-                  5: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
-                  6: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200' },
-                  7: { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200' },
-                };
+                if (mapped.length === 0) return <div className="text-sm text-[var(--text-2)]">Nenhum responsável vinculado.</div>;
 
                 return (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {mapped.map((m) => {
-                      const c = DEPT_C[m.depIdx % 8];
-                      return (
-                        <div key={m.dep} className={`rounded-xl px-4 py-3 border-2 ${c.bg} ${c.border}`}>
-                          <div className={`text-[11px] font-bold ${c.text} uppercase tracking-wide`}>{m.dep}</div>
-                          <div className="text-sm font-bold text-gray-900 mt-1">{m.user || '—'}</div>
-                        </div>
-                      );
-                    })}
+                    {mapped.map((m) => (
+                      <div
+                        key={m.dep}
+                        className="rounded-[var(--radius)] px-4 py-3 bg-[var(--surface-3)] border border-[var(--border)]"
+                      >
+                        <div className="text-[11px] font-semibold text-[var(--text-3)] uppercase tracking-wider">{m.dep}</div>
+                        <div className="text-sm font-semibold text-[var(--text-1)] mt-1">{m.user || '—'}</div>
+                      </div>
+                    ))}
                   </div>
                 );
               })()}
