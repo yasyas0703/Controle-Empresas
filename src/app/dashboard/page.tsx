@@ -480,24 +480,24 @@ export default function DashboardPage() {
 
       {/* Risk Alert Banner — próximos a vencer (crítico + atenção) */}
       {(criticos.length > 0 || atencao.length > 0) && (
-        <div className="rounded-2xl bg-gradient-to-r from-red-50 via-orange-50 to-amber-50 dark:from-rose-500/85 dark:via-rose-500/85 dark:to-red-500/85 p-5 shadow-sm dark:shadow-md dark:ring-1 dark:ring-rose-300/30">
+        <div className="rounded-[var(--radius-md)] bg-[var(--warn-soft)] border-l-4 border-[var(--warn)] p-5">
           <div className="flex items-center gap-3 mb-3">
-            <div className="h-10 w-10 rounded-xl bg-red-100 dark:bg-white/20 flex items-center justify-center">
-              <AlertTriangle className="text-red-500 dark:text-white" size={22} />
+            <div className="h-10 w-10 rounded-md bg-[var(--surface-2)] border border-[var(--border)] flex items-center justify-center shrink-0">
+              <AlertTriangle className="text-[var(--warn)]" size={20} />
             </div>
             <div>
-              <div className="text-lg font-bold text-red-800 dark:text-white">{criticos.length + atencao.length} Próximo(s) a Vencer</div>
-              <div className="text-sm text-red-600 dark:text-rose-100">
+              <div className="text-lg font-bold text-[var(--text-1)]">{criticos.length + atencao.length} Próximo(s) a Vencer</div>
+              <div className="text-sm text-[var(--text-2)]">
                 {criticos.length > 0 && (
-                  <span className="font-bold inline-flex items-center gap-1.5">
-                    <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-red-500 dark:bg-red-300" />
+                  <span className="font-semibold inline-flex items-center gap-1.5">
+                    <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-[var(--danger)]" />
                     {criticos.length} crítico(s) (≤{limiares.critico}d)
                   </span>
                 )}
                 {criticos.length > 0 && atencao.length > 0 && ' • '}
                 {atencao.length > 0 && (
                   <span className="inline-flex items-center gap-1.5">
-                    <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-amber-500 dark:bg-amber-300" />
+                    <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-[var(--warn)]" />
                     {atencao.length} em atenção (≤{limiares.atencao}d)
                   </span>
                 )}
@@ -506,22 +506,22 @@ export default function DashboardPage() {
           </div>
           <div className="space-y-2">
             {[...criticos, ...atencao].slice(0, 8).map((r, idx) => (
-              <div key={idx} className={`flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 ${r.dias <= limiares.critico ? 'animate-alert-blink border border-red-400 dark:border-white/30 dark:bg-white/15' : 'bg-white/70 dark:bg-white/10'}`}>
+              <div key={idx} className={`flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 rounded-[var(--radius)] px-3 sm:px-4 py-2.5 sm:py-3 ${r.dias <= limiares.critico ? 'animate-alert-blink border border-[var(--danger)]' : 'bg-[var(--surface-2)] border border-[var(--border)]'}`}>
                 <div className="flex items-center gap-2 min-w-0">
-                  <Clock size={16} className={`shrink-0 ${r.dias <= limiares.critico ? 'text-red-500 dark:text-white' : 'text-amber-500 dark:text-white'}`} />
-                  <span className="font-bold text-gray-800 dark:text-white shrink-0">{r.empresaCodigo}</span>
-                  <span className="text-gray-500 dark:text-white/60 hidden sm:inline">—</span>
-                  <span className="font-bold text-gray-800 dark:text-white truncate">{r.empresaNome}</span>
+                  <Clock size={16} className={`shrink-0 ${r.dias <= limiares.critico ? 'text-[var(--danger)]' : 'text-[var(--warn)]'}`} />
+                  <span className="font-semibold text-[var(--text-1)] shrink-0">{r.empresaCodigo}</span>
+                  <span className="text-[var(--text-3)] hidden sm:inline">—</span>
+                  <span className="font-semibold text-[var(--text-1)] truncate">{r.empresaNome}</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 pl-6 sm:pl-0 sm:ml-auto">
                   {r.tipo === 'Fiscal' && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-600 text-white dark:bg-white dark:text-rose-700 whitespace-nowrap">FISCAL</span>
+                    <span className="px-2 py-0.5 rounded-sm text-[10px] font-bold bg-[var(--danger)] text-white whitespace-nowrap">FISCAL</span>
                   )}
-                  <span className="text-gray-700 dark:text-white/90 text-sm break-words" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.nome}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap ${r.dias <= limiares.critico ? 'bg-red-100 text-red-700 dark:bg-white dark:text-red-700' : 'bg-amber-100 text-amber-700 dark:bg-white/85 dark:text-rose-700'}`}>
+                  <span className="text-[var(--text-2)] text-sm break-words" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.nome}</span>
+                  <span className={`px-2 py-0.5 rounded-sm text-xs font-bold whitespace-nowrap ${r.dias <= limiares.critico ? 'bg-[var(--danger-soft)] text-[var(--danger)]' : 'bg-[var(--warn-soft)] text-[var(--warn)]'}`}>
                     {r.dias}d restantes
                   </span>
-                  <span className="text-xs text-gray-400 dark:text-white/70 whitespace-nowrap">{formatBR(r.vencimento)}</span>
+                  <span className="text-xs text-[var(--text-3)] whitespace-nowrap">{formatBR(r.vencimento)}</span>
                   {r.tagVencimento && (
                     <span className={DASHBOARD_TAG_BADGE_CLASS}>
                       <Tag size={11} />
@@ -536,7 +536,7 @@ export default function DashboardPage() {
                   )}
                   <button
                     onClick={() => abrirHistoricoItem(r.empresaId, r.itemId, r.tipo)}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-white px-2.5 py-1 text-[10px] font-bold text-orange-700 hover:bg-orange-50 dark:border-white/30 dark:bg-white/15 dark:text-white dark:hover:bg-white/25"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-semibold text-[var(--text-2)] hover:bg-[var(--surface-3)] transition-colors"
                   >
                     <History size={11} />
                     Historico
@@ -545,7 +545,7 @@ export default function DashboardPage() {
               </div>
             ))}
             {(criticos.length + atencao.length) > 8 && (
-              <div className="text-sm text-red-600 dark:text-white/90 font-semibold pl-4">+{criticos.length + atencao.length - 8} mais itens em risco</div>
+              <div className="text-sm text-[var(--text-2)] font-semibold pl-4">+{criticos.length + atencao.length - 8} mais itens em risco</div>
             )}
           </div>
         </div>
@@ -553,34 +553,34 @@ export default function DashboardPage() {
 
       {/* Próximo (≤90d) — Banner verde */}
       {proximo.length > 0 && (
-        <div className="rounded-2xl bg-gradient-to-r from-green-50 via-emerald-50 to-teal-50 dark:from-emerald-500/85 dark:via-emerald-500/85 dark:to-teal-500/85 p-5 shadow-sm dark:shadow-md dark:ring-1 dark:ring-emerald-300/30">
+        <div className="rounded-[var(--radius-md)] bg-[var(--ok-soft)] border-l-4 border-[var(--ok)] p-5">
           <div className="flex items-center gap-3 mb-3">
-            <div className="h-10 w-10 rounded-xl bg-green-100 dark:bg-white/20 flex items-center justify-center">
-              <Clock className="text-green-600 dark:text-white" size={22} />
+            <div className="h-10 w-10 rounded-md bg-[var(--surface-2)] border border-[var(--border)] flex items-center justify-center shrink-0">
+              <Clock className="text-[var(--ok)]" size={20} />
             </div>
             <div>
-              <div className="text-lg font-bold text-green-800 dark:text-white inline-flex items-center gap-2">
-                <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-full bg-green-500 dark:bg-green-300" />
+              <div className="text-lg font-bold text-[var(--text-1)] inline-flex items-center gap-2">
+                <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-full bg-[var(--ok)]" />
                 {proximo.length} Próximo(s) (≤{limiares.proximo} dias)
               </div>
-              <div className="text-sm text-green-600 dark:text-emerald-100">Estes documentos/RETs vencem nos próximos {limiares.atencao + 1} a {limiares.proximo} dias</div>
+              <div className="text-sm text-[var(--text-2)]">Vencem nos próximos {limiares.atencao + 1} a {limiares.proximo} dias.</div>
             </div>
           </div>
           <div className="space-y-2">
             {proximo.slice(0, 8).map((r, idx) => (
-              <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 bg-white/70 dark:bg-white/10 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3">
+              <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 bg-[var(--surface-2)] border border-[var(--border)] rounded-[var(--radius)] px-3 sm:px-4 py-2.5 sm:py-3">
                 <div className="flex items-center gap-2 min-w-0">
-                  <Clock size={16} className="shrink-0 text-green-500 dark:text-white" />
-                  <span className="font-bold text-gray-800 dark:text-white shrink-0">{r.empresaCodigo}</span>
-                  <span className="text-gray-500 dark:text-white/60 hidden sm:inline">—</span>
-                  <span className="font-bold text-gray-800 dark:text-white truncate">{r.empresaNome}</span>
+                  <Clock size={16} className="shrink-0 text-[var(--ok)]" />
+                  <span className="font-semibold text-[var(--text-1)] shrink-0">{r.empresaCodigo}</span>
+                  <span className="text-[var(--text-3)] hidden sm:inline">—</span>
+                  <span className="font-semibold text-[var(--text-1)] truncate">{r.empresaNome}</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 pl-6 sm:pl-0 sm:ml-auto">
-                  <span className="text-gray-700 dark:text-white/90 text-sm break-words" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.nome}</span>
-                  <span className="px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap bg-green-100 text-green-700 dark:bg-white dark:text-emerald-700">
+                  <span className="text-[var(--text-2)] text-sm break-words" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.nome}</span>
+                  <span className="px-2 py-0.5 rounded-sm text-xs font-bold whitespace-nowrap bg-[var(--ok-soft)] text-[var(--ok)]">
                     {r.dias}d restantes
                   </span>
-                  <span className="text-xs text-gray-400 dark:text-white/70 whitespace-nowrap">{formatBR(r.vencimento)}</span>
+                  <span className="text-xs text-[var(--text-3)] whitespace-nowrap">{formatBR(r.vencimento)}</span>
                   {r.tagVencimento && (
                     <span className={DASHBOARD_TAG_BADGE_CLASS}>
                       <Tag size={11} />
@@ -595,7 +595,7 @@ export default function DashboardPage() {
                   )}
                   <button
                     onClick={() => abrirHistoricoItem(r.empresaId, r.itemId, r.tipo)}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-white px-2.5 py-1 text-[10px] font-bold text-green-700 hover:bg-green-50 dark:border-white/30 dark:bg-white/15 dark:text-white dark:hover:bg-white/25"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-semibold text-[var(--text-2)] hover:bg-[var(--surface-3)] transition-colors"
                   >
                     <History size={11} />
                     Historico
@@ -604,7 +604,7 @@ export default function DashboardPage() {
               </div>
             ))}
             {proximo.length > 8 && (
-              <div className="text-sm text-green-600 dark:text-white/90 font-semibold pl-4">+{proximo.length - 8} mais itens</div>
+              <div className="text-sm text-[var(--text-2)] font-semibold pl-4">+{proximo.length - 8} mais itens</div>
             )}
           </div>
         </div>
