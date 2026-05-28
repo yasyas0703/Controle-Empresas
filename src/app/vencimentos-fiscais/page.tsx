@@ -309,26 +309,23 @@ export default function VencimentosFiscaisPage() {
     <div className="space-y-4 sm:space-y-6 min-w-0 max-w-full">
       <FiscalTabs />
       {/* Header */}
-      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-4 sm:p-6 border border-[var(--border)]">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-2xl bg-gradient-to-br from-red-500 via-orange-500 to-amber-500 flex items-center justify-center shadow-md shrink-0">
-              <Grid3x3 className="text-white" size={22} />
+            <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] flex items-center justify-center shrink-0">
+              <Grid3x3 size={22} />
             </div>
             <div className="min-w-0">
-              <div className="text-lg sm:text-2xl font-bold text-gray-900">Painel Fiscal - Batalha Naval</div>
-              <div className="text-xs sm:text-sm text-gray-500">
-                Controle visual dos vencimentos fiscais por responsavel.
-                {' '}Clique num quadradinho para ver e registrar historico.
+              <div className="text-lg sm:text-2xl font-bold text-[var(--text-1)] tracking-tight">Painel Fiscal — Batalha Naval</div>
+              <div className="text-xs sm:text-sm text-[var(--text-2)]">
+                Controle visual dos vencimentos fiscais por responsável.
+                {' '}Clique num quadradinho para ver e registrar histórico.
               </div>
             </div>
           </div>
           {canManage && (
-            <button
-              onClick={() => setShowLimiares(true)}
-              className="inline-flex items-center gap-2 rounded-xl border-2 border-violet-200 text-violet-700 px-3 py-2 font-bold hover:bg-violet-50 transition shrink-0"
-            >
-              <Filter size={18} />
+            <button onClick={() => setShowLimiares(true)} className="ct-btn-secondary shrink-0">
+              <Filter size={16} />
               <span>Limiares</span>
             </button>
           )}
@@ -693,22 +690,29 @@ function ModalDetalheEmpresa({
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onMouseDown={(e) => e.currentTarget === e.target && onClose()}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      <div className="relative w-full max-w-3xl max-h-[85vh] rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col">
-        <div className="bg-gradient-to-r from-red-600 via-orange-500 to-amber-500 px-5 py-4 flex items-center justify-between">
-          <div className="text-white">
-            <div className="text-xs font-bold uppercase tracking-wider opacity-90">Vencimentos fiscais da empresa</div>
-            <div className="text-lg font-bold">{empresa.codigo} - {empresa.razao_social || empresa.apelido || '-'}</div>
+      <div
+        className="relative w-full max-w-3xl max-h-[85vh] rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] overflow-hidden flex flex-col"
+        style={{ boxShadow: 'var(--shadow-pop)' }}
+      >
+        <div className="border-b border-[var(--border-subtle)] px-5 py-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-3)]">Vencimentos fiscais da empresa</div>
+            <div className="text-base font-bold text-[var(--text-1)] truncate mt-0.5">
+              <span className="ct-num text-[var(--text-2)] mr-1">{empresa.codigo}</span>
+              {empresa.razao_social || empresa.apelido || '—'}
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-2 bg-white/20 hover:bg-white/30 text-white transition"
+            className="rounded-md p-2 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition shrink-0"
+            aria-label="Fechar"
           >
-            <XCircle size={20} />
+            <XCircle size={18} />
           </button>
         </div>
         <div className="p-5 overflow-y-auto">
-          <div className="text-xs text-gray-500 mb-3">
-            Clique em qualquer obrigacao abaixo para ver ou registrar no historico.
+          <div className="text-xs text-[var(--text-3)] mb-3">
+            Clique em qualquer obrigação para ver ou registrar no histórico.
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {fiscais.map(({ fiscal, dias, status, feitoNoChecklist }) => {
