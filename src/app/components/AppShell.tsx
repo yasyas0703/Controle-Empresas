@@ -561,7 +561,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         </div>
       )}
       <aside
-        className={`fixed top-0 left-0 h-full z-[70] bg-white border-r border-gray-200 shadow-lg flex flex-col transition-transform duration-300 ease-in-out w-72 md:hidden ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`fixed top-0 left-0 h-full z-[70] bg-[var(--surface-2)] border-r border-[var(--border)] flex flex-col transition-transform duration-300 ease-in-out w-72 md:hidden ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
       >
         <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100">
@@ -593,12 +593,18 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                 key={i.href}
                 href={i.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition-all
+                className={`relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors
                   ${active
-                    ? isVenc ? 'text-red-700 bg-red-50' : 'text-cyan-700 bg-cyan-50'
-                    : isVenc ? 'text-red-500 hover:bg-red-50 hover:text-red-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                    ? isVenc ? 'text-[var(--danger)]' : 'text-[var(--brand)]'
+                    : isVenc ? 'text-[var(--danger)] hover:bg-gray-100' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                   }`}
               >
+                {active && (
+                  <span
+                    aria-hidden
+                    className={`absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-sm ${isVenc ? 'bg-[var(--danger)]' : 'bg-[var(--brand)]'}`}
+                  />
+                )}
                 <Icon size={18} className="shrink-0" />
                 <span className="flex-1">{i.label}</span>
                 {showBadge && (
@@ -653,7 +659,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
       {/* ── Desktop Sidebar ── */}
       <aside
-        className={`fixed top-0 left-0 h-full z-40 bg-white border-r border-gray-200 shadow-lg flex-col transition-all duration-200 ease-in-out hidden md:flex ${sidebarOpen ? 'w-64' : 'w-[72px]'
+        className={`fixed top-0 left-0 h-full z-40 bg-[var(--surface-2)] border-r border-[var(--border)] flex-col transition-all duration-200 ease-in-out hidden md:flex ${sidebarOpen ? 'w-64' : 'w-[72px]'
           }`}
       >
         {/* Logo + Nome */}
@@ -688,13 +694,19 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                 key={i.href}
                 href={i.href}
                 title={!sidebarOpen ? i.label : undefined}
-                className={`flex items-center rounded-lg px-2.5 py-2 text-sm font-semibold transition-all relative
+                className={`flex items-center rounded-lg px-2.5 py-2 text-sm font-semibold transition-colors relative
                   ${sidebarOpen ? 'gap-3' : 'justify-center gap-0'}
                   ${active
-                    ? isVenc ? 'text-red-700 bg-red-50' : 'text-cyan-700 bg-cyan-50'
-                    : isVenc ? 'text-red-500 hover:bg-red-50 hover:text-red-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                    ? isVenc ? 'text-[var(--danger)]' : 'text-[var(--brand)]'
+                    : isVenc ? 'text-[var(--danger)] hover:bg-gray-100' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                   }`}
               >
+                {active && (
+                  <span
+                    aria-hidden
+                    className={`absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-sm ${isVenc ? 'bg-[var(--danger)]' : 'bg-[var(--brand)]'}`}
+                  />
+                )}
                 <Icon size={18} className="shrink-0" />
                 {sidebarOpen && <span className="truncate flex-1">{i.label}</span>}
                 {showBadge && (
