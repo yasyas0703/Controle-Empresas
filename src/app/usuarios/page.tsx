@@ -109,26 +109,33 @@ export default function UsuariosPage() {
 
   if (!canAdmin) {
     return (
-      <div className="rounded-2xl bg-white p-6 shadow-sm">
-        <div className="text-lg font-bold text-gray-900">Usuários</div>
-        <div className="mt-2 text-sm text-gray-600">Apenas administradores têm acesso a esta área.</div>
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-6 border border-[var(--border)]">
+        <div className="text-lg font-bold text-[var(--text-1)] tracking-tight">Usuários</div>
+        <div className="mt-2 text-sm text-[var(--text-2)]">Apenas administradores têm acesso a esta área.</div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
-        <div className="text-xl sm:text-2xl font-bold text-gray-900">Gerenciar Usuários</div>
-        <div className="text-sm text-gray-500">Crie usuários, defina o cargo e vincule ao departamento</div>
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-4 sm:p-6 border border-[var(--border)]">
+        <div className="flex items-center gap-3">
+          <div className="h-11 w-11 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] flex items-center justify-center shrink-0">
+            <User size={20} />
+          </div>
+          <div>
+            <div className="text-xl sm:text-2xl font-bold text-[var(--text-1)] tracking-tight">Gerenciar Usuários</div>
+            <div className="text-sm text-[var(--text-2)]">Crie usuários, defina o cargo e vincule ao departamento.</div>
+          </div>
+        </div>
 
         {/* Dica: divisão Fiscal x Fiscal - SN */}
         {fiscalDept && !fiscalSnDept && (
-          <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-            <Info size={18} className="text-amber-600 shrink-0" />
-            <div className="flex-1 text-xs sm:text-sm text-amber-900">
-              Para usuários do <span className="font-bold">Simples Nacional</span> existe um departamento separado.
-              Crie agora o <span className="font-bold">&quot;Fiscal - SN&quot;</span> para já poder vinculá-los aqui.
+          <div className="mt-4 rounded-[var(--radius)] bg-[var(--warn-soft)] border-l-4 border-[var(--warn)] p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+            <Info size={18} className="text-[var(--warn)] shrink-0" />
+            <div className="flex-1 text-xs sm:text-sm text-[var(--text-1)]">
+              Para usuários do <span className="font-semibold">Simples Nacional</span> existe um departamento separado.
+              Crie agora o <span className="font-semibold">&quot;Fiscal - SN&quot;</span> para já poder vinculá-los aqui.
             </div>
             <button
               type="button"
@@ -144,31 +151,31 @@ export default function UsuariosPage() {
                   setCriandoSnDept(false);
                 }
               }}
-              className="rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-3 py-2 text-xs sm:text-sm font-bold shadow disabled:opacity-50 shrink-0"
+              className="inline-flex items-center justify-center rounded-[var(--radius)] bg-[var(--warn)] hover:brightness-95 text-white px-3 py-2 text-xs sm:text-sm font-semibold disabled:opacity-50 shrink-0 transition"
             >
               {criandoSnDept ? 'Criando...' : 'Criar "Fiscal - SN"'}
             </button>
           </div>
         )}
 
-        <div className="mt-6 rounded-2xl bg-cyan-50 p-5">
-          <div className="font-bold text-cyan-900">Criar Novo Usuário</div>
-          <div className="text-[11px] sm:text-xs text-cyan-700 mt-1">
-            Para usuários fiscais, escolha entre <span className="font-bold">Fiscal</span> (regime normal) e <span className="font-bold">Fiscal - SN</span> (Simples Nacional) no campo Departamento.
+        <div className="mt-5 rounded-[var(--radius)] bg-[var(--surface-3)] border border-[var(--border)] p-4">
+          <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-3)] mb-1">Criar novo usuário</div>
+          <div className="text-[11px] sm:text-xs text-[var(--text-2)] mb-4">
+            Para usuários fiscais, escolha entre <span className="font-semibold text-[var(--text-1)]">Fiscal</span> (regime normal) e <span className="font-semibold text-[var(--text-1)]">Fiscal - SN</span> (Simples Nacional) no campo Departamento.
           </div>
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field label="Nome">
-              <input value={nome} onChange={(e) => setNome(e.target.value)} className="w-full rounded-xl bg-white px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400" placeholder="Nome do usuário" />
+              <input value={nome} onChange={(e) => setNome(e.target.value)} className="ct-input" placeholder="Nome do usuário" />
             </Field>
             <Field label="Senha">
-              <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} className="w-full rounded-xl bg-white px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400" placeholder="Senha" />
+              <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} className="ct-input" placeholder="Senha" />
             </Field>
             <Field label="Email (login)">
-              <input value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-xl bg-white px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400" placeholder="email@empresa.com" />
+              <input value={email} onChange={(e) => setEmail(e.target.value)} className="ct-input" placeholder="email@empresa.com" />
             </Field>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="Cargo">
-                <select value={role} onChange={(e) => { setRole(e.target.value as Role); if (e.target.value === 'admin') setDepId(''); }} className="w-full rounded-xl bg-white px-4 py-3 text-gray-900">
+                <select value={role} onChange={(e) => { setRole(e.target.value as Role); if (e.target.value === 'admin') setDepId(''); }} className="ct-input">
                   <option value="usuario">Usuário</option>
                   <option value="gerente">Gerente</option>
                   <option value="admin">Administrador</option>
@@ -176,7 +183,7 @@ export default function UsuariosPage() {
               </Field>
               {role !== 'admin' && (
                 <Field label="Departamento">
-                  <select value={depId} onChange={(e) => setDepId(e.target.value)} className="w-full rounded-xl bg-white px-4 py-3 text-gray-900">
+                  <select value={depId} onChange={(e) => setDepId(e.target.value)} className="ct-input">
                     <option value="">Selecione...</option>
                     {deps.map((d) => (
                       <option key={d.id} value={d.id}>{d.nome}</option>
@@ -189,23 +196,23 @@ export default function UsuariosPage() {
           {role !== 'admin' && deps.length > 1 && (
             <div className="mt-4">
               <Field label="Também tem acesso a (opcional)">
-                <div className="rounded-xl bg-white px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="rounded-[var(--radius)] bg-[var(--surface-2)] border border-[var(--border)] px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {deps.filter((d) => d.id !== depId).map((d) => {
                     const checked = depExtras.includes(d.id);
                     return (
-                      <label key={d.id} className="inline-flex items-center gap-2 cursor-pointer text-sm text-gray-800">
+                      <label key={d.id} className="inline-flex items-center gap-2 cursor-pointer text-sm text-[var(--text-1)]">
                         <input
                           type="checkbox"
                           checked={checked}
                           onChange={() => setDepExtras((prev) => checked ? prev.filter((x) => x !== d.id) : [...prev, d.id])}
-                          className="h-4 w-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-400"
+                          className="h-4 w-4 rounded border-gray-300 accent-[var(--brand)]"
                         />
                         {d.nome}
                       </label>
                     );
                   })}
                 </div>
-                <div className="mt-1 text-[11px] text-gray-500">
+                <div className="mt-1 text-[11px] text-[var(--text-3)]">
                   Marque outros departamentos onde a pessoa também atua (ex: gerente do Fiscal e do Fiscal - SN).
                 </div>
               </Field>
@@ -239,16 +246,18 @@ export default function UsuariosPage() {
                 mostrarAlerta('Erro ao criar usuário', getErrorMessage(err, 'Nao foi possivel criar o usuario.'), 'erro');
               }
             }}
-            className="mt-4 inline-flex items-center gap-2 w-full rounded-xl bg-gradient-to-r from-cyan-600 to-teal-500 text-white px-4 py-3 font-bold hover:from-cyan-700 hover:to-teal-600 shadow-md justify-center"
+            className="ct-btn-primary mt-4 w-full"
           >
-            <Plus size={18} />
+            <Plus size={16} />
             Criar Usuário
           </button>
         </div>
       </div>
 
-      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
-        <div className="text-lg font-bold text-gray-900">Usuários Cadastrados ({usuariosOrdenados.length})</div>
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-4 sm:p-6 border border-[var(--border)]">
+        <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-3)] mb-3">
+          Usuários cadastrados (<span className="ct-num text-[var(--text-1)]">{usuariosOrdenados.length}</span>)
+        </div>
 
         <div className="mt-4 space-y-3">
           {usuariosOrdenados.map((u) => {
@@ -326,34 +335,46 @@ export default function UsuariosPage() {
       {/* Modal de Edição */}
       {editUser && (
         <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4" onMouseDown={(e) => e.currentTarget === e.target && setEditUser(null)}>
-          <div className="absolute inset-0 bg-black/50" />
-          <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden">
-            <div className="bg-gradient-to-r from-cyan-600 to-teal-500 p-5 flex items-center justify-between">
-              <div>
-                <div className="text-lg font-bold text-white">Editar Usuário</div>
-                <div className="text-sm text-cyan-100">{editUser.email}</div>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
+          <div
+            className="relative w-full max-w-lg rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] overflow-hidden"
+            style={{ boxShadow: 'var(--shadow-pop)' }}
+          >
+            <div className="border-b border-[var(--border-subtle)] p-5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] shrink-0">
+                  <Pencil size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-base font-bold text-[var(--text-1)] tracking-tight">Editar Usuário</div>
+                  <div className="text-xs text-[var(--text-3)] mt-0.5 truncate">{editUser.email}</div>
+                </div>
               </div>
-              <button onClick={() => setEditUser(null)} className="text-white/80 hover:text-white">
-                <X size={22} />
+              <button
+                onClick={() => setEditUser(null)}
+                className="rounded-md p-2 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition shrink-0"
+                aria-label="Fechar"
+              >
+                <X size={18} />
               </button>
             </div>
 
             <div className="p-5 space-y-4">
               <Field label="Nome">
-                <input value={editNome} onChange={(e) => setEditNome(e.target.value)} className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white" />
+                <input value={editNome} onChange={(e) => setEditNome(e.target.value)} className="ct-input" />
               </Field>
 
               <Field label="Email (login)">
-                <input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white" />
+                <input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className="ct-input" />
               </Field>
 
               <Field label="Nova Senha (deixe vazio para manter)">
-                <input type="password" value={editSenha} onChange={(e) => setEditSenha(e.target.value)} className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white" placeholder="Nova senha" />
+                <input type="password" value={editSenha} onChange={(e) => setEditSenha(e.target.value)} className="ct-input" placeholder="Nova senha" />
               </Field>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Cargo">
-                  <select value={editRole} onChange={(e) => { setEditRole(e.target.value as Role); if (e.target.value === 'admin') setEditDepId(''); }} className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900">
+                  <select value={editRole} onChange={(e) => { setEditRole(e.target.value as Role); if (e.target.value === 'admin') setEditDepId(''); }} className="ct-input">
                     <option value="usuario">Usuário</option>
                     <option value="gerente">Gerente</option>
                     <option value="admin">Administrador</option>
@@ -361,7 +382,7 @@ export default function UsuariosPage() {
                 </Field>
                 {editRole !== 'admin' && (
                   <Field label="Departamento">
-                    <select value={editDepId} onChange={(e) => setEditDepId(e.target.value)} className="w-full rounded-xl bg-gray-50 px-4 py-3 text-gray-900">
+                    <select value={editDepId} onChange={(e) => setEditDepId(e.target.value)} className="ct-input">
                       <option value="">Nenhum</option>
                       {deps.map((d) => (
                         <option key={d.id} value={d.id}>{d.nome}</option>
@@ -373,39 +394,33 @@ export default function UsuariosPage() {
 
               {editRole !== 'admin' && deps.length > 1 && (
                 <Field label="Também tem acesso a (opcional)">
-                  <div className="rounded-xl bg-gray-50 px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="rounded-[var(--radius)] bg-[var(--surface-3)] border border-[var(--border)] px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {deps.filter((d) => d.id !== editDepId).map((d) => {
                       const checked = editDepExtras.includes(d.id);
                       return (
-                        <label key={d.id} className="inline-flex items-center gap-2 cursor-pointer text-sm text-gray-800">
+                        <label key={d.id} className="inline-flex items-center gap-2 cursor-pointer text-sm text-[var(--text-1)]">
                           <input
                             type="checkbox"
                             checked={checked}
                             onChange={() => setEditDepExtras((prev) => checked ? prev.filter((x) => x !== d.id) : [...prev, d.id])}
-                            className="h-4 w-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-400"
+                            className="h-4 w-4 rounded border-gray-300 accent-[var(--brand)]"
                           />
                           {d.nome}
                         </label>
                       );
                     })}
                   </div>
-                  <div className="mt-1 text-[11px] text-gray-500">
+                  <div className="mt-1 text-[11px] text-[var(--text-3)]">
                     Marque outros departamentos onde a pessoa também atua (ex: gerente do Fiscal e do Fiscal - SN).
                   </div>
                 </Field>
               )}
 
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setEditUser(null)}
-                  className="flex-1 rounded-xl bg-gray-100 px-4 py-3 font-semibold text-gray-700 hover:bg-gray-200 transition"
-                >
+              <div className="flex gap-2 pt-2">
+                <button onClick={() => setEditUser(null)} className="ct-btn-secondary flex-1">
                   Cancelar
                 </button>
-                <button
-                  onClick={handleEditSave}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-500 text-white px-4 py-3 font-bold hover:from-cyan-700 hover:to-teal-600 shadow-md"
-                >
+                <button onClick={handleEditSave} className="ct-btn-primary flex-1">
                   Salvar Alterações
                 </button>
               </div>

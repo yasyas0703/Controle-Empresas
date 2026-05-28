@@ -43,9 +43,11 @@ export default function EmpresasDesligadasPage() {
   if (!authReady) return null;
   if (!currentUser) {
     return (
-      <div className="rounded-2xl bg-white p-6 sm:p-8 shadow-sm border border-gray-100 text-center">
-        <ShieldAlert size={28} className="mx-auto text-red-500 mb-2" />
-        <div className="text-lg font-bold text-gray-900">Acesso restrito</div>
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-6 sm:p-8 border border-[var(--border)] text-center">
+        <div className="inline-flex items-center justify-center h-12 w-12 rounded-md bg-[var(--danger-soft)] text-[var(--danger)] mb-3">
+          <ShieldAlert size={26} />
+        </div>
+        <div className="text-lg font-bold text-[var(--text-1)] tracking-tight">Acesso restrito</div>
       </div>
     );
   }
@@ -53,38 +55,40 @@ export default function EmpresasDesligadasPage() {
   return (
     <div className="space-y-4 sm:space-y-6 min-w-0 max-w-full">
       {/* Header */}
-      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-4 sm:p-6 border border-[var(--border)]">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-2xl bg-gradient-to-br from-slate-500 via-slate-600 to-zinc-700 flex items-center justify-center shadow-md shrink-0">
-            <Archive className="text-white" size={22} />
+          <div className="h-11 w-11 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] flex items-center justify-center shrink-0">
+            <Archive size={20} />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-lg sm:text-2xl font-bold text-gray-900">Empresas Desligadas</div>
-            <div className="text-xs sm:text-sm text-gray-500">
-              {empresasDesligadas.length} empresa(s) desligada(s). Os dados (extratos, documentos, observações) ficam preservados — você pode reativar a qualquer momento.
+            <div className="text-lg sm:text-2xl font-bold text-[var(--text-1)] tracking-tight">Empresas Desligadas</div>
+            <div className="text-xs sm:text-sm text-[var(--text-2)]">
+              <span className="ct-num font-semibold text-[var(--text-1)]">{empresasDesligadas.length}</span> empresa(s) desligada(s). Os dados (extratos, documentos, observações) ficam preservados — você pode reativar a qualquer momento.
             </div>
           </div>
         </div>
       </div>
 
       {/* Busca */}
-      <div className="rounded-2xl bg-white p-3 sm:p-4 shadow-sm">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-3 sm:p-4 border border-[var(--border)]">
         <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-3)] pointer-events-none" />
           <input
             type="text"
             placeholder="Buscar por código, CNPJ ou nome..."
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+            className="ct-input pl-9 text-sm"
           />
         </div>
       </div>
 
       {filtradas.length === 0 ? (
-        <div className="rounded-2xl bg-white p-10 shadow-sm text-center">
-          <Archive size={36} className="mx-auto text-gray-300 mb-2" />
-          <p className="text-sm text-gray-500">
+        <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] p-10 text-center">
+          <div className="inline-flex items-center justify-center h-12 w-12 rounded-md bg-[var(--surface-3)] text-[var(--text-3)] mb-3">
+            <Archive size={24} />
+          </div>
+          <p className="text-sm text-[var(--text-2)]">
             {empresasDesligadas.length === 0
               ? 'Nenhuma empresa desligada ainda.'
               : 'Nenhuma empresa encontrada com esses filtros.'}
