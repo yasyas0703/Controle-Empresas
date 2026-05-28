@@ -411,14 +411,14 @@ export default function EnvioGuiasPage() {
       <FiscalTabs />
 
       {/* Header */}
-      <div className="rounded-2xl bg-white dark:bg-slate-900 p-4 sm:p-6 shadow-sm border border-slate-200 dark:border-slate-700">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-4 sm:p-6 border border-[var(--border)]">
         <div className="flex items-start gap-3 flex-wrap">
-          <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-800 flex items-center justify-center shadow-sm shrink-0">
-            <Send className="text-white" size={22} />
+          <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] flex items-center justify-center shrink-0">
+            <Send size={22} />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-slate-100">Envio de Guias</div>
-            <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+            <div className="text-lg sm:text-2xl font-bold text-[var(--text-1)] tracking-tight">Envio de Guias</div>
+            <div className="text-xs sm:text-sm text-[var(--text-2)]">
               Selecione a empresa, escolha a guia e envie. O sistema valida o PDF antes do envio e marca como feito automaticamente no checklist.
             </div>
           </div>
