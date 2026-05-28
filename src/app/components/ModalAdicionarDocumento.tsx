@@ -101,16 +101,28 @@ export default function ModalAdicionarDocumento({
       isOpen={isOpen}
       onClose={handleClose}
       labelledBy="doc-title"
-      dialogClassName="w-full max-w-lg bg-white rounded-2xl shadow-2xl outline-none max-h-[90vh] overflow-y-auto"
+      dialogClassName="w-full max-w-lg bg-[var(--surface-2)] rounded-[var(--radius-md)] border border-[var(--border)] shadow-[0_8px_24px_rgba(0,0,0,0.18)] outline-none max-h-[90vh] overflow-y-auto"
       zIndex={1400}
     >
-      <div className="rounded-2xl">
-        <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-5 rounded-t-2xl">
-          <div className="flex items-center justify-between">
-            <h3 id="doc-title" className="text-lg font-bold text-white">
-              Adicionar Documento
-            </h3>
-            <button onClick={handleClose} className="text-white hover:bg-white/20 p-2 rounded-lg">
+      <div>
+        <div className="border-b border-[var(--border-subtle)] p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] shrink-0">
+                <Upload size={18} />
+              </div>
+              <div className="min-w-0">
+                <h3 id="doc-title" className="text-base font-bold text-[var(--text-1)]">
+                  Adicionar Documento
+                </h3>
+                <p className="text-xs text-[var(--text-3)] mt-0.5">Anexe um arquivo e defina a visibilidade.</p>
+              </div>
+            </div>
+            <button
+              onClick={handleClose}
+              className="text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] p-2 rounded-md transition shrink-0"
+              aria-label="Fechar"
+            >
               <X size={18} />
             </button>
           </div>
@@ -149,12 +161,12 @@ export default function ModalAdicionarDocumento({
         >
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Nome do documento <span className="text-red-500">*</span>
+              Nome do documento <span className="text-[var(--danger)]">*</span>
             </label>
             <input
               value={nome}
               onChange={(e) => setNome(e.target.value)}
-              className="w-full rounded-xl border px-4 py-3"
+              className="ct-input"
               placeholder="Ex.: Certidão, Alvará, Procuração..."
               required
             />
@@ -168,7 +180,7 @@ export default function ModalAdicionarDocumento({
               type="date"
               value={validade}
               onChange={(e) => setValidade(e.target.value)}
-              className="w-full rounded-xl border px-4 py-3"
+              className="ct-input"
             />
           </div>
 
@@ -216,10 +228,10 @@ export default function ModalAdicionarDocumento({
                 {departamentos.map((d) => (
                   <label
                     key={d.id}
-                    className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 cursor-pointer transition ${
+                    className={`flex items-center gap-2 rounded-[var(--radius)] border px-3 py-2.5 cursor-pointer transition ${
                       selectedDepts.includes(d.id)
-                        ? 'bg-orange-50 border-orange-300'
-                        : 'bg-white border-gray-200 hover:bg-gray-50'
+                        ? 'bg-[var(--brand-soft)] border-[var(--brand)] text-[var(--brand-strong)]'
+                        : 'bg-[var(--surface-2)] border-[var(--border)] hover:bg-[var(--surface-3)]'
                     }`}
                   >
                     <input
@@ -254,10 +266,10 @@ export default function ModalAdicionarDocumento({
                   {activeUsers.map((u) => (
                     <label
                       key={u.id}
-                      className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 cursor-pointer transition ${
+                      className={`flex items-center gap-3 rounded-[var(--radius)] border px-3 py-2.5 cursor-pointer transition ${
                         selectedUsers.includes(u.id)
-                          ? 'bg-purple-50 border-purple-300'
-                          : 'bg-white border-gray-200 hover:bg-gray-50'
+                          ? 'bg-[var(--brand-soft)] border-[var(--brand)] text-[var(--brand-strong)]'
+                          : 'bg-[var(--surface-2)] border-[var(--border)] hover:bg-[var(--surface-3)]'
                       }`}
                     >
                       <input
@@ -275,7 +287,7 @@ export default function ModalAdicionarDocumento({
                 </div>
               )}
               {selectedUsers.length > 0 && (
-                <div className="text-xs text-purple-600 font-semibold mt-1.5">
+                <div className="text-xs text-[var(--brand-strong)] font-semibold mt-1.5">
                   {selectedUsers.length} usuário(s) selecionado(s)
                 </div>
               )}
@@ -298,29 +310,29 @@ export default function ModalAdicionarDocumento({
                   type="button"
                   onClick={() => fileRef.current?.click()}
                   {...dragHandlers}
-                  className={`w-full rounded-xl border-2 border-dashed px-4 py-6 text-center transition ${
+                  className={`w-full rounded-[var(--radius)] border-2 border-dashed px-4 py-6 text-center transition ${
                     isDragging
-                      ? 'border-orange-500 bg-orange-100 scale-[1.01]'
-                      : 'border-gray-300 hover:border-orange-400 hover:bg-orange-50'
+                      ? 'border-[var(--brand)] bg-[var(--brand-soft)]'
+                      : 'border-[var(--border)] hover:border-[var(--brand)] hover:bg-[var(--surface-3)]'
                   }`}
                 >
-                  <Upload size={24} className={`mx-auto mb-2 ${isDragging ? 'text-orange-600' : 'text-gray-400'}`} />
-                  <div className="text-sm font-semibold text-gray-600">
+                  <Upload size={24} className={`mx-auto mb-2 ${isDragging ? 'text-[var(--brand)]' : 'text-[var(--text-3)]'}`} />
+                  <div className="text-sm font-semibold text-[var(--text-2)]">
                     {isDragging ? 'Solte o arquivo aqui' : 'Clique para selecionar ou arraste o arquivo aqui'}
                   </div>
-                  <div className="text-xs text-gray-400 mt-1">PDF, DOC, XLS, imagens, TXT (max. 10MB)</div>
+                  <div className="text-xs text-[var(--text-3)] mt-1">PDF, DOC, XLS, imagens, TXT (max. 10MB)</div>
                 </button>
               ) : (
-                <div className="flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3">
-                  <FileText size={20} className="text-orange-600 shrink-0" />
+                <div className="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-3)] px-4 py-3">
+                  <FileText size={20} className="text-[var(--brand)] shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold text-gray-900 truncate">{file.name}</div>
-                    <div className="text-xs text-gray-500">{(file.size / 1024).toFixed(1)} KB</div>
+                    <div className="text-sm font-semibold text-[var(--text-1)] truncate">{file.name}</div>
+                    <div className="text-xs text-[var(--text-3)]">{(file.size / 1024).toFixed(1)} KB</div>
                   </div>
                   <button
                     type="button"
                     onClick={handleRemoveFile}
-                    className="text-red-500 hover:text-red-700 text-xs font-bold"
+                    className="text-[var(--danger)] hover:opacity-80 text-xs font-bold"
                   >
                     Remover
                   </button>
@@ -329,17 +341,13 @@ export default function ModalAdicionarDocumento({
             </div>
           </div>
 
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={handleClose}
-              className="flex-1 rounded-xl border px-4 py-3 hover:bg-gray-50"
-            >
+          <div className="flex gap-2 pt-2">
+            <button type="button" onClick={handleClose} className="ct-btn-ghost flex-1">
               Cancelar
             </button>
             <button
               type="submit"
-              className="flex-1 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white px-4 py-3 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              className="ct-btn-primary flex-1"
               disabled={!nome.trim() || !file || (visibilidade === 'usuarios' && selectedUsers.length === 0)}
             >
               Adicionar
