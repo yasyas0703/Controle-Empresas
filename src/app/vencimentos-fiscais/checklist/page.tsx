@@ -137,6 +137,11 @@ export default function ChecklistFiscalPage() {
   // diferentes — uma obrigacao da aba antiga pode nao existir na nova).
   // Tem que vir DEPOIS de declarar `aba`, esta abaixo.
   const [apenasMinhas, setApenasMinhas] = useState(false);
+
+  // Pagina de 50 em 50 (mesmo padrao do dashboard) — empresas com checklist
+  // podem passar de 200, e a tabela inteira em DOM pesa.
+  const [paginaTamanho, setPaginaTamanho] = useState(50);
+  const incrementoPagina = 50;
   const apenasMinhasInitRef = useRef(false);
 
   const [obsTarget, setObsTarget] = useState<{ empresa: Empresa; obrigacao: string } | null>(null);
@@ -1011,6 +1016,18 @@ export default function ChecklistFiscalPage() {
     });
   }, [empresas, items, search, filtroUsuario, apenasMinhas, currentUserId, canManage, filtroProgresso, filtroObrigacao, filtroEstado, getResponsavelFiscal, obrigacoesAba, aplicaObrigacao, usuarioPertenceAba]);
 
+  // Pagina linhas visiveis (50 em 50). Stats calculam em cima do total — nao
+  // do visivel — pra contadores nao ficarem inconsistentes ao paginar.
+  const linhasVisiveis = useMemo(
+    () => linhas.slice(0, paginaTamanho),
+    [linhas, paginaTamanho],
+  );
+
+  // Reset da paginacao quando filtros mudam (volta a mostrar os primeiros 50)
+  useEffect(() => {
+    setPaginaTamanho(50);
+  }, [search, filtroUsuario, apenasMinhas, filtroProgresso, filtroObrigacao, filtroEstado]);
+
   // Stats
   const stats = useMemo(() => {
     const totalCells = linhas.reduce((s, l) => s + l.total, 0);
@@ -1494,7 +1511,7 @@ export default function ChecklistFiscalPage() {
                       >
                         <div className="leading-tight px-1">{obr}</div>
                         <div className="mt-1 flex items-center justify-center gap-1">
-                          <span className="rounded bg-emerald-600 px-1 text-[8px] font-black">{s.feitas}/{s.total}</span>
+                          <span className="rounded bg-emerald-200 text-emerald-900 px-1.5 text-[9px] font-bold ct-num">{s.feitas}/{s.total}</span>
                           {podeConfigurarValidacao && (
                             <button
                               onClick={() => setConfigurandoObrigacao(obr)}
@@ -1516,7 +1533,7 @@ export default function ChecklistFiscalPage() {
                 </tr>
               </thead>
               <tbody>
-                {linhas.map((l) => {
+                {linhasVisiveis.map((l) => {
                   const respUser = l.respId ? usuarios.find((u) => u.id === l.respId) : null;
                   const completa = l.total > 0 && l.feitas === l.total;
                   const vazia = l.feitas === 0;
@@ -1527,12 +1544,12 @@ export default function ChecklistFiscalPage() {
                     >
                       <td className="sticky left-0 z-10 bg-white border-b border-gray-100 px-3 py-2 w-[220px] min-w-[220px] max-w-[220px]">
                         <div className="flex items-center gap-2 min-w-0">
-                          <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm ${
-                            completa ? 'bg-gradient-to-br from-emerald-400 to-teal-500 text-white' :
+                          <div className={`h-8 w-8 rounded-md flex items-center justify-center shrink-0 ${
+                            completa ? 'bg-emerald-400 text-white' :
                             vazia ? 'bg-gray-100 text-gray-400' :
-                            'bg-gradient-to-br from-amber-300 to-orange-400 text-white'
+                            'bg-amber-300 text-amber-900'
                           }`}>
-                            {completa ? <Check size={16} strokeWidth={3} /> : <span className="text-[10px] font-black">{Math.round(l.progresso)}%</span>}
+                            {completa ? <Check size={16} strokeWidth={3} /> : <span className="text-[10px] font-bold">{Math.round(l.progresso)}%</span>}
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="font-bold text-gray-900 text-xs truncate">{l.empresa.codigo}</div>
@@ -1552,12 +1569,12 @@ export default function ChecklistFiscalPage() {
                       </td>
                       <td className="border-b border-gray-100 px-2 py-2 w-[90px] min-w-[90px]">
                         <div className="text-center">
-                          <div className={`text-sm font-black ${completa ? 'text-emerald-600' : vazia ? 'text-gray-400' : 'text-amber-600'}`}>
+                          <div className={`text-sm font-bold ct-num ${completa ? 'text-emerald-600' : vazia ? 'text-gray-400' : 'text-amber-600'}`}>
                             {l.feitas}/{l.total}
                           </div>
                           <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mt-1">
                             <div
-                              className={`h-full transition-all ${completa ? 'bg-emerald-500' : 'bg-gradient-to-r from-amber-400 to-emerald-500'}`}
+                              className={`h-full transition-all ${completa ? 'bg-emerald-400' : 'bg-amber-300'}`}
                               style={{ width: `${l.progresso}%` }}
                             />
                           </div>
@@ -1632,11 +1649,11 @@ export default function ChecklistFiscalPage() {
                                   type="button"
                                   onClick={() => handleClickStatus('feito')}
                                   disabled={!canEdit || saving}
-                                  className={`flex items-center justify-center h-7 rounded-md transition ${
+                                  className={`flex items-center justify-center h-7 rounded-md transition-colors ${
                                     feito
-                                      ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm'
+                                      ? 'bg-emerald-400 hover:bg-emerald-500 text-white'
                                       : canEdit
-                                        ? 'bg-white border border-gray-300 hover:border-emerald-500 hover:bg-emerald-50 text-gray-400 hover:text-emerald-600'
+                                        ? 'bg-white border border-gray-300 hover:border-emerald-400 hover:bg-emerald-50 text-gray-400 hover:text-emerald-600'
                                         : 'bg-gray-100 text-gray-300 cursor-not-allowed'
                                   }`}
                                   title={
@@ -1651,11 +1668,11 @@ export default function ChecklistFiscalPage() {
                                   type="button"
                                   onClick={() => handleClickStatus('sem_obrigacao')}
                                   disabled={!canEdit || saving}
-                                  className={`flex items-center justify-center h-7 rounded-md transition ${
+                                  className={`flex items-center justify-center h-7 rounded-md transition-colors ${
                                     semObr
-                                      ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-sm'
+                                      ? 'bg-rose-400 hover:bg-rose-500 text-white'
                                       : canEdit
-                                        ? 'bg-white border border-gray-300 hover:border-rose-500 hover:bg-rose-50 text-gray-400 hover:text-rose-600'
+                                        ? 'bg-white border border-gray-300 hover:border-rose-400 hover:bg-rose-50 text-gray-400 hover:text-rose-600'
                                         : 'bg-gray-100 text-gray-300 cursor-not-allowed'
                                   }`}
                                   title={
@@ -1709,10 +1726,23 @@ export default function ChecklistFiscalPage() {
             </table>
           </div>
         )}
+        {!loading && linhas.length > paginaTamanho && (
+          <div className="px-3 py-3 bg-[var(--surface-1)] border-t border-[var(--border-subtle)] flex items-center justify-between gap-3 flex-wrap">
+            <span className="text-xs text-[var(--text-3)]">
+              Exibindo <span className="ct-num font-semibold text-[var(--text-1)]">{linhasVisiveis.length}</span> de <span className="ct-num font-semibold text-[var(--text-1)]">{linhas.length}</span> empresas
+            </span>
+            <button
+              onClick={() => setPaginaTamanho((p) => p + incrementoPagina)}
+              className="ct-btn-secondary"
+            >
+              Mostrar mais {Math.min(incrementoPagina, linhas.length - paginaTamanho)}
+            </button>
+          </div>
+        )}
         {!loading && linhas.length > 0 && (
           <div className="px-3 py-2 bg-gray-50 border-t border-gray-100 text-[11px] text-gray-500 flex items-center justify-between flex-wrap gap-x-3 gap-y-1.5 min-w-0">
             <div className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0">
-              <span className="whitespace-nowrap">Exibindo {linhas.length} empresa(s)</span>
+              <span className="whitespace-nowrap">Exibindo {linhasVisiveis.length} de {linhas.length} empresa(s)</span>
               <span className="text-gray-300">•</span>
               <span className="whitespace-nowrap font-bold text-emerald-700">{stats.feitasCells} de {stats.totalCells} marcadas</span>
             </div>
