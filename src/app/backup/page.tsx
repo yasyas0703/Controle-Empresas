@@ -230,43 +230,43 @@ export default function BackupPage() {
   return (
     <div className="p-4 sm:p-8 max-w-4xl mx-auto space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Backup e Restauracao</h1>
-        <p className="text-gray-600 mt-1">
+        <h1 className="text-2xl font-bold text-[var(--text-1)] tracking-tight">Backup e Restauração</h1>
+        <p className="text-[var(--text-2)] mt-1">
           Exporte seus dados como arquivo JSON para ter um backup local. Se precisar, restaure a partir de um backup anterior.
         </p>
       </div>
 
       {/* Exportar */}
-      <div className="bg-white rounded-2xl shadow p-6 border border-gray-200">
+      <div className="bg-[var(--surface-2)] rounded-[var(--radius-md)] p-6 border border-[var(--border)]">
         <div className="flex items-center gap-3 mb-4">
-          <div className="p-3 rounded-xl bg-green-100">
-            <Download className="text-green-600" size={24} />
+          <div className="h-11 w-11 rounded-md bg-[var(--ok-soft)] text-[var(--ok)] flex items-center justify-center shrink-0">
+            <Download size={20} />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Exportar Backup</h2>
-            <p className="text-sm text-gray-500">Baixa um arquivo JSON com todos os dados do sistema.</p>
+            <h2 className="text-lg font-bold text-[var(--text-1)] tracking-tight">Exportar Backup</h2>
+            <p className="text-sm text-[var(--text-2)]">Baixa um arquivo JSON com todos os dados do sistema.</p>
           </div>
         </div>
         <button
           onClick={handleExportar}
           disabled={exportando || restaurando}
-          className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] px-5 py-2.5 text-sm font-semibold text-white bg-[var(--ok)] border border-[var(--ok)] hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {exportando ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
+          {exportando ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
           {exportando ? 'Exportando...' : 'Exportar Backup'}
         </button>
       </div>
 
       {/* Backup Automatico */}
-      <div className="bg-white rounded-2xl shadow p-6 border border-gray-200">
+      <div className="bg-[var(--surface-2)] rounded-[var(--radius-md)] p-6 border border-[var(--border)]">
         <div className="flex items-center gap-3 mb-4">
-          <div className="p-3 rounded-xl bg-purple-100">
-            <Timer className="text-purple-600" size={24} />
+          <div className="h-11 w-11 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] flex items-center justify-center shrink-0">
+            <Timer size={20} />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Backup Automatico</h2>
-            <p className="text-sm text-gray-500">
-              Quando ativado, o sistema exporta o backup automaticamente ao abrir o app (se ja passou o prazo).
+            <h2 className="text-lg font-bold text-[var(--text-1)] tracking-tight">Backup Automático</h2>
+            <p className="text-sm text-[var(--text-2)]">
+              Quando ativado, o sistema exporta o backup automaticamente ao abrir o app (se já passou o prazo).
             </p>
           </div>
         </div>
@@ -274,13 +274,14 @@ export default function BackupPage() {
         <div className="space-y-4">
           {/* Toggle */}
           <div className="flex items-center justify-between">
-            <span className="font-semibold text-gray-700">Ativar backup automatico</span>
+            <span className="font-semibold text-[var(--text-1)]">Ativar backup automático</span>
             <button
               onClick={() => handleToggleAuto(!autoSettings.ativo)}
-              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${autoSettings.ativo ? 'bg-purple-600' : 'bg-gray-300'}`}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${autoSettings.ativo ? 'bg-[var(--brand)]' : 'bg-[var(--surface-3)] border border-[var(--border)]'}`}
+              aria-pressed={autoSettings.ativo}
             >
               <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${autoSettings.ativo ? 'translate-x-6' : 'translate-x-1'}`}
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm ${autoSettings.ativo ? 'translate-x-6' : 'translate-x-1'}`}
               />
             </button>
           </div>
@@ -289,42 +290,45 @@ export default function BackupPage() {
           {autoSettings.ativo && (
             <>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Frequencia</label>
-                <div className="flex gap-3">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-3)] mb-2">Frequência</label>
+                <div className="flex gap-2 flex-wrap">
                   {[
                     { dias: 4, label: 'A cada 4 dias' },
                     { dias: 7, label: 'Semanal' },
                     { dias: 15, label: 'Quinzenal' },
-                  ].map((opt) => (
-                    <button
-                      key={opt.dias}
-                      onClick={() => handleFrequencia(opt.dias)}
-                      className={`px-4 py-2 rounded-xl border-2 font-semibold text-sm transition-all ${
-                        autoSettings.frequenciaDias === opt.dias
-                          ? 'border-purple-500 bg-purple-50 text-purple-700'
-                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
+                  ].map((opt) => {
+                    const active = autoSettings.frequenciaDias === opt.dias;
+                    return (
+                      <button
+                        key={opt.dias}
+                        onClick={() => handleFrequencia(opt.dias)}
+                        className={`rounded-[var(--radius)] px-3 py-1.5 border font-semibold text-sm transition-colors ${
+                          active
+                            ? 'border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-strong)]'
+                            : 'border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text-1)]'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
               {/* Status */}
-              <div className="bg-purple-50 rounded-xl p-4 border border-purple-200 space-y-2">
+              <div className="bg-[var(--surface-3)] rounded-[var(--radius)] p-4 border border-[var(--border)] space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Ultimo backup:</span>
-                  <span className="font-semibold text-gray-900">
+                  <span className="text-[var(--text-2)]">Último backup:</span>
+                  <span className="font-semibold text-[var(--text-1)] ct-num">
                     {ultimoBackup ? formatarData(ultimoBackup) : 'Nunca'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Proximo backup automatico:</span>
-                  <span className="font-semibold text-purple-700">
+                  <span className="text-[var(--text-2)]">Próximo backup automático:</span>
+                  <span className="font-semibold text-[var(--brand-strong)] ct-num">
                     {proximoBackup
                       ? proximoBackup <= new Date()
-                        ? 'Agora (sera feito ao recarregar)'
+                        ? 'Agora (será feito ao recarregar)'
                         : formatarData(proximoBackup.toISOString())
                       : '—'}
                   </span>
@@ -333,38 +337,37 @@ export default function BackupPage() {
 
               {/* Pasta de destino */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Pasta de destino</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-3)] mb-2">Pasta de destino</label>
                 {pastaBackup ? (
-                  <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
-                    <FolderOpen size={20} className="text-green-600 shrink-0" />
+                  <div className="flex items-center gap-3 bg-[var(--ok-soft)] border border-[var(--ok)]/40 rounded-[var(--radius)] px-4 py-3">
+                    <FolderOpen size={18} className="text-[var(--ok)] shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm font-semibold text-green-800">Salvando na pasta: </span>
-                      <span className="text-sm text-green-700 font-bold">{pastaBackup}</span>
+                      <span className="text-sm text-[var(--text-2)]">Salvando na pasta: </span>
+                      <span className="text-sm text-[var(--text-1)] font-semibold ct-num">{pastaBackup}</span>
                     </div>
                     <button
                       onClick={handleEscolherPasta}
-                      className="text-xs text-green-700 hover:text-green-900 font-semibold underline"
+                      className="text-xs text-[var(--ok)] hover:brightness-90 font-semibold underline transition"
                     >
                       Trocar
                     </button>
                     <button
                       onClick={handleRemoverPasta}
-                      className="text-green-600 hover:text-red-500 transition"
+                      className="rounded-md p-1 text-[var(--text-3)] hover:bg-[var(--surface-2)] hover:text-[var(--danger)] transition"
                       title="Remover pasta"
                     >
-                      <X size={16} />
+                      <X size={14} />
                     </button>
                   </div>
                 ) : (
                   <button
                     onClick={handleEscolherPasta}
-                    className="inline-flex items-center gap-2 px-4 py-3 border-2 border-dashed border-purple-300 rounded-xl text-purple-700 font-semibold hover:bg-purple-50 hover:border-purple-400 transition-all w-full justify-center"
+                    className="inline-flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-[var(--border)] rounded-[var(--radius)] text-[var(--text-2)] font-semibold hover:bg-[var(--surface-3)] hover:border-[var(--brand)] hover:text-[var(--brand-strong)] transition-colors w-full"
                   >
                     <FolderOpen size={18} />
                     Escolher pasta (ex: sua pasta &quot;backups&quot; no Drive)
                   </button>
                 )}
-                
               </div>
             </>
           )}
@@ -372,14 +375,14 @@ export default function BackupPage() {
       </div>
 
       {/* Restaurar */}
-      <div className="bg-white rounded-2xl shadow p-6 border border-gray-200">
+      <div className="bg-[var(--surface-2)] rounded-[var(--radius-md)] p-6 border border-[var(--border)]">
         <div className="flex items-center gap-3 mb-4">
-          <div className="p-3 rounded-xl bg-red-100">
-            <Upload className="text-red-600" size={24} />
+          <div className="h-11 w-11 rounded-md bg-[var(--danger-soft)] text-[var(--danger)] flex items-center justify-center shrink-0">
+            <Upload size={20} />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Restaurar Backup</h2>
-            <p className="text-sm text-gray-500">
+            <h2 className="text-lg font-bold text-[var(--text-1)] tracking-tight">Restaurar Backup</h2>
+            <p className="text-sm text-[var(--text-2)]">
               Faz upload de um arquivo JSON de backup e substitui TODOS os dados atuais.
             </p>
           </div>
@@ -387,43 +390,45 @@ export default function BackupPage() {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Selecionar arquivo de backup</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-3)] mb-2">Selecionar arquivo de backup</label>
             <input
               ref={fileRef}
               type="file"
               accept=".json"
               onChange={handleSelecionarArquivo}
               disabled={restaurando}
-              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100"
+              className="block w-full text-sm text-[var(--text-3)] file:mr-4 file:py-2 file:px-4 file:rounded-[var(--radius)] file:border file:border-[var(--border)] file:text-sm file:font-semibold file:bg-[var(--surface-3)] file:text-[var(--text-2)] hover:file:bg-[var(--surface-3)] hover:file:border-[var(--border-strong)] file:transition-colors"
             />
-            {nomeArquivo && <p className="text-sm text-gray-500 mt-1">Arquivo: {nomeArquivo}</p>}
+            {nomeArquivo && <p className="text-sm text-[var(--text-3)] mt-1">Arquivo: <span className="ct-num text-[var(--text-1)]">{nomeArquivo}</span></p>}
           </div>
 
           {backupParaRestaurar && (
             <>
               {/* Preview dos dados */}
-              <div className="bg-gray-50 rounded-xl p-4 border">
-                <h3 className="font-semibold text-gray-700 mb-2">Dados do backup ({formatarData(backupParaRestaurar.criadoEm)})</h3>
+              <div className="bg-[var(--surface-3)] rounded-[var(--radius)] p-4 border border-[var(--border)]">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-3)] mb-3">
+                  Dados do backup (<span className="ct-num text-[var(--text-1)]">{formatarData(backupParaRestaurar.criadoEm)}</span>)
+                </h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
                   {Object.entries(backupParaRestaurar.contagem).map(([tabela, qtd]) => (
-                    <div key={tabela} className="flex justify-between bg-white rounded-lg px-3 py-2 border">
-                      <span className="text-gray-600">{tabela}</span>
-                      <span className="font-bold text-gray-900">{qtd}</span>
+                    <div key={tabela} className="flex justify-between bg-[var(--surface-2)] rounded-[var(--radius)] px-3 py-2 border border-[var(--border)]">
+                      <span className="text-[var(--text-2)]">{tabela}</span>
+                      <span className="font-bold text-[var(--text-1)] ct-num">{qtd}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
               {/* Confirmacao */}
-              <div className="bg-red-50 rounded-xl p-4 border border-red-200">
+              <div className="bg-[var(--danger-soft)] rounded-[var(--radius)] p-4 border-l-4 border-[var(--danger)]">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="text-red-600 mt-0.5 shrink-0" size={20} />
+                  <AlertTriangle className="text-[var(--danger)] mt-0.5 shrink-0" size={18} />
                   <div>
-                    <p className="text-sm text-red-800 font-semibold">
-                      ATENCAO: Isso vai SUBSTITUIR todos os dados atuais pelos dados do backup.
+                    <p className="text-sm text-[var(--text-1)] font-semibold">
+                      ATENÇÃO: isso vai SUBSTITUIR todos os dados atuais pelos dados do backup.
                     </p>
-                    <p className="text-sm text-red-700 mt-1">
-                      Digite <strong>RESTAURAR</strong> abaixo para confirmar:
+                    <p className="text-sm text-[var(--text-2)] mt-1">
+                      Digite <strong className="text-[var(--text-1)] font-semibold">RESTAURAR</strong> abaixo para confirmar:
                     </p>
                   </div>
                 </div>
@@ -432,25 +437,21 @@ export default function BackupPage() {
                   value={confirmacao}
                   onChange={(e) => setConfirmacao(e.target.value)}
                   placeholder="Digite RESTAURAR"
-                  className="mt-3 w-full px-4 py-3 border border-red-300 rounded-xl text-center text-lg font-bold tracking-widest uppercase"
+                  className="ct-input mt-3 text-center text-lg font-bold tracking-widest uppercase"
                   disabled={restaurando}
                 />
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex gap-2">
                 <button
                   onClick={handleRestaurar}
                   disabled={restaurando || confirmacao !== 'RESTAURAR'}
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="ct-btn-danger"
                 >
-                  {restaurando ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
+                  {restaurando ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
                   {restaurando ? 'Restaurando...' : 'Restaurar Backup'}
                 </button>
-                <button
-                  onClick={cancelarRestauracao}
-                  disabled={restaurando}
-                  className="px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 disabled:opacity-50"
-                >
+                <button onClick={cancelarRestauracao} disabled={restaurando} className="ct-btn-secondary">
                   Cancelar
                 </button>
               </div>
@@ -461,27 +462,27 @@ export default function BackupPage() {
 
       {/* Progresso */}
       {progresso && (
-        <div className={`rounded-xl p-4 border ${progresso.startsWith('Erro') ? 'bg-red-50 border-red-200 text-red-800' : 'bg-blue-50 border-blue-200 text-blue-800'}`}>
-          <p className="text-sm font-medium">{progresso}</p>
+        <div className={`rounded-[var(--radius)] p-4 border-l-4 ${progresso.startsWith('Erro') ? 'bg-[var(--danger-soft)] border-[var(--danger)]' : 'bg-[var(--brand-soft)] border-[var(--brand)]'}`}>
+          <p className={`text-sm font-semibold ${progresso.startsWith('Erro') ? 'text-[var(--danger)]' : 'text-[var(--brand-strong)]'}`}>{progresso}</p>
         </div>
       )}
 
       {/* Historico */}
       {historico.length > 0 && (
-        <div className="bg-white rounded-2xl shadow p-6 border border-gray-200">
+        <div className="bg-[var(--surface-2)] rounded-[var(--radius-md)] p-6 border border-[var(--border)]">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-3 rounded-xl bg-gray-100">
-              <Clock className="text-gray-600" size={24} />
+            <div className="h-11 w-11 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] flex items-center justify-center shrink-0">
+              <Clock size={20} />
             </div>
-            <h2 className="text-lg font-bold text-gray-900">Historico de Backups</h2>
+            <h2 className="text-lg font-bold text-[var(--text-1)] tracking-tight">Histórico de Backups</h2>
           </div>
           <div className="space-y-2">
             {historico.map((item, idx) => (
-              <div key={idx} className="flex items-center gap-3 px-4 py-3 rounded-xl border bg-gray-50">
+              <div key={idx} className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-3)]">
                 {item.tipo === 'export' ? (
-                  <CheckCircle size={18} className="text-green-500 shrink-0" />
+                  <CheckCircle size={16} className="text-[var(--ok)] shrink-0" />
                 ) : (
-                  <Upload size={18} className="text-red-500 shrink-0" />
+                  <Upload size={16} className="text-[var(--danger)] shrink-0" />
                 )}
                 <div className="flex-1 min-w-0">
                   <span className="text-sm font-semibold text-gray-900">
