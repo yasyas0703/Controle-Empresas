@@ -363,12 +363,12 @@ export default function ControleContabilPage() {
   if (!currentUser || !podeVer) {
     return (
       <div className="space-y-4">
-        <div className="rounded-2xl bg-white p-6 sm:p-8 shadow-sm border border-gray-100 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-500">
-            <ShieldAlert size={28} />
+        <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-6 sm:p-8 border border-[var(--border)] text-center">
+          <div className="inline-flex items-center justify-center h-12 w-12 rounded-md bg-[var(--danger-soft)] text-[var(--danger)] mb-3">
+            <ShieldAlert size={26} />
           </div>
-          <div className="text-lg font-bold text-gray-900">Acesso restrito</div>
-          <div className="mt-1 text-sm text-gray-500">
+          <div className="text-lg font-bold text-[var(--text-1)] tracking-tight">Acesso restrito</div>
+          <div className="mt-1 text-sm text-[var(--text-2)]">
             Esta área é exclusiva do departamento Contábil.
           </div>
         </div>
@@ -380,10 +380,12 @@ export default function ControleContabilPage() {
     return (
       <div className="space-y-4">
         <DepartamentoTabs tabs={config.tabs} />
-        <div className="rounded-2xl bg-white p-8 shadow-sm text-center">
-          <ListChecks className="mx-auto mb-4 text-gray-300" size={48} />
-          <div className="text-lg font-bold text-gray-700 mb-1">Departamento Contábil não encontrado</div>
-          <div className="text-sm text-gray-500">
+        <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-10 border border-[var(--border)] text-center">
+          <div className="inline-flex items-center justify-center h-14 w-14 rounded-md bg-[var(--surface-3)] text-[var(--text-3)] mb-4">
+            <ListChecks size={28} />
+          </div>
+          <div className="text-lg font-bold text-[var(--text-1)] tracking-tight mb-1">Departamento Contábil não encontrado</div>
+          <div className="text-sm text-[var(--text-2)] max-w-md mx-auto">
             Cadastre um departamento chamado &quot;Contábil&quot; (ou &quot;Contabilidade&quot;) para usar este controle.
           </div>
         </div>
@@ -396,14 +398,14 @@ export default function ControleContabilPage() {
       <DepartamentoTabs tabs={config.tabs} />
 
       {/* Header */}
-      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-4 sm:p-6 border border-[var(--border)]">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 flex items-center justify-center shadow-md shrink-0">
-            <ListChecks className="text-white" size={22} />
+          <div className="h-11 w-11 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] flex items-center justify-center shrink-0">
+            <ListChecks size={20} />
           </div>
           <div className="min-w-0">
-            <div className="text-lg sm:text-2xl font-bold text-gray-900">Controle Contábil — Extratos</div>
-            <div className="text-xs sm:text-sm text-gray-500">
+            <div className="text-lg sm:text-2xl font-bold text-[var(--text-1)] tracking-tight">Controle Contábil — Extratos</div>
+            <div className="text-xs sm:text-sm text-[var(--text-2)]">
               Confira extratos por empresa, banco e mês. Anexe o arquivo e marque conforme avança.
             </div>
           </div>
@@ -411,16 +413,16 @@ export default function ControleContabilPage() {
       </div>
 
       {/* Seletor de ano + filtros */}
-      <div className="rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-cyan-50 border-2 border-emerald-100 p-3 sm:p-4 shadow-sm">
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2 bg-white rounded-xl px-3 sm:px-4 py-2 shadow-sm">
-            <Calendar size={18} className="text-emerald-600 shrink-0" />
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] p-3 sm:p-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 bg-[var(--surface-3)] rounded-[var(--radius)] border border-[var(--border)] px-3 sm:px-4 py-2">
+            <Calendar size={16} className="text-[var(--text-3)] shrink-0" />
             <div>
-              <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Ano</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-3)]">Ano</div>
               <select
                 value={ano}
                 onChange={(e) => setAno(Number(e.target.value))}
-                className="text-sm sm:text-base font-bold text-gray-900 bg-transparent focus:outline-none cursor-pointer"
+                className="text-sm sm:text-base font-bold text-[var(--text-1)] bg-transparent focus:outline-none cursor-pointer ct-num"
               >
                 {anosOpcoes.map((a) => (
                   <option key={a} value={a}>{a}</option>
@@ -428,29 +430,29 @@ export default function ControleContabilPage() {
               </select>
             </div>
             {ano === new Date().getFullYear() && (
-              <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5 text-[10px] font-bold">
-                <Sparkles size={10} /> ATUAL
+              <span className="ml-1 inline-flex items-center gap-1 rounded-sm bg-[var(--brand-soft)] text-[var(--brand-strong)] border border-[var(--brand)]/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
+                <Sparkles size={10} /> Atual
               </span>
             )}
           </div>
 
           <div className="flex-1 min-w-[180px] relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-3)] pointer-events-none" />
             <input
               type="text"
               placeholder="Buscar empresa por código ou nome..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-xl border border-gray-200 bg-white pl-9 pr-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="ct-input pl-9 text-sm"
             />
           </div>
 
-          <div className="flex items-center gap-2 bg-white rounded-xl px-3 py-2 shadow-sm">
-            <Users size={14} className="text-emerald-600" />
+          <div className="flex items-center gap-2 bg-[var(--surface-3)] rounded-[var(--radius)] border border-[var(--border)] px-3 py-2">
+            <Users size={14} className="text-[var(--text-3)]" />
             <select
               value={filtroResp}
               onChange={(e) => setFiltroResp(e.target.value)}
-              className="text-sm bg-transparent focus:outline-none cursor-pointer min-w-[140px]"
+              className="text-sm bg-transparent focus:outline-none cursor-pointer min-w-[140px] text-[var(--text-1)]"
             >
               <option value="">Todos os responsáveis</option>
               <option value="sem">Sem responsável</option>
@@ -512,7 +514,7 @@ export default function ControleContabilPage() {
       </div>
 
       {/* Tabela */}
-      <div className="rounded-2xl bg-white shadow-sm border border-gray-100 overflow-hidden">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] overflow-hidden">
         {loading ? (
           <div className="py-16 flex items-center justify-center text-gray-400 text-sm">
             <Loader2 size={20} className="animate-spin mr-2" /> Carregando...
@@ -614,14 +616,20 @@ export default function ControleContabilPage() {
 // ─── Subcomponentes ────────────────────────────────────────────
 
 function StatCard({ label, valor, sub, accent }: { label: string; valor: string | number; sub?: string; accent: 'emerald' | 'orange' | 'cyan' }) {
-  const cor = accent === 'emerald' ? 'text-emerald-700' : accent === 'orange' ? 'text-orange-600' : 'text-cyan-700';
+  // emerald = sucesso/ok, orange = warn/pendente, cyan = neutral/total
+  const cor =
+    accent === 'emerald' ? 'text-[var(--ok)]' :
+    accent === 'orange' ? 'text-[var(--warn)]' :
+    'text-[var(--text-1)]';
+  const borderCor =
+    accent === 'emerald' ? 'border-[var(--ok)]/40' :
+    accent === 'orange' ? 'border-[var(--warn)]/40' :
+    'border-[var(--border)]';
   return (
-    <div className="rounded-2xl bg-white p-3 sm:p-4 shadow-sm border border-gray-100">
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-gray-500">{label}</span>
-      </div>
-      <div className={`text-xl sm:text-2xl font-black ${cor}`}>{valor}</div>
-      {sub && <div className="text-[11px] text-gray-500 mt-0.5">{sub}</div>}
+    <div className={`rounded-[var(--radius)] bg-[var(--surface-2)] p-3 sm:p-4 border ${borderCor}`}>
+      <div className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-[var(--text-3)] mb-1.5">{label}</div>
+      <div className={`ct-num text-xl sm:text-2xl font-bold leading-none ${cor}`}>{valor}</div>
+      {sub && <div className="text-[11px] text-[var(--text-3)] mt-1">{sub}</div>}
     </div>
   );
 }
