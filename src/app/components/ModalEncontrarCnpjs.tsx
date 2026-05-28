@@ -191,42 +191,44 @@ export default function ModalEncontrarCnpjs({ onClose }: { onClose: () => void }
   };
 
   return (
-    <ModalBase isOpen onClose={fechar} labelledBy="encontrar-cnpjs-titulo" dialogClassName="w-full max-w-3xl rounded-2xl bg-white shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
-      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-cyan-500 to-teal-500 flex items-center justify-center shadow-md">
-            <Search className="text-white" size={18} />
+    <ModalBase isOpen onClose={fechar} labelledBy="encontrar-cnpjs-titulo" dialogClassName="w-full max-w-3xl rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] shadow-[0_8px_24px_rgba(0,0,0,0.18)] max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="px-5 py-4 border-b border-[var(--border-subtle)] flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] shrink-0">
+            <Search size={18} />
           </div>
-          <div>
-            <h2 id="encontrar-cnpjs-titulo" className="text-lg font-bold text-gray-900">Encontrar CNPJs</h2>
-            <p className="text-xs text-gray-500">
-              Mostra empresas com CNPJ que estão sem endereço completo. Consulta a Receita ({DELAY_MS / 1000}s entre cada uma) e preenche o cadastro.
+          <div className="min-w-0">
+            <h2 id="encontrar-cnpjs-titulo" className="text-base font-bold text-[var(--text-1)] tracking-tight">Encontrar CNPJs</h2>
+            <p className="text-xs text-[var(--text-3)] mt-0.5">
+              Empresas com CNPJ sem endereço completo. Consulta a Receita (<span className="ct-num">{DELAY_MS / 1000}s</span> entre cada uma) e preenche o cadastro.
             </p>
           </div>
         </div>
         <button
           onClick={fechar}
-          className="rounded-lg p-2 hover:bg-gray-100 transition"
+          className="rounded-md p-2 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition shrink-0"
           title="Fechar"
+          aria-label="Fechar"
         >
-          <X size={20} className="text-gray-500" />
+          <X size={18} />
         </button>
       </div>
 
-      <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+      <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--surface-1)]">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3 text-sm">
-            <span className="rounded-lg bg-white border border-gray-200 px-3 py-1.5 font-semibold text-gray-700">
-              <span className="text-gray-500">Total:</span> <span className="text-gray-900">{items.length}</span>
+          <div className="flex items-center gap-2 text-sm flex-wrap">
+            <span className="rounded-sm bg-[var(--surface-2)] border border-[var(--border)] px-2.5 py-1 font-semibold text-[var(--text-2)]">
+              <span className="text-[var(--text-3)] text-xs uppercase tracking-wider mr-1">Total:</span>
+              <span className="ct-num text-[var(--text-1)]">{items.length}</span>
             </span>
-            <span className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-1.5 font-semibold text-emerald-700">
-              <Check size={14} className="inline -mt-0.5 mr-1" />{totalSucesso}
+            <span className="rounded-sm bg-[var(--ok-soft)] border border-[var(--ok)]/40 px-2.5 py-1 font-semibold text-[var(--ok)] inline-flex items-center gap-1">
+              <Check size={12} /><span className="ct-num">{totalSucesso}</span>
             </span>
-            <span className="rounded-lg bg-red-50 border border-red-200 px-3 py-1.5 font-semibold text-red-700">
-              <AlertTriangle size={14} className="inline -mt-0.5 mr-1" />{totalErro}
+            <span className="rounded-sm bg-[var(--danger-soft)] border border-[var(--danger)]/40 px-2.5 py-1 font-semibold text-[var(--danger)] inline-flex items-center gap-1">
+              <AlertTriangle size={12} /><span className="ct-num">{totalErro}</span>
             </span>
-            <span className="rounded-lg bg-cyan-50 border border-cyan-200 px-3 py-1.5 font-semibold text-cyan-700">
-              {totalPendente} pendente(s)
+            <span className="rounded-sm bg-[var(--brand-soft)] border border-[var(--brand)]/40 px-2.5 py-1 font-semibold text-[var(--brand-strong)]">
+              <span className="ct-num">{totalPendente}</span> pendente(s)
             </span>
           </div>
 
@@ -235,7 +237,7 @@ export default function ModalEncontrarCnpjs({ onClose }: { onClose: () => void }
               <button
                 onClick={iniciar}
                 disabled={items.length === 0 || totalPendente === 0}
-                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-500 text-white px-4 py-2 text-sm font-bold hover:from-cyan-700 hover:to-teal-600 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition"
+                className="ct-btn-primary"
               >
                 <Play size={16} />
                 {totalSucesso + totalErro > 0 ? 'Continuar' : 'Iniciar busca'}
@@ -243,7 +245,7 @@ export default function ModalEncontrarCnpjs({ onClose }: { onClose: () => void }
             ) : (
               <button
                 onClick={cancelar}
-                className="inline-flex items-center gap-2 rounded-xl bg-red-50 text-red-700 px-4 py-2 text-sm font-bold hover:bg-red-100 transition"
+                className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--danger)] text-[var(--danger)] hover:bg-[var(--danger-soft)] px-4 py-2 text-sm font-semibold transition-colors"
               >
                 <Square size={16} />
                 Parar
@@ -254,13 +256,13 @@ export default function ModalEncontrarCnpjs({ onClose }: { onClose: () => void }
 
         {(rodando || totalProcessado > 0) && (
           <div className="mt-3">
-            <div className="flex items-center justify-between text-xs font-semibold text-gray-500 mb-1">
+            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[var(--text-3)] mb-1">
               <span>Progresso</span>
-              <span>{progresso}%</span>
+              <span className="ct-num">{progresso}%</span>
             </div>
-            <div className="h-2 rounded-full bg-gray-200 overflow-hidden">
+            <div className="h-1.5 rounded-full bg-[var(--surface-3)] overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-cyan-500 to-teal-500 transition-all"
+                className="h-full bg-[var(--brand)] transition-all"
                 style={{ width: `${progresso}%` }}
               />
             </div>
@@ -287,7 +289,7 @@ export default function ModalEncontrarCnpjs({ onClose }: { onClose: () => void }
                   {it.status === 'cancelada' && <X className="text-gray-400" size={18} />}
                   {it.status === 'pendente' && <div className="h-2 w-2 rounded-full bg-gray-300" />}
                 </div>
-                <span className="shrink-0 rounded-md bg-gradient-to-r from-teal-500 to-cyan-500 text-white px-2 py-0.5 text-[11px] font-bold">
+                <span className="shrink-0 ct-num rounded-sm bg-[var(--surface-3)] text-[var(--text-1)] border border-[var(--border)] px-2 py-0.5 text-[11px] font-semibold">
                   {it.empresa.codigo}
                 </span>
                 <div className="min-w-0 flex-1">

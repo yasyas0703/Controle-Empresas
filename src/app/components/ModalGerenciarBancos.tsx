@@ -168,21 +168,21 @@ export default function ModalGerenciarBancos({ isOpen, onClose, empresa, onChang
         isOpen={isOpen}
         onClose={onClose}
         labelledBy="modal-bancos-titulo"
-        dialogClassName="w-full max-w-2xl rounded-2xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto"
+        dialogClassName="w-full max-w-2xl rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] shadow-[0_8px_24px_rgba(0,0,0,0.18)] max-h-[90vh] overflow-y-auto"
       >
-        <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white p-5 rounded-t-2xl flex items-start gap-3">
-          <div className="p-2 bg-white/20 rounded-xl">
-            <Banknote size={22} />
+        <div className="border-b border-[var(--border-subtle)] p-5 flex items-start gap-3">
+          <div className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] shrink-0">
+            <Banknote size={18} />
           </div>
           <div className="flex-1 min-w-0">
-            <h2 id="modal-bancos-titulo" className="text-lg font-bold">Bancos da empresa</h2>
-            <p className="text-xs text-white/85 truncate">
-              {empresa.codigo} · {empresa.razao_social ?? empresa.apelido ?? 'Sem nome'}
+            <h2 id="modal-bancos-titulo" className="text-base font-bold text-[var(--text-1)] tracking-tight">Bancos da empresa</h2>
+            <p className="text-xs text-[var(--text-3)] truncate mt-0.5">
+              <span className="ct-num text-[var(--text-2)]">{empresa.codigo}</span> · {empresa.razao_social ?? empresa.apelido ?? 'Sem nome'}
             </p>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 hover:bg-white/20 transition"
+            className="rounded-md p-2 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition shrink-0"
             aria-label="Fechar"
           >
             <X size={18} />
@@ -191,34 +191,34 @@ export default function ModalGerenciarBancos({ isOpen, onClose, empresa, onChang
 
         <div className="p-5">
           {/* Form de adição */}
-          <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 mb-5">
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Adicionar banco</h3>
+          <div className="bg-[var(--surface-3)] rounded-[var(--radius)] p-4 border border-[var(--border)] mb-5">
+            <h3 className="text-xs font-semibold text-[var(--text-3)] uppercase tracking-wider mb-3">Adicionar banco</h3>
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
               <input
                 type="text"
                 placeholder="Nome do banco *"
                 value={form.nome}
                 onChange={(e) => setForm({ ...form, nome: e.target.value })}
-                className="sm:col-span-5 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                className="ct-input sm:col-span-5 text-sm"
               />
               <input
                 type="text"
                 placeholder="Agência"
                 value={form.agencia}
                 onChange={(e) => setForm({ ...form, agencia: e.target.value })}
-                className="sm:col-span-3 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                className="ct-input sm:col-span-3 text-sm"
               />
               <input
                 type="text"
                 placeholder="Conta"
                 value={form.conta}
                 onChange={(e) => setForm({ ...form, conta: e.target.value })}
-                className="sm:col-span-2 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                className="ct-input sm:col-span-2 text-sm"
               />
               <button
                 onClick={handleAdd}
                 disabled={salvando || !form.nome.trim()}
-                className="sm:col-span-2 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white px-3 py-2 text-sm font-semibold flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                className="ct-btn-primary sm:col-span-2"
               >
                 {salvando ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
                 Adicionar

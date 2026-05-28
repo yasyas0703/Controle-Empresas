@@ -161,23 +161,27 @@ export default function ModalCentralExtratos({ isOpen, onClose, empresa, onChang
         isOpen={isOpen}
         onClose={onClose}
         labelledBy="modal-extratos-titulo"
-        dialogClassName="w-full max-w-3xl rounded-2xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto"
+        dialogClassName="w-full max-w-3xl rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] shadow-[0_8px_24px_rgba(0,0,0,0.18)] max-h-[90vh] overflow-y-auto"
         zIndex={zIndex}
       >
-        <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white p-5 rounded-t-2xl flex items-start gap-3">
-          <div className="p-2 bg-white/20 rounded-xl">
-            <Folder size={22} />
+        <div className="border-b border-[var(--border-subtle)] p-5 flex items-start gap-3">
+          <div className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] shrink-0">
+            <Folder size={18} />
           </div>
           <div className="flex-1 min-w-0">
-            <h2 id="modal-extratos-titulo" className="text-lg font-bold">Central de Extratos</h2>
-            <p className="text-xs text-white/85 truncate">
-              {empresa.codigo} · {empresa.razao_social ?? empresa.apelido ?? 'Sem nome'}
+            <h2 id="modal-extratos-titulo" className="text-base font-bold text-[var(--text-1)] tracking-tight">Central de Extratos</h2>
+            <p className="text-xs text-[var(--text-3)] truncate mt-0.5">
+              <span className="ct-num text-[var(--text-2)]">{empresa.codigo}</span> · {empresa.razao_social ?? empresa.apelido ?? 'Sem nome'}
             </p>
-            <p className="text-xs text-white/75 mt-0.5">
-              {extratos.length} extrato{extratos.length === 1 ? '' : 's'} no total
+            <p className="text-[11px] text-[var(--text-3)] mt-0.5">
+              <span className="ct-num text-[var(--text-2)] font-semibold">{extratos.length}</span> extrato{extratos.length === 1 ? '' : 's'} no total
             </p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-white/20 transition" aria-label="Fechar">
+          <button
+            onClick={onClose}
+            className="rounded-md p-2 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition shrink-0"
+            aria-label="Fechar"
+          >
             <X size={18} />
           </button>
         </div>
@@ -186,19 +190,19 @@ export default function ModalCentralExtratos({ isOpen, onClose, empresa, onChang
           {/* Filtros */}
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 mb-4">
             <div className="sm:col-span-5 relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-3)] pointer-events-none z-10" />
               <input
                 type="text"
                 placeholder="Buscar por arquivo, banco, mês..."
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                className="ct-input pl-9 text-sm"
               />
             </div>
             <select
               value={filtroBanco}
               onChange={(e) => setFiltroBanco(e.target.value)}
-              className="sm:col-span-4 rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="ct-input sm:col-span-4 text-sm"
             >
               <option value="">Todos os bancos</option>
               {bancos.map((b) => (
@@ -208,7 +212,7 @@ export default function ModalCentralExtratos({ isOpen, onClose, empresa, onChang
             <select
               value={filtroAno}
               onChange={(e) => setFiltroAno(e.target.value)}
-              className="sm:col-span-3 rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="ct-input sm:col-span-3 text-sm"
             >
               <option value="">Todos os anos</option>
               {anosDisponiveis.map((a) => (
