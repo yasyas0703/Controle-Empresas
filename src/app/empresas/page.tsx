@@ -269,7 +269,7 @@ export default function EmpresasPage() {
             return min;
           })();
           return (
-            <div key={e.id} className="rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow p-5">
+            <div key={e.id} className="rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--border-strong)] transition-colors p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -283,7 +283,7 @@ export default function EmpresasPage() {
                         title={canEdit ? 'Selecionar empresa' : 'Sem permissão'}
                       />
                     </label>
-                    <span className="shrink-0 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-500 text-white px-2.5 py-1 text-xs font-bold shadow-sm">
+                    <span className="shrink-0 ct-num rounded-sm bg-[var(--surface-3)] text-[var(--text-1)] px-2 py-0.5 text-xs font-semibold border border-[var(--border)]">
                       {e.codigo}
                     </span>
                     {(() => {
@@ -307,12 +307,12 @@ export default function EmpresasPage() {
                       return null;
                     })()}
                     {totalVencidos > 0 && (
-                      <span className="rounded-md bg-red-600 text-white px-2 py-0.5 text-[10px] font-black flex items-center gap-1 animate-pulse">
+                      <span className="rounded-sm bg-[var(--danger)] text-white px-2 py-0.5 text-[10px] font-bold flex items-center gap-1 animate-pulse">
                         <AlertTriangle size={10} /> {totalVencidos} VENCIDO(S)
                       </span>
                     )}
                     {totalRenovados > 0 && (
-                      <span className="rounded-md bg-blue-600 text-white px-2 py-0.5 text-[10px] font-black flex items-center gap-1">
+                      <span className="rounded-sm bg-[var(--info)] text-white px-2 py-0.5 text-[10px] font-bold flex items-center gap-1">
                         {totalRenovados} RENOVADO(S)
                       </span>
                     )}
@@ -373,17 +373,17 @@ export default function EmpresasPage() {
                 );
                 if (resps.length === 0) return null;
                 return (
-                  <div className="mt-3 pt-3 border-t border-gray-100">
+                  <div className="mt-3 pt-3 border-t border-[var(--border-subtle)]">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                      {resps.map((r) => {
-                        const c = DEPT_COLORS[r.depIdx % 8];
-                        return (
-                          <div key={r.dep} className={`rounded-lg px-2 py-1 border ${c.bg} ${c.border}`}>
-                            <div className={`text-[10px] font-bold ${c.text} uppercase tracking-wide`}>{r.dep}</div>
-                            <div className="text-[11px] font-semibold text-gray-800 truncate">{r.user}</div>
-                          </div>
-                        );
-                      })}
+                      {resps.map((r) => (
+                        <div
+                          key={r.dep}
+                          className="rounded-[var(--radius)] px-2 py-1 bg-[var(--surface-3)] border border-[var(--border)]"
+                        >
+                          <div className="text-[10px] font-semibold text-[var(--text-3)] uppercase tracking-wider">{r.dep}</div>
+                          <div className="text-[11px] font-semibold text-[var(--text-1)] truncate">{r.user}</div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 );
@@ -392,36 +392,33 @@ export default function EmpresasPage() {
               {(e.servicos?.length ?? 0) > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1">
                   {e.servicos.slice(0, 3).map((s) => (
-                    <span key={s} className="rounded-md bg-cyan-50 text-teal-600 px-2 py-0.5 text-[11px] font-semibold">{s}</span>
+                    <span key={s} className="rounded-sm bg-[var(--surface-3)] text-[var(--text-2)] px-2 py-0.5 text-[11px] font-semibold">{s}</span>
                   ))}
-                  {e.servicos.length > 3 && <span className="text-[11px] text-gray-400">+{e.servicos.length - 3}</span>}
+                  {e.servicos.length > 3 && <span className="text-[11px] text-[var(--text-3)]">+{e.servicos.length - 3}</span>}
                 </div>
               )}
 
               <div className="mt-4 flex items-center gap-2">
-                <button
-                  onClick={() => setEmpresaView(e)}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 text-white py-2.5 text-sm font-bold hover:from-teal-600 hover:to-cyan-600 inline-flex items-center justify-center gap-2 shadow-sm transition"
-                >
+                <button onClick={() => setEmpresaView(e)} className="ct-btn-primary flex-1">
                   <Eye size={16} />
                   Detalhes
                 </button>
                 <button
                   onClick={() => setEmpresaEdit(e)}
-                  className="rounded-xl bg-teal-50 p-2.5 hover:bg-teal-100 transition"
+                  className="rounded-[var(--radius)] bg-[var(--surface-3)] p-2.5 hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)] text-[var(--text-2)] transition-colors disabled:opacity-50"
                   title="Editar"
                   disabled={!canEdit}
                 >
-                  <Pencil className="text-teal-600" size={17} />
+                  <Pencil size={17} />
                 </button>
                 {canManage && (
                   <button
                     onClick={() => setConfirmDelete(e)}
-                    className="rounded-xl bg-red-50 p-2.5 hover:bg-red-100 transition"
+                    className="rounded-[var(--radius)] bg-[var(--surface-3)] p-2.5 hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] text-[var(--text-2)] transition-colors disabled:opacity-50"
                     title="Excluir"
                     disabled={!canEdit}
                   >
-                    <Trash2 className="text-red-500" size={17} />
+                    <Trash2 size={17} />
                   </button>
                 )}
               </div>
