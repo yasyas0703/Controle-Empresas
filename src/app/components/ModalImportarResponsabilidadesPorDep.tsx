@@ -340,26 +340,30 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
   };
 
   return (
-    <ModalBase isOpen={true} onClose={onClose} dialogClassName="w-full max-w-4xl rounded-2xl bg-white shadow-2xl p-4 sm:p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-md">
-            <Users className="text-white" size={20} />
+    <ModalBase isOpen={true} onClose={onClose} dialogClassName="w-full max-w-4xl rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] shadow-[0_8px_24px_rgba(0,0,0,0.18)] p-4 sm:p-6">
+      <div className="flex items-center justify-between mb-6 pb-4 border-b border-[var(--border-subtle)]">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] shrink-0">
+            <Users size={18} />
           </div>
-          <div>
-            <h2 className="text-xl font-bold text-gray-900">Importar Responsaveis por DEP</h2>
-            <p className="text-sm text-gray-500">Mesmo modelo de planilha, atualizando o departamento escolhido.</p>
+          <div className="min-w-0">
+            <h2 className="text-base font-bold text-[var(--text-1)] tracking-tight">Importar Responsáveis por DEP</h2>
+            <p className="text-xs text-[var(--text-3)] mt-0.5">Mesmo modelo de planilha, atualizando o departamento escolhido.</p>
           </div>
         </div>
-        <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 transition">
-          <X size={20} className="text-gray-500" />
+        <button
+          onClick={onClose}
+          className="rounded-md p-2 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition shrink-0"
+          aria-label="Fechar"
+        >
+          <X size={18} />
         </button>
       </div>
 
       {departamentos.length === 0 && (
-        <div className="rounded-xl bg-red-50 border border-red-200 p-4 mb-4 text-red-700 text-sm">
-          <AlertTriangle size={16} className="inline mr-2" />
-          Nenhum departamento encontrado. Cadastre um departamento primeiro.
+        <div className="rounded-[var(--radius)] bg-[var(--danger-soft)] border-l-4 border-[var(--danger)] p-4 mb-4 text-sm text-[var(--text-1)] flex items-start gap-2">
+          <AlertTriangle size={16} className="text-[var(--danger)] shrink-0 mt-0.5" />
+          <span>Nenhum departamento encontrado. Cadastre um departamento primeiro.</span>
         </div>
       )}
 
@@ -512,34 +516,34 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
               <div className="flex items-center justify-between text-sm font-semibold text-emerald-700 mb-2">
                 <span className="flex items-center gap-2">
                   <Loader2 size={16} className="animate-spin" />
-                  Atualizando responsaveis... {progress.done}/{progress.total}
+                  Atualizando responsáveis... <span className="ct-num">{progress.done}/{progress.total}</span>
                 </span>
-                <span className="text-xs text-emerald-500">
-                  {progress.success} atualizadas • {progress.skipped} ignoradas
+                <span className="text-xs text-[var(--text-3)]">
+                  <span className="ct-num font-semibold text-[var(--ok)]">{progress.success}</span> atualizadas · <span className="ct-num font-semibold text-[var(--warn)]">{progress.skipped}</span> ignoradas
                 </span>
               </div>
-              <div className="h-3 rounded-full bg-emerald-200 overflow-hidden">
+              <div className="h-1.5 rounded-full bg-[var(--surface-3)] overflow-hidden">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300"
+                  className="h-full bg-[var(--brand)] transition-all duration-300"
                   style={{ width: `${(progress.done / progress.total) * 100}%` }}
                 />
               </div>
-              <div className="text-xs text-emerald-600 mt-1 text-right font-bold">
+              <div className="text-xs text-[var(--text-3)] mt-1 text-right font-semibold ct-num">
                 {Math.round((progress.done / progress.total) * 100)}%
               </div>
             </div>
           )}
 
           <div className="flex items-center justify-between gap-4 pt-2">
-            <div className="text-sm text-gray-600">
-              <span className="font-bold text-green-600">{encontradas.length}</span> sera(o) atualizada(s) |{' '}
-              <span className="font-bold text-amber-600">{naoEncontradas.length}</span> ignorada(s)
+            <div className="text-sm text-[var(--text-2)]">
+              <span className="font-semibold text-[var(--ok)] ct-num">{encontradas.length}</span> será(ão) atualizada(s) ·{' '}
+              <span className="font-semibold text-[var(--warn)] ct-num">{naoEncontradas.length}</span> ignorada(s)
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               {importing ? (
                 <button
                   onClick={() => { abortRef.current = true; }}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-red-300 text-red-700 bg-red-50 hover:bg-red-100 transition font-bold"
+                  className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--danger)] text-[var(--danger)] hover:bg-[var(--danger-soft)] px-4 py-2 text-sm font-semibold transition-colors"
                 >
                   <Square size={16} />
                   Parar
@@ -550,7 +554,7 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
                     setBlocks([]);
                     setFileName('');
                   }}
-                  className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-50 transition font-semibold"
+                  className="ct-btn-secondary"
                 >
                   Cancelar
                 </button>
@@ -558,10 +562,10 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
               <button
                 onClick={handleImport}
                 disabled={encontradas.length === 0 || importing || !departamentoSelecionado}
-                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 text-white font-bold hover:from-emerald-700 hover:to-teal-600 shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
+                className="ct-btn-primary"
               >
-                {importing ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
-                Atualizar {encontradas.length} responsavel(eis)
+                {importing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                Atualizar <span className="ct-num">{encontradas.length}</span> responsável(eis)
               </button>
             </div>
           </div>
@@ -570,25 +574,24 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
 
       {result && (
         <div className="space-y-4">
-          <div className="rounded-2xl bg-green-50 p-6 text-center">
-            <Check className="mx-auto text-green-600 mb-3" size={48} />
-            <div className="text-xl font-bold text-green-900">Atualizacao concluida!</div>
-            <div className="text-sm text-green-700 mt-2">
-              {result.atualizadas} empresa(s) com responsavel atualizado em <strong>{result.departamentoNome}</strong>
-              {result.naoEncontradas > 0 && ` | ${result.naoEncontradas} ignorada(s)`}
-              {(result.limpeza ?? 0) > 0 && ` | ${result.limpeza} empresa(s) com responsável removido (saíram da planilha)`}
+          <div className="rounded-[var(--radius-md)] bg-[var(--ok-soft)] border border-[var(--ok)]/40 p-6 text-center">
+            <div className="inline-flex items-center justify-center h-12 w-12 rounded-md bg-[var(--surface-2)] border border-[var(--ok)]/40 text-[var(--ok)] mb-3">
+              <Check size={28} />
+            </div>
+            <div className="text-lg font-bold text-[var(--text-1)] tracking-tight">Atualização concluída</div>
+            <div className="text-sm text-[var(--text-2)] mt-2">
+              <span className="ct-num font-semibold text-[var(--text-1)]">{result.atualizadas}</span> empresa(s) com responsável atualizado em <strong className="font-semibold text-[var(--text-1)]">{result.departamentoNome}</strong>
+              {result.naoEncontradas > 0 && <> · <span className="ct-num font-semibold text-[var(--text-1)]">{result.naoEncontradas}</span> ignorada(s)</>}
+              {(result.limpeza ?? 0) > 0 && <> · <span className="ct-num font-semibold text-[var(--text-1)]">{result.limpeza}</span> empresa(s) com responsável removido (saíram da planilha)</>}
             </div>
             {result.usuariosCriados.length > 0 && (
-              <div className="text-sm text-green-700 mt-1">
-                Usuarios criados automaticamente: {result.usuariosCriados.join(', ')}
+              <div className="text-xs text-[var(--text-3)] mt-2">
+                Usuários criados automaticamente: <span className="text-[var(--text-2)] font-semibold">{result.usuariosCriados.join(', ')}</span>
               </div>
             )}
           </div>
           <div className="flex justify-end">
-            <button
-              onClick={onClose}
-              className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 text-white font-bold hover:from-emerald-700 hover:to-teal-600 shadow-md transition"
-            >
+            <button onClick={onClose} className="ct-btn-primary">
               Fechar
             </button>
           </div>

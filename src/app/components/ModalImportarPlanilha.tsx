@@ -645,11 +645,20 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
   const showPreview = totalDoArquivo > 0 && !result;
 
   return (
-    <ModalBase isOpen={true} onClose={onClose} dialogClassName="w-full max-w-5xl rounded-2xl bg-white shadow-2xl p-4 sm:p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold text-gray-900">Importar Planilha do Domínio</h2>
-        <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 transition">
-          <X size={20} className="text-gray-500" />
+    <ModalBase isOpen={true} onClose={onClose} dialogClassName="w-full max-w-5xl rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] shadow-[0_8px_24px_rgba(0,0,0,0.18)] p-4 sm:p-6">
+      <div className="flex items-center justify-between mb-6 pb-4 border-b border-[var(--border-subtle)]">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] shrink-0">
+            <FileSpreadsheet size={18} />
+          </div>
+          <h2 className="text-base font-bold text-[var(--text-1)] tracking-tight">Importar Planilha do Domínio</h2>
+        </div>
+        <button
+          onClick={onClose}
+          className="rounded-md p-2 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition shrink-0"
+          aria-label="Fechar"
+        >
+          <X size={18} />
         </button>
       </div>
 
@@ -786,19 +795,12 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
               Vai importar <span className="font-bold text-green-600">{editing.length}</span> empresa(s)
             </div>
             <div className="flex gap-3">
-              <button
-                onClick={resetFile}
-                className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-50 transition font-semibold"
-              >
+              <button onClick={resetFile} className="ct-btn-secondary">
                 Cancelar
               </button>
-              <button
-                onClick={handleImport}
-                disabled={editing.length === 0 || importing}
-                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-500 text-white font-bold hover:from-cyan-700 hover:to-teal-600 shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {importing ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
-                Importar {editing.length} empresa(s)
+              <button onClick={handleImport} disabled={editing.length === 0 || importing} className="ct-btn-primary">
+                {importing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                Importar <span className="ct-num">{editing.length}</span> empresa(s)
               </button>
             </div>
           </div>
@@ -806,13 +808,13 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
           {/* Barra de progresso */}
           {importing && importProgress.total > 0 && (
             <div className="mt-4 space-y-2">
-              <div className="flex items-center justify-between text-sm text-gray-600">
-                <span>{importProgress.phase}</span>
-                <span className="font-mono font-bold">{importProgress.done}/{importProgress.total}</span>
+              <div className="flex items-center justify-between text-xs text-[var(--text-2)]">
+                <span className="font-semibold uppercase tracking-wider text-[var(--text-3)]">{importProgress.phase}</span>
+                <span className="ct-num font-semibold text-[var(--text-1)]">{importProgress.done}/{importProgress.total}</span>
               </div>
-              <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+              <div className="h-1.5 bg-[var(--surface-3)] rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-cyan-500 to-teal-400 transition-all duration-300"
+                  className="h-full bg-[var(--brand)] transition-all duration-300"
                   style={{ width: `${Math.round((importProgress.done / importProgress.total) * 100)}%` }}
                 />
               </div>
@@ -824,25 +826,24 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
       {/* Result */}
       {result && (
         <div className="space-y-4">
-          <div className="rounded-2xl bg-green-50 p-6 text-center">
-            <Check className="mx-auto text-green-600 mb-3" size={48} />
-            <div className="text-xl font-bold text-green-900">Importação concluída!</div>
-            <div className="text-sm text-green-700 mt-2">
-              {result.created > 0 && `${result.created} empresa(s) criada(s)`}
-              {result.descartadas > 0 && `${result.created > 0 ? ' • ' : ''}${result.descartadas} já existente(s) descartada(s)`}
-              {result.errors > 0 && <span className="text-red-600"> • {result.errors} erro(s)</span>}
+          <div className="rounded-[var(--radius-md)] bg-[var(--ok-soft)] border border-[var(--ok)]/40 p-6 text-center">
+            <div className="inline-flex items-center justify-center h-12 w-12 rounded-md bg-[var(--surface-2)] border border-[var(--ok)]/40 text-[var(--ok)] mb-3">
+              <Check size={28} />
+            </div>
+            <div className="text-lg font-bold text-[var(--text-1)] tracking-tight">Importação concluída</div>
+            <div className="text-sm text-[var(--text-2)] mt-2">
+              {result.created > 0 && <><span className="ct-num font-semibold text-[var(--text-1)]">{result.created}</span> empresa(s) criada(s)</>}
+              {result.descartadas > 0 && <>{result.created > 0 ? ' • ' : ''}<span className="ct-num font-semibold text-[var(--text-1)]">{result.descartadas}</span> já existente(s) descartada(s)</>}
+              {result.errors > 0 && <span className="text-[var(--danger)]"> • <span className="ct-num font-semibold">{result.errors}</span> erro(s)</span>}
             </div>
             {result.deptCreated.length > 0 && (
-              <div className="text-sm text-green-700 mt-1">
-                Departamentos criados automaticamente: {result.deptCreated.join(', ')}
+              <div className="text-xs text-[var(--text-3)] mt-2">
+                Departamentos criados automaticamente: <span className="text-[var(--text-2)] font-semibold">{result.deptCreated.join(', ')}</span>
               </div>
             )}
           </div>
           <div className="flex justify-end">
-            <button
-              onClick={onClose}
-              className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-500 text-white font-bold hover:from-cyan-700 hover:to-teal-600 shadow-md transition"
-            >
+            <button onClick={onClose} className="ct-btn-primary">
               Fechar
             </button>
           </div>

@@ -238,12 +238,10 @@ export default function ModalConferenciaCelula({
 
   const corHeader =
     status?.status === 'feito'
-      ? 'from-emerald-500 to-teal-600'
+      ? { bg: 'bg-[var(--ok-soft)]', text: 'text-[var(--ok)]' }
       : status?.status === 'recebido_pendente'
-        ? 'from-orange-500 to-amber-600'
-        : status?.status === 'sem_movimento'
-          ? 'from-slate-400 to-slate-600'
-          : 'from-slate-500 to-slate-700';
+        ? { bg: 'bg-[var(--warn-soft)]', text: 'text-[var(--warn)]' }
+        : { bg: 'bg-[var(--surface-3)]', text: 'text-[var(--text-2)]' };
 
   return (
     <>
@@ -251,23 +249,29 @@ export default function ModalConferenciaCelula({
         isOpen={isOpen}
         onClose={onClose}
         labelledBy="modal-celula-titulo"
-        dialogClassName="w-full max-w-lg rounded-2xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto"
+        dialogClassName="w-full max-w-lg rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] shadow-[0_8px_24px_rgba(0,0,0,0.18)] max-h-[90vh] overflow-y-auto"
       >
-        <div className={`bg-gradient-to-r ${corHeader} text-white p-5 rounded-t-2xl flex items-start gap-3`}>
-          <div className="p-2 bg-white/20 rounded-xl"><Banknote size={22} /></div>
+        <div className="border-b border-[var(--border-subtle)] p-5 flex items-start gap-3">
+          <div className={`inline-flex items-center justify-center h-9 w-9 rounded-md shrink-0 ${corHeader.bg} ${corHeader.text}`}>
+            <Banknote size={18} />
+          </div>
           <div className="flex-1 min-w-0">
-            <h2 id="modal-celula-titulo" className="text-base font-bold flex items-center gap-2">
-              <span className="truncate">{banco.nome}</span>
+            <h2 id="modal-celula-titulo" className="text-base font-bold text-[var(--text-1)] tracking-tight truncate">
+              {banco.nome}
             </h2>
-            <p className="text-xs text-white/85 truncate">
-              {empresa.codigo} · {empresa.razao_social ?? empresa.apelido ?? ''}
+            <p className="text-xs text-[var(--text-3)] truncate mt-0.5">
+              <span className="ct-num text-[var(--text-2)]">{empresa.codigo}</span> · {empresa.razao_social ?? empresa.apelido ?? ''}
             </p>
-            <p className="text-xs text-white/85 mt-1 flex items-center gap-1">
-              <Calendar size={12} />
-              <span className="capitalize">{mesLabel}</span>
+            <p className="text-xs text-[var(--text-2)] mt-1 inline-flex items-center gap-1">
+              <Calendar size={12} className="text-[var(--text-3)]" />
+              <span className="capitalize ct-num">{mesLabel}</span>
             </p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-white/20 transition" aria-label="Fechar">
+          <button
+            onClick={onClose}
+            className="rounded-md p-2 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition shrink-0"
+            aria-label="Fechar"
+          >
             <X size={18} />
           </button>
         </div>
