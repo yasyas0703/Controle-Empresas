@@ -91,45 +91,44 @@ export default function CalendarioPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl bg-white p-3 sm:p-6 shadow-sm">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-3 sm:p-6 border border-[var(--border)]">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center shadow-md">
-              <CalendarDays className="text-white" size={22} />
+            <div className="h-11 w-11 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] flex items-center justify-center shrink-0">
+              <CalendarDays size={20} />
             </div>
             <div>
-              <div className="text-2xl font-bold text-gray-900">{monthLabel}</div>
-              <div className="text-sm text-gray-500">{monthEventCount} vencimento(s) neste mês</div>
+              <div className="text-2xl font-bold text-[var(--text-1)] tracking-tight capitalize">{monthLabel}</div>
+              <div className="text-sm text-[var(--text-2)]">
+                <span className="ct-num font-semibold text-[var(--text-1)]">{monthEventCount}</span> vencimento(s) neste mês
+              </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             {/* Legenda de cores */}
-            <div className="hidden sm:flex items-center gap-3 mr-4 text-xs flex-wrap">
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-red-500" /> Vencido</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-orange-500" /> Crítico (≤15d)</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> Atenção (≤60d)</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Em dia</span>
+            <div className="hidden sm:flex items-center gap-3 mr-4 text-[11px] text-[var(--text-2)] flex-wrap">
+              <span className="flex items-center gap-1"><span aria-hidden className="h-2 w-2 rounded-full bg-[var(--danger)]" /> Vencido</span>
+              <span className="flex items-center gap-1"><span aria-hidden className="h-2 w-2 rounded-full bg-[var(--warn)]" /> Crítico (≤15d)</span>
+              <span className="flex items-center gap-1"><span aria-hidden className="h-2 w-2 rounded-full bg-amber-400" /> Atenção (≤60d)</span>
+              <span className="flex items-center gap-1"><span aria-hidden className="h-2 w-2 rounded-full bg-[var(--ok)]" /> Em dia</span>
             </div>
-            <button
-              onClick={() => setCursor(new Date())}
-              className="rounded-xl bg-gray-100 px-3 py-2 text-sm font-semibold hover:bg-gray-200 transition"
-            >
+            <button onClick={() => setCursor(new Date())} className="ct-btn-secondary text-xs">
               Hoje
             </button>
             <button
               onClick={() => setCursor((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
-              className="rounded-xl bg-gray-100 p-2 hover:bg-gray-200 transition"
+              className="rounded-[var(--radius)] bg-[var(--surface-3)] p-2 text-[var(--text-2)] hover:bg-[var(--surface-3)] hover:text-[var(--text-1)] border border-transparent hover:border-[var(--border-strong)] transition-colors"
               aria-label="Mês anterior"
             >
-              <ChevronLeft size={20} />
+              <ChevronLeft size={18} />
             </button>
             <button
               onClick={() => setCursor((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
-              className="rounded-xl bg-gray-100 p-2 hover:bg-gray-200 transition"
+              className="rounded-[var(--radius)] bg-[var(--surface-3)] p-2 text-[var(--text-2)] hover:bg-[var(--surface-3)] hover:text-[var(--text-1)] border border-transparent hover:border-[var(--border-strong)] transition-colors"
               aria-label="Próximo mês"
             >
-              <ChevronRight size={20} />
+              <ChevronRight size={18} />
             </button>
           </div>
         </div>
@@ -140,7 +139,7 @@ export default function CalendarioPage() {
             {/* Weekday headers */}
             <div className="grid grid-cols-7 gap-1">
               {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((w) => (
-                <div key={w} className="text-center text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-wider py-1 sm:py-2">
+                <div key={w} className="text-center text-[10px] sm:text-xs font-semibold text-[var(--text-3)] uppercase tracking-wider py-1 sm:py-2">
                   {w}
                 </div>
               ))}
@@ -165,17 +164,17 @@ export default function CalendarioPage() {
                 }, 'ok' as 'vencido' | 'critico' | 'atencao' | 'ok');
 
                 const statusColorClass =
-                  worstStatus === 'vencido' ? 'bg-red-500' :
-                  worstStatus === 'critico' ? 'bg-orange-500' :
+                  worstStatus === 'vencido' ? 'bg-[var(--danger)]' :
+                  worstStatus === 'critico' ? 'bg-[var(--warn)]' :
                   worstStatus === 'atencao' ? 'bg-amber-400' :
-                  'bg-emerald-500';
+                  'bg-[var(--ok)]';
 
                 const eventColor = (ev: EventItem) => {
-                  if (ev.dias === null) return ev.kind === 'documento' ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800';
-                  if (ev.dias < 0) return 'bg-red-100 text-red-800 font-bold';
-                  if (ev.dias <= 15) return 'bg-orange-100 text-orange-800';
-                  if (ev.dias <= 60) return 'bg-amber-100 text-amber-800';
-                  return 'bg-emerald-100 text-emerald-800';
+                  if (ev.dias === null) return ev.kind === 'documento' ? 'bg-[var(--brand-soft)] text-[var(--brand-strong)]' : 'bg-[var(--ok-soft)] text-[var(--ok)]';
+                  if (ev.dias < 0) return 'bg-[var(--danger-soft)] text-[var(--danger)] font-bold';
+                  if (ev.dias <= 15) return 'bg-[var(--warn-soft)] text-[var(--warn)]';
+                  if (ev.dias <= 60) return 'bg-amber-50 text-amber-700';
+                  return 'bg-[var(--ok-soft)] text-[var(--ok)]';
                 };
 
                 return (
@@ -183,23 +182,23 @@ export default function CalendarioPage() {
                     key={iso}
                     onClick={() => events.length > 0 && setSelectedDate(isSelected ? null : iso)}
                     className={
-                      'min-h-[60px] sm:min-h-[100px] rounded-lg sm:rounded-xl p-1 sm:p-2 transition cursor-pointer ' +
-                      (!isCurrentMonth ? 'bg-gray-50/50 opacity-40' : 'bg-white hover:bg-gray-50') +
-                      (today ? ' ring-2 ring-cyan-500 bg-cyan-50/30' : '') +
-                      (isSelected ? ' ring-2 ring-blue-500 bg-blue-50/30' : '')
+                      'min-h-[60px] sm:min-h-[100px] rounded-[var(--radius)] p-1 sm:p-2 transition-colors cursor-pointer border ' +
+                      (!isCurrentMonth ? 'bg-[var(--surface-1)] border-transparent opacity-40' : 'bg-[var(--surface-2)] border-[var(--border)] hover:border-[var(--border-strong)]') +
+                      (today ? ' !border-[var(--brand)] !bg-[var(--brand-soft)]' : '') +
+                      (isSelected ? ' ring-1 ring-[var(--brand)]' : '')
                     }
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className={
-                        'text-xs sm:text-sm font-bold ' +
-                        (today ? 'bg-cyan-600 text-white rounded-full h-5 w-5 sm:h-7 sm:w-7 flex items-center justify-center text-[10px] sm:text-sm' : 'text-gray-700')
+                        'ct-num text-xs sm:text-sm font-bold ' +
+                        (today ? 'bg-[var(--brand)] text-white rounded-full h-5 w-5 sm:h-7 sm:w-7 flex items-center justify-center text-[10px] sm:text-sm' : 'text-[var(--text-1)]')
                       }>
                         {d.getDate()}
                       </span>
                       {events.length > 0 && (
                         <div className="flex items-center gap-1">
-                          <span className={`h-2 w-2 rounded-full ${statusColorClass} ${worstStatus === 'vencido' ? 'animate-pulse' : ''}`} />
-                          <span className="text-[10px] font-bold text-gray-400">{events.length}</span>
+                          <span aria-hidden className={`h-2 w-2 rounded-full ${statusColorClass} ${worstStatus === 'vencido' ? 'animate-pulse' : ''}`} />
+                          <span className="text-[10px] font-bold text-[var(--text-3)] ct-num">{events.length}</span>
                         </div>
                       )}
                     </div>
@@ -208,7 +207,7 @@ export default function CalendarioPage() {
                       {events.slice(0, 2).map((ev, idx) => (
                         <div
                           key={`${iso}:${idx}`}
-                          className={`rounded-lg px-1.5 py-1 text-[10px] leading-tight ${eventColor(ev)}`}
+                          className={`rounded-sm px-1.5 py-1 text-[10px] leading-tight ${eventColor(ev)}`}
                           title={`${ev.company} • ${ev.label} • ${formatBR(ev.date)}${ev.dias !== null ? ` • ${ev.dias < 0 ? `vencido há ${Math.abs(ev.dias)}d` : `${ev.dias}d`}` : ''}`}
                         >
                           <div className="font-bold truncate">{ev.label}</div>
@@ -216,7 +215,7 @@ export default function CalendarioPage() {
                         </div>
                       ))}
                       {events.length > 2 && (
-                        <div className="text-[10px] font-semibold text-cyan-600">+{events.length - 2} mais</div>
+                        <div className="text-[10px] font-semibold text-[var(--brand)]">+{events.length - 2} mais</div>
                       )}
                     </div>
                   </div>
@@ -228,18 +227,24 @@ export default function CalendarioPage() {
           {/* Side Panel - Selected Day Details */}
           {selectedDate && byDate[selectedDate] && (
             <div className="w-full lg:w-[320px] flex-shrink-0">
-              <div className="rounded-2xl border border-gray-200 bg-white shadow-sm sticky top-24 overflow-hidden">
-                <div className="bg-gradient-to-r from-teal-500 to-cyan-600 p-4 text-white">
+              <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] sticky top-24 overflow-hidden">
+                <div className="border-b border-[var(--border-subtle)] p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-sm font-medium opacity-80">Vencimentos em</div>
-                      <div className="text-lg font-bold">{formatBR(selectedDate)}</div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-3)]">Vencimentos em</div>
+                      <div className="text-lg font-bold text-[var(--text-1)] tracking-tight ct-num">{formatBR(selectedDate)}</div>
                     </div>
-                    <button onClick={() => setSelectedDate(null)} className="p-1 rounded-lg hover:bg-white/20 transition">
-                      <XCircle size={20} />
+                    <button
+                      onClick={() => setSelectedDate(null)}
+                      className="rounded-md p-1.5 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition"
+                      aria-label="Fechar"
+                    >
+                      <XCircle size={18} />
                     </button>
                   </div>
-                  <div className="text-sm mt-1">{byDate[selectedDate].length} item(ns)</div>
+                  <div className="text-xs mt-1 text-[var(--text-2)]">
+                    <span className="ct-num font-semibold text-[var(--text-1)]">{byDate[selectedDate].length}</span> item(ns)
+                  </div>
                 </div>
                 <div className="max-h-[500px] overflow-y-auto divide-y divide-gray-100">
                   {byDate[selectedDate].map((ev, idx) => {
