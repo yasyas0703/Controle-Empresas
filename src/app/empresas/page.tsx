@@ -129,59 +129,50 @@ export default function EmpresasPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-4 sm:p-6 border border-[var(--border)]">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center shadow-md">
-              <Building2 className="text-white" size={22} />
+            <div className="h-11 w-11 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] flex items-center justify-center shrink-0">
+              <Building2 size={22} />
             </div>
             <div>
-              <div className="text-2xl font-bold text-gray-900">Cadastro de Empresas</div>
-              <div className="text-sm text-gray-500">
+              <div className="text-2xl font-bold text-[var(--text-1)] tracking-tight">Cadastro de Empresas</div>
+              <div className="text-sm text-[var(--text-2)]">
                 {filtered.length === 0 ? '0 empresa(s)' : (
                   <>
-                    Mostrando <span className="font-bold text-gray-700">{(pageClamped - 1) * perPage + 1}–{Math.min(pageClamped * perPage, filtered.length)}</span> de <span className="font-bold text-gray-700">{filtered.length}</span> empresa(s)
+                    Mostrando <span className="ct-num font-semibold text-[var(--text-1)]">{(pageClamped - 1) * perPage + 1}–{Math.min(pageClamped * perPage, filtered.length)}</span> de <span className="ct-num font-semibold text-[var(--text-1)]">{filtered.length}</span> empresa(s)
                   </>
                 )} • Use o Dashboard para filtros avançados
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
             {canManage && (
               <button
                 onClick={() => setModalEncontrarCnpjs(true)}
-                className="inline-flex items-center gap-2 rounded-xl border-2 border-violet-200 text-violet-700 px-3 sm:px-4 py-2 sm:py-2.5 text-sm font-bold hover:bg-violet-50 transition"
+                className="ct-btn-secondary"
                 title="Consulta a Receita e preenche os dados das empresas com CNPJ"
               >
-                <ScanSearch size={18} />
+                <ScanSearch size={16} />
                 <span className="hidden sm:inline">Encontrar</span> CNPJs
               </button>
             )}
             {canManage && (
-              <button
-                onClick={() => setModalImportPorDep(true)}
-                className="inline-flex items-center gap-2 rounded-xl border-2 border-emerald-200 text-emerald-700 px-3 sm:px-4 py-2 sm:py-2.5 text-sm font-bold hover:bg-emerald-50 transition"
-              >
-                <Users size={18} />
+              <button onClick={() => setModalImportPorDep(true)} className="ct-btn-secondary">
+                <Users size={16} />
                 <span className="hidden sm:inline">Importar</span> por DEP
               </button>
             )}
             {canManage && (
-              <button
-                onClick={() => setModalImport(true)}
-                className="inline-flex items-center gap-2 rounded-xl border-2 border-cyan-200 text-cyan-700 px-3 sm:px-4 py-2 sm:py-2.5 text-sm font-bold hover:bg-cyan-50 transition"
-              >
-                <Upload size={18} />
+              <button onClick={() => setModalImport(true)} className="ct-btn-secondary">
+                <Upload size={16} />
                 <span className="hidden sm:inline">Importar</span> Planilha
               </button>
             )}
             {canManage && (
-              <button
-                onClick={() => setModalCreate(true)}
-                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-500 text-white px-4 sm:px-5 py-2.5 sm:py-3 text-sm font-bold hover:from-cyan-700 hover:to-teal-600 shadow-md transition"
-              >
-                <Plus size={18} />
+              <button onClick={() => setModalCreate(true)} className="ct-btn-primary">
+                <Plus size={16} />
                 Nova Empresa
               </button>
             )}
@@ -190,21 +181,21 @@ export default function EmpresasPage() {
 
         <div className="mt-5 flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1 max-w-lg">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-3)] pointer-events-none" size={16} />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar por CNPJ/CPF, razão social..."
-              className="w-full rounded-xl bg-gray-50 pl-10 pr-4 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+              className="ct-input pl-10"
             />
           </div>
           <div className="relative w-full sm:w-44">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">#</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-3)] text-xs font-semibold pointer-events-none">#</span>
             <input
               value={searchCodigo}
               onChange={(e) => setSearchCodigo(e.target.value.replace(/\D/g, ''))}
               placeholder="Buscar por código"
-              className="w-full rounded-xl bg-gray-50 pl-8 pr-4 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-teal-400 focus:bg-white transition"
+              className="ct-input pl-8"
               inputMode="numeric"
             />
           </div>
@@ -212,7 +203,7 @@ export default function EmpresasPage() {
             <select
               value={tagFiltro}
               onChange={(e) => setTagFiltro(e.target.value)}
-              className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-violet-400"
+              className="ct-input sm:w-44"
             >
               <option value="">Todas as tags</option>
               {allTags.map((t) => (
