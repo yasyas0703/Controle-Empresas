@@ -410,13 +410,13 @@ export default function DashboardPage() {
     <div className="space-y-6">
       {/* Cards de Resumo */}
       <div className={`grid grid-cols-2 sm:grid-cols-3 ${podeVerFiscalERet ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-3 sm:gap-4`}>
-        <StatCard icon={<Building2 size={24} />} gradient="from-blue-500 to-blue-600" label="Total Empresas" value={totals.empresas} />
-        <StatCard icon={<FileText size={24} />} gradient="from-orange-400 to-orange-500" label="Documentos" value={totals.documentos} />
+        <StatCard icon={<Building2 size={18} />} label="Total Empresas" value={totals.empresas} />
+        <StatCard icon={<FileText size={18} />} label="Documentos" value={totals.documentos} />
         {podeVerFiscalERet && (
-          <StatCard icon={<CalendarClock size={24} />} gradient="from-emerald-500 to-emerald-600" label="RETs" value={totals.rets} />
+          <StatCard icon={<CalendarClock size={18} />} label="RETs" value={totals.rets} />
         )}
-        <StatCard icon={<AlertTriangle size={24} />} gradient="from-red-700 to-red-800" label="Vencidos" value={totals.vencidos} pulse={totals.vencidos > 0} />
-        <StatCard icon={<Clock size={24} />} gradient="from-amber-500 to-orange-500" label={`Em Risco (≤${limiares.proximo}d)`} value={totals.emRisco} />
+        <StatCard icon={<AlertTriangle size={18} />} label="Vencidos" value={totals.vencidos} pulse={totals.vencidos > 0} />
+        <StatCard icon={<Clock size={18} />} label={`Em Risco (≤${limiares.proximo}d)`} value={totals.emRisco} accent="warn" />
       </div>
 
       {/* VENCIDOS — Banner vermelho forte */}
@@ -1218,18 +1218,44 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({ icon, gradient, label, value, pulse }: { icon: React.ReactNode; gradient: string; label: string; value: number; pulse?: boolean }) {
+function StatCard({
+  icon,
+  label,
+  value,
+  pulse,
+  accent,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  pulse?: boolean;
+  accent?: 'danger' | 'warn';
+}) {
+  const iconColor = pulse || accent === 'danger'
+    ? 'text-[var(--danger)]'
+    : accent === 'warn'
+      ? 'text-[var(--warn)]'
+      : 'text-[var(--text-3)]';
+  const valueColor = pulse
+    ? 'text-[var(--danger)]'
+    : accent === 'warn'
+      ? 'text-[var(--warn)]'
+      : 'text-[var(--text-1)]';
   return (
-    <div className={`rounded-2xl bg-white p-3 sm:p-5 shadow-sm ${pulse ? 'ring-2 ring-red-300 ring-offset-2' : ''}`}>
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-xs sm:text-sm font-semibold text-gray-500">{label}</div>
-          <div className={`text-2xl sm:text-3xl font-bold mt-1 ${pulse ? 'text-red-700' : 'text-gray-900'}`}>{value}</div>
+    <div
+      className={`relative rounded-[var(--radius)] bg-[var(--surface-2)] border p-3 sm:p-5 ${
+        pulse ? 'border-[var(--danger)]' : 'border-[var(--border)]'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-[10px] sm:text-[11px] font-semibold text-[var(--text-3)] uppercase tracking-wider leading-tight">
+          {label}
         </div>
-        <div className={`h-10 w-10 sm:h-12 sm:w-12 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-md ${pulse ? 'animate-pulse' : ''}`}>
+        <div className={`shrink-0 ${iconColor} ${pulse ? 'animate-pulse' : ''}`}>
           {icon}
         </div>
       </div>
+      <div className={`ct-num font-bold text-2xl sm:text-3xl mt-2 ${valueColor}`}>{value}</div>
     </div>
   );
 }
