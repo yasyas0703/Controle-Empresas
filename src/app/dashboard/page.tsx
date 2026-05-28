@@ -1231,31 +1231,41 @@ function StatCard({
   pulse?: boolean;
   accent?: 'danger' | 'warn';
 }) {
-  const iconColor = pulse || accent === 'danger'
+  const isDanger = pulse || accent === 'danger';
+  const isWarn = accent === 'warn';
+  const chipBg = isDanger
+    ? 'bg-[var(--danger-soft)]'
+    : isWarn
+      ? 'bg-[var(--warn-soft)]'
+      : 'bg-[var(--surface-3)]';
+  const chipText = isDanger
     ? 'text-[var(--danger)]'
-    : accent === 'warn'
+    : isWarn
       ? 'text-[var(--warn)]'
-      : 'text-[var(--text-3)]';
-  const valueColor = pulse
+      : 'text-[var(--text-2)]';
+  const valueColor = isDanger
     ? 'text-[var(--danger)]'
-    : accent === 'warn'
+    : isWarn
       ? 'text-[var(--warn)]'
       : 'text-[var(--text-1)]';
   return (
     <div
-      className={`relative rounded-[var(--radius)] bg-[var(--surface-2)] border p-3 sm:p-5 ${
-        pulse ? 'border-[var(--danger)]' : 'border-[var(--border)]'
+      className={`rounded-[var(--radius)] bg-[var(--surface-2)] border p-4 sm:p-5 transition-colors ${
+        isDanger ? 'border-[var(--danger)]/40' : isWarn ? 'border-[var(--warn)]/40' : 'border-[var(--border)]'
       }`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="text-[10px] sm:text-[11px] font-semibold text-[var(--text-3)] uppercase tracking-wider leading-tight">
+      <div className="flex items-start justify-between gap-3">
+        <div className="text-[10px] sm:text-[11px] font-semibold text-[var(--text-3)] uppercase tracking-wider leading-snug">
           {label}
         </div>
-        <div className={`shrink-0 ${iconColor} ${pulse ? 'animate-pulse' : ''}`}>
+        <div
+          className={`shrink-0 inline-flex items-center justify-center h-7 w-7 sm:h-8 sm:w-8 rounded-md ${chipBg} ${chipText} ${pulse ? 'animate-pulse' : ''}`}
+          aria-hidden
+        >
           {icon}
         </div>
       </div>
-      <div className={`ct-num font-bold text-2xl sm:text-3xl mt-2 ${valueColor}`}>{value}</div>
+      <div className={`ct-num font-bold text-2xl sm:text-3xl mt-3 ${valueColor} leading-none`}>{value}</div>
     </div>
   );
 }
