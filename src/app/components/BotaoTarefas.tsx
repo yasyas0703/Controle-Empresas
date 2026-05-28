@@ -106,15 +106,15 @@ export default function BotaoTarefas({ variant, onClick }: Props) {
       <div className="px-1.5 pt-1.5 pb-2">
         <a
           {...commonAnchorProps}
-          className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 shadow-md hover:shadow-lg transition-all aria-busy:opacity-60"
+          className="w-full flex items-center gap-2.5 rounded-[var(--radius)] px-3 py-2.5 text-sm font-semibold text-[var(--text-1)] bg-[var(--surface-3)] border border-transparent hover:bg-[var(--brand-soft)] hover:border-[var(--brand)] transition-colors aria-busy:opacity-60"
           title="Abrir Controle de Tarefas"
         >
-          {loading ? <Loader2 size={18} className="animate-spin shrink-0" /> : <ListTodo size={18} className="shrink-0" />}
+          {loading ? <Loader2 size={18} className="animate-spin shrink-0 text-[var(--brand)]" /> : <ListTodo size={18} className="shrink-0 text-[var(--brand)]" />}
           <span className="flex-1 text-left">Controle de Tarefas</span>
-          <ExternalLink size={14} className="opacity-80 shrink-0" />
+          <ExternalLink size={14} className="text-[var(--text-3)] shrink-0" />
         </a>
         {erro && (
-          <div className="mt-1.5 text-[10px] text-red-600 font-semibold px-1 leading-tight">{erro}</div>
+          <div className="mt-1.5 text-[10px] text-[var(--danger)] font-semibold px-1 leading-tight">{erro}</div>
         )}
       </div>
     );
@@ -125,7 +125,7 @@ export default function BotaoTarefas({ variant, onClick }: Props) {
       <div className="px-1.5 pt-1.5 pb-2">
         <a
           {...commonAnchorProps}
-          className="w-full flex items-center justify-center rounded-lg p-2.5 text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 shadow-md hover:shadow-lg transition-all aria-busy:opacity-60"
+          className="w-full flex items-center justify-center rounded-[var(--radius)] p-2.5 text-[var(--brand)] bg-[var(--surface-3)] border border-transparent hover:bg-[var(--brand-soft)] hover:border-[var(--brand)] transition-colors aria-busy:opacity-60"
           title="Abrir Controle de Tarefas"
         >
           {loading ? <Loader2 size={18} className="animate-spin" /> : <ListTodo size={18} />}
@@ -138,7 +138,7 @@ export default function BotaoTarefas({ variant, onClick }: Props) {
     return (
       <a
         {...commonAnchorProps}
-        className="p-2 rounded-lg hover:bg-violet-50 text-violet-600 aria-busy:opacity-60"
+        className="p-2 rounded-[var(--radius)] hover:bg-[var(--surface-3)] text-[var(--brand)] aria-busy:opacity-60"
         title="Abrir Controle de Tarefas"
       >
         {loading ? <Loader2 size={20} className="animate-spin" /> : <ListTodo size={20} />}
@@ -151,14 +151,14 @@ export default function BotaoTarefas({ variant, onClick }: Props) {
       <div className="px-2 pt-2 pb-1">
         <a
           {...commonAnchorProps}
-          className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 shadow-md aria-busy:opacity-60"
+          className="w-full flex items-center gap-3 rounded-[var(--radius)] px-3 py-2.5 text-sm font-semibold text-[var(--text-1)] bg-[var(--surface-3)] border border-transparent hover:bg-[var(--brand-soft)] hover:border-[var(--brand)] transition-colors aria-busy:opacity-60"
         >
-          {loading ? <Loader2 size={18} className="animate-spin shrink-0" /> : <ListTodo size={18} className="shrink-0" />}
+          {loading ? <Loader2 size={18} className="animate-spin shrink-0 text-[var(--brand)]" /> : <ListTodo size={18} className="shrink-0 text-[var(--brand)]" />}
           <span className="flex-1 text-left">Controle de Tarefas</span>
-          <ExternalLink size={14} className="opacity-80 shrink-0" />
+          <ExternalLink size={14} className="text-[var(--text-3)] shrink-0" />
         </a>
         {erro && (
-          <div className="mt-1.5 text-[10px] text-red-600 font-semibold px-1 leading-tight">{erro}</div>
+          <div className="mt-1.5 text-[10px] text-[var(--danger)] font-semibold px-1 leading-tight">{erro}</div>
         )}
       </div>
     );
@@ -169,21 +169,21 @@ export default function BotaoTarefas({ variant, onClick }: Props) {
     <div>
       <a
         {...commonAnchorProps}
-        className="w-full flex items-center justify-between gap-4 rounded-2xl px-6 py-5 text-left text-white bg-gradient-to-br from-violet-600 via-fuchsia-600 to-pink-600 hover:from-violet-700 hover:via-fuchsia-700 hover:to-pink-700 shadow-lg hover:shadow-xl transition-all aria-busy:opacity-60"
+        className="w-full flex items-center justify-between gap-4 rounded-[var(--radius-md)] px-6 py-5 text-left bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--brand)] hover:bg-[var(--surface-3)] transition-colors aria-busy:opacity-60"
       >
         <div className="flex items-center gap-4 min-w-0">
-          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-white/20 shrink-0">
+          <div className="flex items-center justify-center w-12 h-12 rounded-md bg-[var(--brand-soft)] text-[var(--brand)] shrink-0">
             {loading ? <Loader2 size={24} className="animate-spin" /> : <ListTodo size={24} />}
           </div>
           <div className="min-w-0">
-            <div className="text-lg font-extrabold leading-tight">Controle de Tarefas</div>
-            <div className="text-xs font-semibold text-white/85 mt-0.5">Abrir o sistema de processos e solicitacoes</div>
+            <div className="text-lg font-bold text-[var(--text-1)] leading-tight">Controle de Tarefas</div>
+            <div className="text-xs font-medium text-[var(--text-3)] mt-0.5">Abrir o sistema de processos e solicitações</div>
           </div>
         </div>
-        <ExternalLink size={20} className="opacity-90 shrink-0" />
+        <ExternalLink size={20} className="text-[var(--text-3)] shrink-0" />
       </a>
       {erro && (
-        <div className="mt-2 text-xs text-red-600 font-semibold">{erro}</div>
+        <div className="mt-2 text-xs text-[var(--danger)] font-semibold">{erro}</div>
       )}
     </div>
   );

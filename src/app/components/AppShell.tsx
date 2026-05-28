@@ -543,7 +543,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
               className="p-2 rounded-lg hover:bg-gray-100 relative"
               aria-label="Notificações"
             >
-              <Bell size={20} className={notifsNaoLidas > 0 ? 'text-cyan-600' : 'text-gray-400'} />
+              <Bell size={20} className={notifsNaoLidas > 0 ? 'text-[var(--brand)]' : 'text-[var(--text-3)]'} />
               {notifsNaoLidas > 0 && (
                 <span className="absolute top-1 right-1 min-w-[14px] h-[14px] rounded-full bg-red-500 text-white text-[8px] font-black flex items-center justify-center px-0.5">
                   {notifsNaoLidas > 9 ? '9+' : notifsNaoLidas}
@@ -566,12 +566,12 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       >
         <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100">
           <Link href="/dashboard" className="flex items-center gap-3" onClick={() => setMobileMenuOpen(false)}>
-            <div className="w-10 h-10 rounded-xl overflow-hidden">
+            <div className="w-10 h-10 rounded-md overflow-hidden">
               <Image src="/triar.png" alt="Logo Triar" width={40} height={40} priority className="w-10 h-10 object-contain" />
             </div>
             <div className="leading-tight">
-              <span className="block text-[10px] font-bold text-gray-400 tracking-widest uppercase">Controle de</span>
-              <span className="block text-lg font-extrabold text-gray-900 leading-none">Empresas</span>
+              <span className="block text-[10px] font-semibold text-[var(--text-3)] tracking-widest uppercase">Controle de</span>
+              <span className="block text-lg font-bold text-[var(--text-1)] leading-none tracking-tight">Empresas</span>
             </div>
           </Link>
           <button onClick={() => setMobileMenuOpen(false)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500">
@@ -665,13 +665,13 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         {/* Logo + Nome */}
         <div className={`flex items-center border-b border-gray-100 py-5 ${sidebarOpen ? 'px-4 gap-4' : 'justify-center px-0'}`}>
           <Link href="/dashboard" className="flex items-center gap-4 min-w-0">
-            <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0">
+            <div className="w-16 h-16 rounded-md overflow-hidden shrink-0">
               <Image src="/triar.png" alt="Logo Triar" width={64} height={64} priority className="w-16 h-16 object-contain" />
             </div>
             {sidebarOpen && (
               <div className="leading-tight min-w-0 overflow-hidden">
-                <span className="block text-xs font-bold text-gray-400 tracking-widest uppercase whitespace-nowrap">Controle de</span>
-                <span className="block text-2xl font-extrabold text-gray-900 tracking-tight leading-none whitespace-nowrap">Empresas</span>
+                <span className="block text-xs font-semibold text-[var(--text-3)] tracking-widest uppercase whitespace-nowrap">Controle de</span>
+                <span className="block text-2xl font-bold text-[var(--text-1)] tracking-tight leading-none whitespace-nowrap">Empresas</span>
               </div>
             )}
           </Link>
@@ -760,7 +760,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                 className="flex items-center justify-center rounded-lg p-2 hover:bg-gray-100 transition relative"
                 title="Notificações"
               >
-                <Bell size={16} className={notifsNaoLidas > 0 ? 'text-cyan-600' : 'text-gray-400'} />
+                <Bell size={16} className={notifsNaoLidas > 0 ? 'text-[var(--brand)]' : 'text-[var(--text-3)]'} />
                 {notifsNaoLidas > 0 && (
                   <span
                     className="absolute top-1 right-1 inline-flex items-center justify-center min-w-[14px] h-[14px] rounded-full bg-red-500 text-white text-[8px] font-black px-0.5"
