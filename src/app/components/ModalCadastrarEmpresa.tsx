@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useRef, useState, useEffect } from 'react';
-import { Loader2, Search, X, Plus, Trash2, Paperclip, AlertTriangle, CalendarClock, Eye, Download } from 'lucide-react';
+import { Loader2, Search, X, Plus, Trash2, Paperclip, AlertTriangle, CalendarClock, Eye, Download, Building2 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import type { Empresa, FormaEnvio, RetItem, TagCor, TipoInscricao, UUID, VencimentoFiscal } from '@/app/types';
 import { FORMAS_ENVIO } from '@/app/types';
@@ -571,17 +571,26 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
       isOpen
       onClose={onClose}
       labelledBy="empresa-title"
-      dialogClassName="w-full max-w-4xl bg-white rounded-2xl shadow-2xl outline-none max-h-[90vh] overflow-y-auto"
+      dialogClassName="w-full max-w-4xl bg-[var(--surface-2)] rounded-[var(--radius-md)] border border-[var(--border)] shadow-[0_8px_24px_rgba(0,0,0,0.18)] outline-none max-h-[90vh] overflow-y-auto"
       zIndex={1400}
     >
-      <div className="rounded-2xl">
-        <div className="bg-gradient-to-r from-green-500 to-green-600 p-4 sm:p-6 rounded-t-2xl sticky top-0 z-10">
-          <div className="flex justify-between items-center">
-            <h3 id="empresa-title" className="text-xl font-bold text-white">
-              {empresa ? 'Editar Empresa' : 'Cadastrar Nova Empresa'}
-            </h3>
-            <button onClick={onClose} className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-lg">
-              <X size={20} />
+      <div>
+        <div className="border-b border-[var(--border-subtle)] p-5 sticky top-0 z-10 bg-[var(--surface-2)]">
+          <div className="flex justify-between items-center gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] shrink-0">
+                <Building2 size={18} />
+              </div>
+              <h3 id="empresa-title" className="text-base font-bold text-[var(--text-1)] tracking-tight">
+                {empresa ? 'Editar Empresa' : 'Cadastrar Nova Empresa'}
+              </h3>
+            </div>
+            <button
+              onClick={onClose}
+              className="rounded-md p-2 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition shrink-0"
+              aria-label="Fechar"
+            >
+              <X size={18} />
             </button>
           </div>
         </div>
@@ -1411,15 +1420,11 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
           )}
 
           {/* Botões */}
-          <div className="flex gap-4 pt-6 border-t border-gray-200">
-            <button type="button" onClick={onClose} className="flex-1 px-6 py-3 text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-100">
+          <div className="flex gap-2 pt-6 border-t border-[var(--border-subtle)]">
+            <button type="button" onClick={onClose} className="ct-btn-secondary flex-1">
               Cancelar
             </button>
-            <button
-              type="submit"
-              disabled={fiscalUploading}
-              className="flex-1 px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-medium hover:shadow-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
-            >
+            <button type="submit" disabled={fiscalUploading} className="ct-btn-primary flex-1">
               {fiscalUploading && <Loader2 size={16} className="animate-spin" />}
               {fiscalUploading ? 'Enviando anexos...' : (empresa ? 'Salvar Alterações' : 'Cadastrar Empresa')}
             </button>

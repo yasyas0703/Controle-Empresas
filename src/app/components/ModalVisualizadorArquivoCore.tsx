@@ -255,32 +255,32 @@ export default function ModalVisualizadorArquivo({
       isOpen={isOpen}
       onClose={onClose}
       labelledBy="modal-visualizador-titulo"
-      dialogClassName="w-full max-w-6xl rounded-2xl bg-white shadow-2xl max-h-[95vh] overflow-hidden flex flex-col"
+      dialogClassName="w-full max-w-6xl rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] shadow-[0_8px_24px_rgba(0,0,0,0.18)] max-h-[95vh] overflow-hidden flex flex-col"
       zIndex={1500}
     >
       {/* Header */}
-      <div className="bg-gradient-to-r from-cyan-600 to-blue-700 text-white p-3 sm:p-4 flex items-center gap-3 shrink-0">
-        <div className="p-2 bg-white/20 rounded-lg shrink-0">
-          {tipo === 'pdf' ? <FileText size={20} /> : tipo === 'imagem' ? <ImageIcon size={20} /> : <FileText size={20} />}
+      <div className="border-b border-[var(--border-subtle)] p-3 sm:p-4 flex items-center gap-3 shrink-0">
+        <div className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] shrink-0">
+          {tipo === 'pdf' ? <FileText size={18} /> : tipo === 'imagem' ? <ImageIcon size={18} /> : <FileText size={18} />}
         </div>
         <div className="flex-1 min-w-0">
-          <h2 id="modal-visualizador-titulo" className="text-base font-bold truncate">{arquivoNome}</h2>
+          <h2 id="modal-visualizador-titulo" className="text-sm font-bold text-[var(--text-1)] tracking-tight truncate">{arquivoNome}</h2>
           {(uploadedPorNome || uploadedEm) && (
-            <p className="text-[11px] text-white/80 truncate">
-              {uploadedPorNome ? `por ${uploadedPorNome}` : ''}
+            <p className="text-[11px] text-[var(--text-3)] truncate mt-0.5">
+              {uploadedPorNome ? <>por <span className="font-semibold text-[var(--text-2)]">{uploadedPorNome}</span></> : ''}
               {uploadedPorNome && uploadedEm ? ' · ' : ''}
-              {uploadedEm ? formatDataHora(uploadedEm) : ''}
+              {uploadedEm ? <span className="ct-num">{formatDataHora(uploadedEm)}</span> : ''}
             </p>
           )}
         </div>
         {podeAnotar && (
-          <div className="flex items-center gap-1 bg-white/15 rounded-lg p-1 shrink-0">
-            <span className="text-[10px] font-bold text-white/80 px-1">Cor:</span>
+          <div className="flex items-center gap-1 bg-[var(--surface-3)] border border-[var(--border)] rounded-[var(--radius)] p-1 shrink-0">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-3)] px-1">Cor</span>
             {CORES_HIGHLIGHT.map((c) => (
               <button
                 key={c.hex}
                 onClick={() => setCorAtual(c.hex)}
-                className={`h-5 w-5 rounded transition ${corAtual === c.hex ? 'ring-2 ring-white' : 'opacity-70 hover:opacity-100'}`}
+                className={`h-5 w-5 rounded-sm transition ${corAtual === c.hex ? 'ring-2 ring-offset-1 ring-offset-[var(--surface-3)] ring-[var(--text-1)]' : 'opacity-70 hover:opacity-100'}`}
                 style={{ background: c.hex }}
                 title={c.label}
               />
@@ -291,26 +291,26 @@ export default function ModalVisualizadorArquivo({
           <button
             onClick={baixar}
             disabled={!signedUrl}
-            className="rounded-lg bg-white/20 hover:bg-white/30 text-white p-2 transition disabled:opacity-50"
+            className="rounded-md p-2 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition disabled:opacity-50"
             title="Baixar"
           >
-            <Download size={18} />
+            <Download size={16} />
           </button>
           <button
             onClick={abrirEmNovaAba}
             disabled={!signedUrl}
-            className="rounded-lg bg-white/20 hover:bg-white/30 text-white p-2 transition disabled:opacity-50"
+            className="rounded-md p-2 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition disabled:opacity-50"
             title="Abrir em nova aba"
           >
-            <ExternalLink size={18} />
+            <ExternalLink size={16} />
           </button>
           <button
             onClick={onClose}
-            className="rounded-lg bg-white/20 hover:bg-white/30 text-white p-2 transition"
+            className="rounded-md p-2 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition"
             title="Fechar"
             aria-label="Fechar"
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
       </div>
@@ -341,10 +341,7 @@ export default function ModalVisualizadorArquivo({
               <p className="text-xs text-gray-500 mb-4">
                 O navegador não consegue renderizar arquivos do tipo <code className="font-mono bg-gray-200 px-1 rounded">{(arquivoNome.split('.').pop() ?? '').toLowerCase()}</code> direto na página. Mas você pode baixar:
               </p>
-              <button
-                onClick={baixar}
-                className="rounded-lg bg-gradient-to-r from-cyan-600 to-blue-700 hover:from-cyan-700 hover:to-blue-800 text-white px-4 py-2 text-sm font-bold inline-flex items-center gap-2 transition"
-              >
+              <button onClick={baixar} className="ct-btn-primary">
                 <Download size={16} /> Baixar arquivo
               </button>
             </div>
