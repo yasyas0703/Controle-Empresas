@@ -198,12 +198,12 @@ export default function TarefasObrigacoesPage() {
   if (!currentUser || (!canManage && !isPrivileged)) {
     return (
       <div className="space-y-4">
-        <div className="rounded-2xl bg-white p-6 sm:p-8 shadow-sm border border-gray-100 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-500">
-            <ShieldAlert size={28} />
+        <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-6 sm:p-8 border border-[var(--border)] text-center">
+          <div className="inline-flex items-center justify-center h-12 w-12 rounded-md bg-[var(--danger-soft)] text-[var(--danger)] mb-3">
+            <ShieldAlert size={26} />
           </div>
-          <div className="text-lg font-bold text-gray-900">Acesso restrito</div>
-          <div className="mt-1 text-sm text-gray-500">Esta página é apenas para admins/gerentes.</div>
+          <div className="text-lg font-bold text-[var(--text-1)] tracking-tight">Acesso restrito</div>
+          <div className="mt-1 text-sm text-[var(--text-2)]">Esta página é apenas para admins/gerentes.</div>
         </div>
       </div>
     );
@@ -212,40 +212,37 @@ export default function TarefasObrigacoesPage() {
   return (
     <div className="space-y-4 sm:space-y-6 min-w-0 max-w-full">
       <div className="flex items-center gap-2">
-        <Link href="/obrigacoes" className="inline-flex items-center gap-1 text-sm font-bold text-gray-600 hover:text-gray-900">
+        <Link href="/obrigacoes" className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--text-2)] hover:text-[var(--text-1)] transition-colors">
           <ArrowLeft size={16} /> Voltar
         </Link>
       </div>
 
       {/* Header */}
-      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-4 sm:p-6 border border-[var(--border)]">
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 flex items-center justify-center shadow-md shrink-0">
-            <ListChecks className="text-white" size={22} />
+          <div className="h-11 w-11 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] flex items-center justify-center shrink-0">
+            <ListChecks size={20} />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-lg sm:text-2xl font-bold text-gray-900">Tarefas geradas</div>
-            <div className="text-xs sm:text-sm text-gray-500">
+            <div className="text-lg sm:text-2xl font-bold text-[var(--text-1)] tracking-tight">Tarefas geradas</div>
+            <div className="text-xs sm:text-sm text-[var(--text-2)]">
               Lista de obrigações pendentes/concluídas por competência. Aqui você acompanha quem precisa pagar o quê.
             </div>
           </div>
-          <Link
-            href="/obrigacoes/processar"
-            className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 hover:from-violet-600 hover:to-indigo-700 text-white px-4 py-2 text-sm font-bold transition shadow-sm"
-          >
+          <Link href="/obrigacoes/processar" className="ct-btn-primary">
             <Upload size={16} /> Processar guias
           </Link>
         </div>
       </div>
 
       {/* Filtros */}
-      <div className="rounded-2xl bg-white p-4 sm:p-5 shadow-sm space-y-3">
-        <div className="flex items-center gap-2 text-sm font-bold text-gray-800">
-          <Filter size={16} className="text-violet-600" /> Filtros
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-4 sm:p-5 border border-[var(--border)] space-y-3">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-3)]">
+          <Filter size={14} /> Filtros
           {(filtroCompetencia || filtroStatus || filtroObrigacao || filtroEmpresa || busca) && (
             <button
               onClick={limparFiltros}
-              className="ml-auto text-xs font-bold text-gray-500 hover:text-gray-800 underline"
+              className="ml-auto text-xs font-semibold text-[var(--brand)] hover:text-[var(--brand-strong)] underline transition-colors"
             >
               Limpar
             </button>
@@ -254,20 +251,20 @@ export default function TarefasObrigacoesPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2">
           <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-3)] pointer-events-none z-10" />
             <input
               type="text"
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               placeholder="Buscar empresa, código, CNPJ..."
-              className="w-full pl-8 pr-2 py-2 text-sm rounded-lg border border-gray-200 focus:border-violet-400 focus:ring-1 focus:ring-violet-400 outline-none"
+              className="ct-input pl-8 text-sm"
             />
           </div>
 
           <select
             value={filtroCompetencia}
             onChange={(e) => setFiltroCompetencia(e.target.value)}
-            className="w-full px-2 py-2 text-sm rounded-lg border border-gray-200 focus:border-violet-400 focus:ring-1 focus:ring-violet-400 outline-none"
+            className="ct-input text-sm"
           >
             <option value="">Todas competências</option>
             {!competenciasDisponiveis.includes(competenciaAtual()) && (
@@ -281,7 +278,7 @@ export default function TarefasObrigacoesPage() {
           <select
             value={filtroStatus}
             onChange={(e) => setFiltroStatus(e.target.value as ObrigacaoTarefaStatus | '')}
-            className="w-full px-2 py-2 text-sm rounded-lg border border-gray-200 focus:border-violet-400 focus:ring-1 focus:ring-violet-400 outline-none"
+            className="ct-input text-sm"
           >
             <option value="">Todos status</option>
             {(Object.keys(STATUS_LABELS) as ObrigacaoTarefaStatus[]).map((s) => (
@@ -292,7 +289,7 @@ export default function TarefasObrigacoesPage() {
           <select
             value={filtroObrigacao}
             onChange={(e) => setFiltroObrigacao(e.target.value)}
-            className="w-full px-2 py-2 text-sm rounded-lg border border-gray-200 focus:border-violet-400 focus:ring-1 focus:ring-violet-400 outline-none"
+            className="ct-input text-sm"
           >
             <option value="">Todas obrigações</option>
             {obrigacoes.map((o) => (
@@ -303,7 +300,7 @@ export default function TarefasObrigacoesPage() {
           <select
             value={filtroEmpresa}
             onChange={(e) => setFiltroEmpresa(e.target.value)}
-            className="w-full px-2 py-2 text-sm rounded-lg border border-gray-200 focus:border-violet-400 focus:ring-1 focus:ring-violet-400 outline-none"
+            className="ct-input text-sm"
           >
             <option value="">Todas empresas</option>
             {empresas.map((e) => (
@@ -315,16 +312,16 @@ export default function TarefasObrigacoesPage() {
         </div>
 
         {/* Resumo por status */}
-        <div className="flex flex-wrap gap-2 pt-1">
+        <div className="flex flex-wrap gap-1.5 pt-1">
           {(Object.keys(STATUS_LABELS) as ObrigacaoTarefaStatus[]).map((s) => (
             <button
               key={s}
               onClick={() => setFiltroStatus(filtroStatus === s ? '' : s)}
-              className={`text-xs font-bold px-2.5 py-1 rounded-full border transition ${
-                filtroStatus === s ? 'ring-2 ring-violet-400 ' : ''
+              className={`text-xs font-semibold px-2.5 py-1 rounded-sm border transition-colors ${
+                filtroStatus === s ? 'ring-1 ring-[var(--brand)] ring-offset-1 ring-offset-[var(--surface-2)] ' : ''
               }${STATUS_STYLES[s]}`}
             >
-              {STATUS_LABELS[s]}: {totaisPorStatus[s]}
+              {STATUS_LABELS[s]}: <span className="ct-num">{totaisPorStatus[s]}</span>
             </button>
           ))}
         </div>
@@ -332,24 +329,24 @@ export default function TarefasObrigacoesPage() {
 
       {/* Lista */}
       {carregando ? (
-        <div className="rounded-2xl bg-white p-8 shadow-sm flex items-center justify-center gap-3 text-gray-500">
-          <Loader2 size={20} className="animate-spin text-violet-600" />
-          <span className="text-sm font-bold">Carregando tarefas...</span>
+        <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-8 border border-[var(--border)] flex items-center justify-center gap-3 text-[var(--text-2)]">
+          <Loader2 size={20} className="animate-spin text-[var(--brand)]" />
+          <span className="text-sm font-semibold">Carregando tarefas...</span>
         </div>
       ) : tarefasFiltradas.length === 0 ? (
-        <div className="rounded-2xl bg-white p-8 shadow-sm text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-400">
+        <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-10 border border-[var(--border)] text-center">
+          <div className="inline-flex items-center justify-center h-12 w-12 rounded-md bg-[var(--surface-3)] text-[var(--text-3)] mb-3">
             <FileText size={24} />
           </div>
-          <div className="text-sm font-bold text-gray-700">Nenhuma tarefa encontrada</div>
-          <div className="text-xs text-gray-500 mt-1">
+          <div className="text-sm font-bold text-[var(--text-1)] tracking-tight">Nenhuma tarefa encontrada</div>
+          <div className="text-xs text-[var(--text-2)] mt-1 max-w-md mx-auto">
             {tarefas.length === 0
               ? 'Comece importando guias em "Processar guias".'
               : 'Tente ajustar os filtros acima.'}
           </div>
         </div>
       ) : (
-        <div className="rounded-2xl bg-white shadow-sm overflow-hidden">
+        <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] overflow-hidden">
           {/* Tabela em desktop */}
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
