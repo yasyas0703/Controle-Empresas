@@ -425,84 +425,79 @@ export default function VencimentosPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-4 sm:p-6 border border-[var(--border)]">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4 flex-wrap">
           <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center shadow-md">
-              <Shield className="text-white" size={22} />
+            <div className="h-11 w-11 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] flex items-center justify-center shrink-0">
+              <Shield size={20} />
             </div>
             <div>
-              <div className="text-xl sm:text-2xl font-bold text-gray-900">Controle de Vencimentos</div>
-              <div className="text-sm text-gray-500">Monitoramento de documentos e RETs com prazos</div>
+              <div className="text-xl sm:text-2xl font-bold text-[var(--text-1)] tracking-tight">Controle de Vencimentos</div>
+              <div className="text-sm text-[var(--text-2)]">Monitoramento de documentos e RETs com prazos.</div>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {canManage && (
-              <button
-                onClick={() => setShowLimiares(true)}
-                className="inline-flex items-center gap-2 rounded-xl border-2 border-violet-200 text-violet-700 px-3 sm:px-4 py-2 sm:py-2.5 font-bold hover:bg-violet-50 transition"
-                title="Configurar limiares de vencimento"
-              >
-                <Settings size={18} />
+              <button onClick={() => setShowLimiares(true)} className="ct-btn-secondary" title="Configurar limiares de vencimento">
+                <Settings size={16} />
                 <span className="hidden sm:inline">Limiares</span>
               </button>
             )}
-            <button
-              onClick={exportPDF}
-              className="inline-flex items-center gap-2 rounded-xl border-2 border-red-200 text-red-700 px-3 sm:px-4 py-2 sm:py-2.5 font-bold hover:bg-red-50 transition"
-            >
-              <FileText size={18} />
+            <button onClick={exportPDF} className="ct-btn-secondary">
+              <FileText size={16} />
               <span className="hidden sm:inline">Exportar</span> PDF
             </button>
-            <button
-              onClick={exportCSV}
-              className="inline-flex items-center gap-2 rounded-xl border-2 border-emerald-200 text-emerald-700 px-3 sm:px-4 py-2 sm:py-2.5 font-bold hover:bg-emerald-50 transition"
-            >
-              <Download size={18} />
+            <button onClick={exportCSV} className="ct-btn-secondary">
+              <Download size={16} />
               <span className="hidden sm:inline">Exportar</span> CSV
             </button>
           </div>
         </div>
       </div>
 
-      {/* Status Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-3 sm:gap-4">
+      {/* Status Cards — KPIs filtraveis */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-3">
         {[
-          { key: 'vencido' as const, label: 'Vencidos', count: counts.vencido, dotColor: 'bg-red-500', textColor: 'text-red-700', ring: 'ring-red-400', activeBg: 'bg-red-50' },
-          { key: 'critico' as const, label: `Críticos (≤${limiares.critico}d)`, count: counts.critico, dotColor: 'bg-orange-500', textColor: 'text-orange-700', ring: 'ring-orange-400', activeBg: 'bg-orange-50' },
-          { key: 'atencao' as const, label: `Atenção (≤${limiares.atencao}d)`, count: counts.atencao, dotColor: 'bg-amber-400', textColor: 'text-amber-700', ring: 'ring-amber-400', activeBg: 'bg-amber-50' },
-          { key: 'proximo' as const, label: `Próximo (≤${limiares.proximo}d)`, count: counts.proximo, dotColor: 'bg-green-500', textColor: 'text-green-700', ring: 'ring-green-400', activeBg: 'bg-green-50' },
-          { key: 'renovado' as const, label: 'Renovados', count: counts.renovado, dotColor: 'bg-blue-500', textColor: 'text-blue-700', ring: 'ring-blue-400', activeBg: 'bg-blue-50' },
-          { key: 'todos' as const, label: 'Em Dia', count: counts.ok, dotColor: 'bg-emerald-500', textColor: 'text-emerald-700', ring: 'ring-emerald-400', activeBg: 'bg-emerald-50' },
-          { key: 'todos-risco' as const, label: 'Total Geral', count: counts.total, dotColor: 'bg-gray-400', textColor: 'text-gray-700', ring: 'ring-gray-400', activeBg: 'bg-gray-50' },
-        ].map((c) => (
-          <button
-            key={c.key}
-            onClick={() => setFiltroStatus(c.key)}
-            className={`rounded-2xl p-5 text-left transition-all hover:shadow-md border ${
-              filtroStatus === c.key ? `ring-2 ${c.ring} ${c.activeBg} border-transparent shadow-md` : 'bg-white border-gray-100 shadow-sm'
-            }`}
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <span className={`h-2.5 w-2.5 rounded-full ${c.dotColor} ${c.key === 'vencido' && c.count > 0 ? 'animate-pulse' : ''}`} />
-              <span className={`text-[10px] sm:text-xs font-bold uppercase tracking-wide ${filtroStatus === c.key ? c.textColor : 'text-gray-500'}`}>{c.label}</span>
-            </div>
-            <div className={`text-2xl sm:text-3xl font-black ${filtroStatus === c.key ? c.textColor : 'text-gray-800'}`}>{c.count}</div>
-          </button>
-        ))}
+          { key: 'vencido' as const, label: 'Vencidos', count: counts.vencido, dot: 'bg-[var(--danger)]', text: 'text-[var(--danger)]', border: 'border-[var(--danger)]', shouldPulse: counts.vencido > 0 },
+          { key: 'critico' as const, label: `Críticos (≤${limiares.critico}d)`, count: counts.critico, dot: 'bg-[var(--warn)]', text: 'text-[var(--warn)]', border: 'border-[var(--warn)]' },
+          { key: 'atencao' as const, label: `Atenção (≤${limiares.atencao}d)`, count: counts.atencao, dot: 'bg-amber-400', text: 'text-amber-600', border: 'border-amber-400' },
+          { key: 'proximo' as const, label: `Próximo (≤${limiares.proximo}d)`, count: counts.proximo, dot: 'bg-[var(--ok)]', text: 'text-[var(--ok)]', border: 'border-[var(--ok)]' },
+          { key: 'renovado' as const, label: 'Renovados', count: counts.renovado, dot: 'bg-[var(--info)]', text: 'text-[var(--info)]', border: 'border-[var(--info)]' },
+          { key: 'todos' as const, label: 'Em Dia', count: counts.ok, dot: 'bg-emerald-500', text: 'text-emerald-700', border: 'border-emerald-500' },
+          { key: 'todos-risco' as const, label: 'Total Geral', count: counts.total, dot: 'bg-[var(--text-3)]', text: 'text-[var(--text-1)]', border: 'border-[var(--text-3)]' },
+        ].map((c) => {
+          const active = filtroStatus === c.key;
+          return (
+            <button
+              key={c.key}
+              onClick={() => setFiltroStatus(c.key)}
+              className={`rounded-[var(--radius)] p-4 text-left transition-colors border ${
+                active
+                  ? `${c.border} bg-[var(--surface-3)]`
+                  : 'bg-[var(--surface-2)] border-[var(--border)] hover:border-[var(--border-strong)]'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <span aria-hidden className={`h-2 w-2 rounded-full ${c.dot} ${c.shouldPulse ? 'animate-pulse' : ''}`} />
+                <span className={`text-[10px] font-semibold uppercase tracking-wider ${active ? c.text : 'text-[var(--text-3)]'} truncate`}>{c.label}</span>
+              </div>
+              <div className={`ct-num font-bold text-2xl sm:text-3xl leading-none ${active ? c.text : 'text-[var(--text-1)]'}`}>{c.count}</div>
+            </button>
+          );
+        })}
       </div>
 
       {/* Filtros */}
-      <div className="rounded-2xl bg-white p-5 shadow-sm">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-5 border border-[var(--border)]">
         <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2 text-lg font-bold text-gray-800">
-            <Filter size={18} className="text-gray-400" />
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-3)]">
+            <Filter size={14} />
             Filtros
           </div>
           {hasFilters && (
             <button
               onClick={() => { setSearch(''); setFiltroStatus('todos-risco'); setFiltroDep(''); setFiltroResp(''); setFiltroTipo(''); setFiltroTag(''); setMeusVencimentos(false); }}
-              className="inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-bold"
+              className="inline-flex items-center gap-1 text-xs text-[var(--brand)] hover:text-[var(--brand-strong)] font-semibold transition-colors"
             >
               <XCircle size={14} />
               Limpar filtros
@@ -511,39 +506,39 @@ export default function VencimentosPage() {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-3)] pointer-events-none" size={16} />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar empresa, código, documento..."
-              className="w-full rounded-xl bg-gray-50 pl-10 pr-4 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+              className="ct-input pl-10 text-sm"
             />
           </div>
-          <select value={filtroDep} onChange={(e) => { setFiltroDep(e.target.value); setFiltroResp(''); }} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={filtroDep} onChange={(e) => { setFiltroDep(e.target.value); setFiltroResp(''); }} className="ct-input text-sm">
             <option value="">Todos departamentos</option>
             {sortedDepartamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
           </select>
-          <select value={filtroResp} onChange={(e) => setFiltroResp(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={filtroResp} onChange={(e) => setFiltroResp(e.target.value)} className="ct-input text-sm">
             <option value="">Todos responsáveis</option>
             {responsaveisOptions.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
           </select>
-          <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} className="ct-input text-sm">
             <option value="">Doc & RET</option>
             <option value="Documento">Documentos</option>
             <option value="RET">RETs</option>
           </select>
           {allTags.length > 0 && (
-            <select value={filtroTag} onChange={(e) => setFiltroTag(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-violet-400">
+            <select value={filtroTag} onChange={(e) => setFiltroTag(e.target.value)} className="ct-input text-sm">
               <option value="">Tag</option>
               {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           )}
           <button
             onClick={() => setMeusVencimentos((v) => !v)}
-            className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold border-2 transition ${
+            className={`inline-flex items-center justify-center gap-2 rounded-[var(--radius)] px-4 py-2.5 text-sm font-semibold border transition-colors ${
               meusVencimentos
-                ? 'bg-cyan-50 border-cyan-400 text-cyan-700'
-                : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-cyan-300'
+                ? 'bg-[var(--brand-soft)] border-[var(--brand)] text-[var(--brand-strong)]'
+                : 'bg-[var(--surface-2)] border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text-1)]'
             }`}
           >
             <User size={16} />
@@ -553,21 +548,23 @@ export default function VencimentosPage() {
       </div>
 
       {/* Lista agrupada por empresa */}
-      <div className="rounded-2xl bg-white shadow-sm border border-gray-100">
-        <div className="px-3 sm:px-5 pt-3 pb-1 flex items-center justify-between gap-2 flex-wrap text-xs text-gray-500">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)]">
+        <div className="px-3 sm:px-5 pt-3 pb-1 flex items-center justify-between gap-2 flex-wrap text-xs text-[var(--text-3)]">
           <div className="flex items-center gap-2">
-            <span className="font-bold uppercase tracking-wider text-[10px] text-gray-400">Ordem:</span>
-            <button onClick={() => toggleSort('dias')} className={`px-2 py-1 rounded-md border text-[11px] font-bold transition ${orderBy === 'dias' ? 'border-cyan-300 bg-cyan-50 text-cyan-700' : 'border-gray-200 hover:bg-gray-50'}`}>
+            <span className="font-semibold uppercase tracking-wider text-[10px] text-[var(--text-3)]">Ordem:</span>
+            <button onClick={() => toggleSort('dias')} className={`px-2 py-1 rounded-sm border text-[11px] font-semibold transition-colors ${orderBy === 'dias' ? 'border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-strong)]' : 'border-[var(--border)] hover:bg-[var(--surface-3)]'}`}>
               Dias <SortIcon col="dias" />
             </button>
-            <button onClick={() => toggleSort('empresa')} className={`px-2 py-1 rounded-md border text-[11px] font-bold transition ${orderBy === 'empresa' ? 'border-cyan-300 bg-cyan-50 text-cyan-700' : 'border-gray-200 hover:bg-gray-50'}`}>
+            <button onClick={() => toggleSort('empresa')} className={`px-2 py-1 rounded-sm border text-[11px] font-semibold transition-colors ${orderBy === 'empresa' ? 'border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-strong)]' : 'border-[var(--border)] hover:bg-[var(--surface-3)]'}`}>
               Empresa <SortIcon col="empresa" />
             </button>
-            <button onClick={() => toggleSort('tipo')} className={`px-2 py-1 rounded-md border text-[11px] font-bold transition ${orderBy === 'tipo' ? 'border-cyan-300 bg-cyan-50 text-cyan-700' : 'border-gray-200 hover:bg-gray-50'}`}>
+            <button onClick={() => toggleSort('tipo')} className={`px-2 py-1 rounded-sm border text-[11px] font-semibold transition-colors ${orderBy === 'tipo' ? 'border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-strong)]' : 'border-[var(--border)] hover:bg-[var(--surface-3)]'}`}>
               Tipo <SortIcon col="tipo" />
             </button>
           </div>
-          <span className="text-[11px] font-bold text-gray-400">{empresasAgrupadas.length} empresa(s) · {filtered.length} item(ns)</span>
+          <span className="text-[11px] font-semibold text-[var(--text-3)]">
+            <span className="ct-num">{empresasAgrupadas.length}</span> empresa(s) · <span className="ct-num">{filtered.length}</span> item(ns)
+          </span>
         </div>
 
         <ul className="divide-y divide-gray-100">
@@ -685,7 +682,7 @@ export default function VencimentosPage() {
                   <select
                     value={perPage}
                     onChange={(e) => setPerPage(Number(e.target.value))}
-                    className="rounded-lg bg-white border border-gray-200 px-2 py-1 text-[11px] font-bold focus:ring-2 focus:ring-cyan-400"
+                    className="rounded-sm bg-[var(--surface-2)] border border-[var(--border)] px-2 py-1 text-[11px] font-semibold focus:outline-none focus:border-[var(--brand)]"
                   >
                     <option value={25}>25</option>
                     <option value={50}>50</option>
@@ -694,15 +691,15 @@ export default function VencimentosPage() {
                   </select>
                 </label>
 
-                <span className="rounded-lg bg-white border border-gray-200 px-2.5 py-1 font-bold text-gray-800 tabular-nums text-[11px]">
-                  Página {pageClamped} <span className="text-gray-400">/ {totalPages}</span>
+                <span className="rounded-sm bg-[var(--surface-2)] border border-[var(--border)] px-2.5 py-1 font-semibold text-[var(--text-1)] ct-num text-[11px]">
+                  Página {pageClamped} <span className="text-[var(--text-3)]">/ {totalPages}</span>
                 </span>
 
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => setPage(1)}
                     disabled={pageClamped <= 1}
-                    className="rounded-lg px-2 py-1.5 text-xs font-bold bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                    className="rounded-sm px-2 py-1.5 text-xs font-semibold bg-[var(--surface-2)] border border-[var(--border)] hover:bg-[var(--surface-3)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     title="Primeira página"
                   >
                     «
@@ -710,7 +707,7 @@ export default function VencimentosPage() {
                   <button
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={pageClamped <= 1}
-                    className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                    className="inline-flex items-center gap-1 rounded-sm px-3 py-1.5 text-xs font-semibold bg-[var(--surface-2)] border border-[var(--border)] hover:bg-[var(--surface-3)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     <ChevronLeft size={14} />
                     <span className="hidden sm:inline">Anterior</span>
@@ -718,7 +715,7 @@ export default function VencimentosPage() {
                   <button
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={pageClamped >= totalPages}
-                    className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold bg-gradient-to-r from-cyan-600 to-teal-500 text-white hover:from-cyan-700 hover:to-teal-600 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition"
+                    className="inline-flex items-center gap-1 rounded-sm px-3 py-1.5 text-xs font-semibold bg-[var(--brand)] text-white border border-[var(--brand)] hover:bg-[var(--brand-strong)] hover:border-[var(--brand-strong)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     <span className="hidden sm:inline">Próxima</span>
                     <ChevronRight size={14} />
@@ -726,7 +723,7 @@ export default function VencimentosPage() {
                   <button
                     onClick={() => setPage(totalPages)}
                     disabled={pageClamped >= totalPages}
-                    className="rounded-lg px-2 py-1.5 text-xs font-bold bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                    className="rounded-sm px-2 py-1.5 text-xs font-semibold bg-[var(--surface-2)] border border-[var(--border)] hover:bg-[var(--surface-3)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     title="Última página"
                   >
                     »
