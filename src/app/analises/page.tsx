@@ -245,21 +245,23 @@ export default function AnalisesPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-4 sm:p-6 border border-[var(--border)]">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-cyan-500 to-teal-600 flex items-center justify-center shadow-md">
-              <BarChart3 className="text-white" size={22} />
+            <div className="h-11 w-11 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] flex items-center justify-center shrink-0">
+              <BarChart3 size={20} />
             </div>
             <div>
-              <div className="text-xl sm:text-2xl font-bold text-gray-900">Dashboard de Análises</div>
-              <div className="text-sm text-gray-500">Gráficos e estatísticas • {filteredEmpresas.length} empresas</div>
+              <div className="text-xl sm:text-2xl font-bold text-[var(--text-1)] tracking-tight">Análises</div>
+              <div className="text-sm text-[var(--text-2)]">
+                Gráficos e estatísticas • <span className="ct-num font-semibold text-[var(--text-1)]">{filteredEmpresas.length}</span> empresas
+              </div>
             </div>
           </div>
           {hasFilters && (
             <button
               onClick={() => { setFiltroRegime(''); setFiltroTipo(''); setFiltroTipoInscricao(''); setFiltroDep(''); setFiltroResponsavel(''); setFiltroEstado(''); setFiltroTag(''); setStatusVenc(''); }}
-              className="text-sm text-teal-600 hover:text-teal-700 font-bold"
+              className="text-sm text-[var(--brand)] hover:text-[var(--brand-strong)] font-semibold transition-colors"
             >
               Limpar filtros
             </button>
@@ -267,39 +269,39 @@ export default function AnalisesPage() {
         </div>
 
         <div className="mt-4 grid grid-cols-2 sm:flex gap-3 flex-wrap">
-          <select value={filtroRegime} onChange={(e) => setFiltroRegime(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={filtroRegime} onChange={(e) => setFiltroRegime(e.target.value)} className="ct-input text-sm">
             <option value="">Todos os regimes</option>
             <option value="Lucro Presumido">Lucro Presumido</option>
             <option value="Lucro Real">Lucro Real</option>
             <option value="__nao_informado__">Não informado</option>
             <option value="Simples Nacional">Simples Nacional</option>
           </select>
-          <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} className="ct-input text-sm">
             <option value="">Matriz / Filial</option>
             <option value="filial">Filial</option>
             <option value="matriz">Matriz</option>
             <option value="__nao_informado__">Não informado</option>
           </select>
-          <select value={filtroTipoInscricao} onChange={(e) => setFiltroTipoInscricao(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={filtroTipoInscricao} onChange={(e) => setFiltroTipoInscricao(e.target.value)} className="ct-input text-sm">
             <option value="">Tipo de inscrição</option>
             <option value="CNO">CNO</option>
             <option value="CNPJ">CNPJ</option>
             <option value="CPF">CPF</option>
             <option value="__nao_informado__">Não informado</option>
           </select>
-          <select value={filtroDep} onChange={(e) => { setFiltroDep(e.target.value); setFiltroResponsavel(''); }} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={filtroDep} onChange={(e) => { setFiltroDep(e.target.value); setFiltroResponsavel(''); }} className="ct-input text-sm">
             <option value="">Todos os departamentos</option>
             {sortedDepartamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
           </select>
-          <select value={filtroResponsavel} onChange={(e) => setFiltroResponsavel(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={filtroResponsavel} onChange={(e) => setFiltroResponsavel(e.target.value)} className="ct-input text-sm">
             <option value="">Todos os responsáveis</option>
             {responsaveisOptions.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
           </select>
-          <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)} className="ct-input text-sm">
             <option value="">Todos os estados</option>
             {allEstados.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
           </select>
-          <select value={statusVenc} onChange={(e) => setStatusVenc(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={statusVenc} onChange={(e) => setStatusVenc(e.target.value)} className="ct-input text-sm">
             <option value="">Vencimento</option>
             <option value="emdia">Em dia</option>
             <option value="risco">Em risco</option>
@@ -317,11 +319,11 @@ export default function AnalisesPage() {
 
       {/* Resumo rápido */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
-        <MiniCard label="Empresas" value={filteredEmpresas.length} gradient="from-blue-500 to-blue-600" icon={<Building2 size={20} />} />
-        <MiniCard label="Serviços" value={stats.byServico.length} gradient="from-cyan-500 to-teal-600" icon={<Briefcase size={20} />} />
-        <MiniCard label="Estados" value={stats.byEstado.length} gradient="from-emerald-500 to-emerald-600" icon={<MapPin size={20} />} />
-        <MiniCard label="Documentos" value={filteredEmpresas.reduce((a, e) => a + e.documentos.length, 0)} gradient="from-orange-400 to-amber-500" icon={<FileCheck size={20} />} />
-        <MiniCard label="Departamentos" value={stats.byDepartamento.length} gradient="from-rose-500 to-pink-500" icon={<Users size={20} />} />
+        <MiniCard label="Empresas" value={filteredEmpresas.length} icon={<Building2 size={18} />} />
+        <MiniCard label="Serviços" value={stats.byServico.length} icon={<Briefcase size={18} />} />
+        <MiniCard label="Estados" value={stats.byEstado.length} icon={<MapPin size={18} />} />
+        <MiniCard label="Documentos" value={filteredEmpresas.reduce((a, e) => a + e.documentos.length, 0)} icon={<FileCheck size={18} />} />
+        <MiniCard label="Departamentos" value={stats.byDepartamento.length} icon={<Users size={18} />} />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -378,7 +380,7 @@ export default function AnalisesPage() {
       </div>
 
       {/* Responsáveis e Departamentos */}
-      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-4 sm:p-6 border border-[var(--border)]">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-indigo-600"><Users size={18} /></span>
           <div className="text-base sm:text-lg font-bold text-gray-900">Responsáveis e Departamentos</div>
@@ -431,7 +433,7 @@ export default function AnalisesPage() {
       </div>
 
       {/* Lista de Empresas Filtradas */}
-      <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-4 sm:p-6 border border-[var(--border)]">
         <div className="flex items-center gap-2 mb-4">
           <List size={18} className="text-blue-600" />
           <div className="text-base sm:text-lg font-bold text-gray-900">
@@ -468,7 +470,7 @@ export default function AnalisesPage() {
                     return (
                       <tr key={emp.id} className="border-b border-gray-50 hover:bg-gray-50 transition">
                         <td className="px-4 py-3">
-                          <span className="rounded-md bg-gradient-to-r from-teal-500 to-cyan-500 text-white px-2 py-0.5 text-xs font-bold">
+                          <span className="rounded-sm bg-[var(--brand-soft)] text-[var(--brand-strong)] border border-[var(--brand)]/40 px-2 py-0.5 text-xs font-semibold ct-num">
                             {emp.codigo}
                           </span>
                         </td>
@@ -507,7 +509,7 @@ export default function AnalisesPage() {
                   <div key={emp.id} className="p-3 hover:bg-gray-50 transition">
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="rounded-md bg-gradient-to-r from-teal-500 to-cyan-500 text-white px-2 py-0.5 text-xs font-bold shrink-0">
+                        <span className="rounded-sm bg-[var(--brand-soft)] text-[var(--brand-strong)] border border-[var(--brand)]/40 px-2 py-0.5 text-xs font-semibold ct-num shrink-0">
                           {emp.codigo}
                         </span>
                         <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase shrink-0 ${tipo.cls}`}>{tipo.label}</span>
@@ -542,28 +544,26 @@ export default function AnalisesPage() {
 
 /* ---- Sub-components ---- */
 
-function MiniCard({ label, value, gradient, icon }: { label: string; value: number; gradient: string; icon: React.ReactNode }) {
+function MiniCard({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) {
   return (
-    <div className="rounded-2xl bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</div>
-          <div className="text-2xl font-bold text-gray-900 mt-1">{value}</div>
-        </div>
-        <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-sm`}>
+    <div className="rounded-[var(--radius)] bg-[var(--surface-2)] p-4 border border-[var(--border)]">
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-[var(--text-3)] leading-snug">{label}</span>
+        <div className="shrink-0 inline-flex items-center justify-center h-7 w-7 rounded-md bg-[var(--surface-3)] text-[var(--text-2)]">
           {icon}
         </div>
       </div>
+      <div className="ct-num font-bold text-2xl mt-2 text-[var(--text-1)] leading-none">{value}</div>
     </div>
   );
 }
 
 function Panel({ title, icon, color, children }: { title: string; icon?: React.ReactNode; color?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
+    <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-4 sm:p-6 border border-[var(--border)]">
       <div className="flex items-center gap-2 mb-4">
-        {icon && <span className={color || 'text-cyan-600'}>{icon}</span>}
-        <div className="text-base sm:text-lg font-bold text-gray-900">{title}</div>
+        {icon && <span className={color || 'text-[var(--text-2)]'}>{icon}</span>}
+        <div className="text-base sm:text-lg font-bold text-[var(--text-1)] tracking-tight">{title}</div>
       </div>
       {children}
     </div>
@@ -700,18 +700,24 @@ function DonutChart({ rows, statusColors, compact }: { rows: Array<[string, numb
 }
 
 function RankingList({ rows }: { rows: Array<[string, number]> }) {
-  const medals = ['from-amber-400 to-yellow-500', 'from-gray-300 to-gray-400', 'from-orange-400 to-amber-500'];
+  // medalhas semanticas: ouro / prata / bronze pros 3 primeiros, neutro resto
+  const medalClass = (idx: number) => {
+    if (idx === 0) return 'bg-amber-400 text-amber-950';
+    if (idx === 1) return 'bg-[var(--text-3)] text-white';
+    if (idx === 2) return 'bg-orange-400 text-orange-950';
+    return 'bg-[var(--surface-3)] text-[var(--text-3)] border border-[var(--border)]';
+  };
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       {rows.map(([label, n], idx) => (
-        <div key={label} className="flex items-center gap-3 rounded-xl bg-gray-50 p-3 hover:bg-gray-100 transition">
-          <div className={`h-8 w-8 rounded-lg flex items-center justify-center text-sm font-bold text-white bg-gradient-to-br ${idx < 3 ? medals[idx] : 'from-gray-200 to-gray-300'}`}>
+        <div key={label} className="flex items-center gap-3 rounded-[var(--radius)] bg-[var(--surface-3)] border border-[var(--border)] p-3 hover:border-[var(--border-strong)] transition-colors">
+          <div className={`h-7 w-7 rounded-sm flex items-center justify-center text-xs font-bold ct-num shrink-0 ${medalClass(idx)}`}>
             {idx + 1}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-gray-800 truncate">{label}</div>
+            <div className="text-sm font-semibold text-[var(--text-1)] truncate">{label}</div>
           </div>
-          <div className="text-lg font-bold text-gray-700">{n}</div>
+          <div className="text-lg font-bold text-[var(--text-1)] ct-num">{n}</div>
         </div>
       ))}
     </div>
