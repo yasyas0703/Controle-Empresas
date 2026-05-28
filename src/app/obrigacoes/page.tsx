@@ -377,53 +377,53 @@ export default function ObrigacoesPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-5 sm:p-6 text-white shadow-lg">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="h-11 w-11 rounded-2xl bg-white/10 flex items-center justify-center">
-            <FileStack size={22} />
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-5 sm:p-6 border border-[var(--border)]">
+        <div className="flex items-center gap-3 mb-4 flex-wrap">
+          <div className="h-11 w-11 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] flex items-center justify-center shrink-0">
+            <FileStack size={20} />
           </div>
-          <div>
-            <div className="text-xl sm:text-2xl font-extrabold tracking-tight">Obrigações</div>
-            <div className="text-xs sm:text-sm text-slate-300">
-              Templates de tarefas recorrentes — configurar uma vez e aplicar a várias empresas
+          <div className="min-w-0">
+            <div className="text-xl sm:text-2xl font-bold text-[var(--text-1)] tracking-tight">Obrigações</div>
+            <div className="text-xs sm:text-sm text-[var(--text-2)]">
+              Templates de tarefas recorrentes — configurar uma vez e aplicar a várias empresas.
             </div>
           </div>
-          <div className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-3 py-1 text-[11px] font-bold text-amber-200">
-            <Sparkles size={12} />
+          <div className="ml-auto inline-flex items-center gap-1.5 rounded-sm bg-[var(--warn-soft)] border border-[var(--warn)]/40 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--warn)]">
+            <Sparkles size={11} />
             Em testes (ghost)
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs">
-          <div className="rounded-xl bg-white/10 px-3 py-2">
-            <div className="text-slate-300">Total</div>
-            <div className="text-lg font-bold">{stats.total}</div>
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+          <div className="rounded-[var(--radius)] bg-[var(--surface-3)] border border-[var(--border)] px-3 py-2">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-3)]">Total</div>
+            <div className="text-lg font-bold ct-num text-[var(--text-1)] leading-none mt-1">{stats.total}</div>
           </div>
-          <div className="rounded-xl bg-white/10 px-3 py-2">
-            <div className="text-slate-300">Ativas</div>
-            <div className="text-lg font-bold">{stats.ativas}</div>
+          <div className="rounded-[var(--radius)] bg-[var(--surface-3)] border border-[var(--border)] px-3 py-2">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-3)]">Ativas</div>
+            <div className="text-lg font-bold ct-num text-[var(--text-1)] leading-none mt-1">{stats.ativas}</div>
           </div>
           {DEPARTAMENTOS.map((d) => (
-            <div key={d.value} className="rounded-xl bg-white/10 px-3 py-2">
-              <div className="text-slate-300">{d.label}</div>
-              <div className="text-lg font-bold">{stats.porDep[d.value] ?? 0}</div>
+            <div key={d.value} className="rounded-[var(--radius)] bg-[var(--surface-3)] border border-[var(--border)] px-3 py-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-3)] truncate">{d.label}</div>
+              <div className="text-lg font-bold ct-num text-[var(--text-1)] leading-none mt-1">{stats.porDep[d.value] ?? 0}</div>
             </div>
           ))}
         </div>
       </div>
 
       {/* Conexão Gmail */}
-      <div className="rounded-2xl bg-white p-4 shadow-sm border border-gray-100">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-4 border border-[var(--border)]">
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${gmailStatus?.connected ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
-            <Mail size={20} />
+          <div className={`h-10 w-10 rounded-md flex items-center justify-center shrink-0 ${gmailStatus?.connected ? 'bg-[var(--ok-soft)] text-[var(--ok)]' : 'bg-[var(--surface-3)] text-[var(--text-3)]'}`}>
+            <Mail size={18} />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-bold text-gray-900">
+            <div className="text-sm font-semibold text-[var(--text-1)]">
               {gmailStatus?.connected ? 'Gmail conectado' : 'Conectar Gmail'}
             </div>
-            <div className="text-xs text-gray-500 truncate">
+            <div className="text-xs text-[var(--text-2)] truncate">
               {gmailStatus?.connected
-                ? `Emails serão enviados da conta ${gmailStatus.email}.`
+                ? <>Emails serão enviados da conta <span className="ct-num font-semibold text-[var(--text-1)]">{gmailStatus.email}</span>.</>
                 : 'Autorize seu Gmail para que os envios de guia saiam da sua própria conta.'}
             </div>
           </div>
@@ -431,16 +431,12 @@ export default function ObrigacoesPage() {
             <button
               onClick={() => setConfirmDisconnectGmail(true)}
               disabled={gmailLoading}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--border)] px-3 py-2 text-xs font-semibold text-[var(--text-2)] hover:bg-[var(--surface-3)] hover:text-[var(--text-1)] disabled:opacity-50 transition-colors"
             >
               <Unlink size={14} /> Desconectar
             </button>
           ) : (
-            <button
-              onClick={conectarGmail}
-              disabled={gmailLoading}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-            >
+            <button onClick={conectarGmail} disabled={gmailLoading} className="ct-btn-primary">
               <Link2 size={14} /> {gmailLoading ? 'Conectando…' : 'Conectar Gmail'}
             </button>
           )}
@@ -448,15 +444,15 @@ export default function ObrigacoesPage() {
       </div>
 
       {/* Toolbar */}
-      <div className="rounded-2xl bg-white p-3 sm:p-4 shadow-sm border border-gray-100">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-3 sm:p-4 border border-[var(--border)]">
         <div className="flex flex-col lg:flex-row gap-3">
           <div className="relative flex-1">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-3)] pointer-events-none z-10" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar por nome, código ou agrupador"
-              className="w-full rounded-xl bg-gray-50 pl-9 pr-9 py-2.5 text-sm focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+              className="ct-input pl-9 pr-9 text-sm"
             />
             {search && (
               <button
@@ -471,7 +467,7 @@ export default function ObrigacoesPage() {
             <select
               value={filtroDep}
               onChange={(e) => setFiltroDep(e.target.value as '' | ObrigacaoDepartamento)}
-              className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm font-semibold text-gray-700 focus:ring-2 focus:ring-cyan-400"
+              className="ct-input text-sm"
             >
               <option value="">Todos os departamentos</option>
               {DEPARTAMENTOS.map((d) => (
@@ -481,7 +477,7 @@ export default function ObrigacoesPage() {
             <select
               value={filtroFreq}
               onChange={(e) => setFiltroFreq(e.target.value as '' | ObrigacaoFrequencia)}
-              className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm font-semibold text-gray-700 focus:ring-2 focus:ring-cyan-400"
+              className="ct-input text-sm"
             >
               <option value="">Todas as frequências</option>
               {FREQUENCIAS.map((f) => (
@@ -491,23 +487,17 @@ export default function ObrigacoesPage() {
             <select
               value={filtroAtivo}
               onChange={(e) => setFiltroAtivo(e.target.value as '' | 'ativo' | 'inativo')}
-              className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm font-semibold text-gray-700 focus:ring-2 focus:ring-cyan-400"
+              className="ct-input text-sm"
             >
               <option value="">Ativas e inativas</option>
               <option value="ativo">Só ativas</option>
               <option value="inativo">Só inativas</option>
             </select>
-            <Link
-              href="/obrigacoes/processar"
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-white px-4 py-2.5 font-bold hover:from-violet-700 hover:to-purple-700 shadow-md text-sm"
-            >
+            <Link href="/obrigacoes/processar" className="ct-btn-secondary">
               <Upload size={16} />
               Anexar guias
             </Link>
-            <button
-              onClick={abrirNovo}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 text-white px-4 py-2.5 font-bold hover:from-cyan-700 hover:to-teal-700 shadow-md text-sm"
-            >
+            <button onClick={abrirNovo} className="ct-btn-primary">
               <Plus size={16} />
               Nova obrigação
             </button>
@@ -517,19 +507,16 @@ export default function ObrigacoesPage() {
 
       {/* List */}
       {lista.length === 0 ? (
-        <div className="rounded-2xl bg-white p-10 shadow-sm border border-gray-100 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-50 text-slate-400">
-            <FileStack size={30} />
+        <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] p-10 border border-[var(--border)] text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-md bg-[var(--surface-3)] text-[var(--text-3)]">
+            <FileStack size={26} />
           </div>
-          <div className="text-lg font-bold text-gray-900">Nenhuma obrigação cadastrada</div>
-          <div className="mt-1 text-sm text-gray-500 max-w-md mx-auto">
+          <div className="text-lg font-bold text-[var(--text-1)] tracking-tight">Nenhuma obrigação cadastrada</div>
+          <div className="mt-1 text-sm text-[var(--text-2)] max-w-md mx-auto">
             Crie templates de obrigações (DARF, DAS, GPS...) para que as tarefas sejam geradas
             automaticamente para cada empresa vinculada.
           </div>
-          <button
-            onClick={abrirNovo}
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 text-white px-5 py-2.5 font-bold hover:from-cyan-700 hover:to-teal-700 shadow-md text-sm"
-          >
+          <button onClick={abrirNovo} className="ct-btn-primary mt-5">
             <Plus size={16} />
             Criar primeira obrigação
           </button>
@@ -669,7 +656,7 @@ export default function ObrigacoesPage() {
       <ModalBase
         isOpen={editOpen && !!editando}
         onClose={() => { setEditOpen(false); setEditando(null); }}
-        dialogClassName="w-full max-w-3xl rounded-2xl bg-white shadow-2xl max-h-[90vh] overflow-hidden flex flex-col"
+        dialogClassName="w-full max-w-3xl rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] shadow-[0_8px_24px_rgba(0,0,0,0.18)] max-h-[90vh] overflow-hidden flex flex-col"
       >
         {editando && (
           <ObrigacaoForm
@@ -758,16 +745,16 @@ function ObrigacaoForm({ value, onChange, empresas, onCancel, onSave }: Obrigaca
 
   return (
     <div className="flex flex-col h-full max-h-[90vh]">
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-5 text-white">
+      <div className="border-b border-[var(--border-subtle)] p-5">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-white/10 flex items-center justify-center">
-            <FileStack size={20} />
+          <div className="h-10 w-10 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] flex items-center justify-center shrink-0">
+            <FileStack size={18} />
           </div>
-          <div>
-            <div className="text-lg font-bold">
+          <div className="min-w-0">
+            <div className="text-base font-bold text-[var(--text-1)] tracking-tight truncate">
               {value.nome || 'Nova obrigação'}
             </div>
-            <div className="text-xs text-slate-300">Configure os detalhes do template de tarefa</div>
+            <div className="text-xs text-[var(--text-3)] mt-0.5">Configure os detalhes do template de tarefa.</div>
           </div>
         </div>
       </div>
@@ -785,7 +772,7 @@ function ObrigacaoForm({ value, onChange, empresas, onCancel, onSave }: Obrigaca
                 value={value.nome}
                 onChange={(e) => set('nome', e.target.value)}
                 placeholder="Ex.: DARF 2373 - PIS Cumulativo"
-                className="w-full rounded-xl bg-gray-50 px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                className="ct-input text-sm"
               />
             </Field>
             <Field label="Código">
@@ -793,14 +780,14 @@ function ObrigacaoForm({ value, onChange, empresas, onCancel, onSave }: Obrigaca
                 value={value.codigo ?? ''}
                 onChange={(e) => set('codigo', e.target.value)}
                 placeholder="Ex.: DARF-2373"
-                className="w-full rounded-xl bg-gray-50 px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                className="ct-input text-sm"
               />
             </Field>
             <Field label="Departamento *">
               <select
                 value={value.departamento}
                 onChange={(e) => set('departamento', e.target.value as ObrigacaoDepartamento)}
-                className="w-full rounded-xl bg-gray-50 px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                className="ct-input text-sm"
               >
                 {DEPARTAMENTOS.map((d) => (
                   <option key={d.value} value={d.value}>{d.label}</option>
@@ -811,7 +798,7 @@ function ObrigacaoForm({ value, onChange, empresas, onCancel, onSave }: Obrigaca
               <select
                 value={value.esfera}
                 onChange={(e) => set('esfera', e.target.value as ObrigacaoEsfera)}
-                className="w-full rounded-xl bg-gray-50 px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                className="ct-input text-sm"
               >
                 {ESFERAS.map((es) => (
                   <option key={es.value} value={es.value}>{es.label}</option>
@@ -823,7 +810,7 @@ function ObrigacaoForm({ value, onChange, empresas, onCancel, onSave }: Obrigaca
                 value={value.agrupador ?? ''}
                 onChange={(e) => set('agrupador', e.target.value)}
                 placeholder="Ex.: Tributos Federais"
-                className="w-full rounded-xl bg-gray-50 px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                className="ct-input text-sm"
               />
             </Field>
             <Field label="Pontuação">
@@ -832,7 +819,7 @@ function ObrigacaoForm({ value, onChange, empresas, onCancel, onSave }: Obrigaca
                 min={0}
                 value={value.pontuacao}
                 onChange={(e) => set('pontuacao', Number(e.target.value) || 0)}
-                className="w-full rounded-xl bg-gray-50 px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                className="ct-input text-sm"
               />
             </Field>
           </div>
@@ -849,7 +836,7 @@ function ObrigacaoForm({ value, onChange, empresas, onCancel, onSave }: Obrigaca
               <select
                 value={value.frequencia}
                 onChange={(e) => set('frequencia', e.target.value as ObrigacaoFrequencia)}
-                className="w-full rounded-xl bg-gray-50 px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                className="ct-input text-sm"
               >
                 {FREQUENCIAS.map((f) => (
                   <option key={f.value} value={f.value}>{f.label}</option>
@@ -861,14 +848,14 @@ function ObrigacaoForm({ value, onChange, empresas, onCancel, onSave }: Obrigaca
                 type="number"
                 value={value.competenciaOffset}
                 onChange={(e) => set('competenciaOffset', Number(e.target.value) || 0)}
-                className="w-full rounded-xl bg-gray-50 px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                className="ct-input text-sm"
               />
             </Field>
             <Field label="Data legal (tipo)">
               <select
                 value={value.tipoDataLegal}
                 onChange={(e) => set('tipoDataLegal', e.target.value as ObrigacaoTipoData)}
-                className="w-full rounded-xl bg-gray-50 px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                className="ct-input text-sm"
               >
                 {TIPOS_DATA.map((t) => (
                   <option key={t.value} value={t.value}>{t.label}</option>
@@ -882,14 +869,14 @@ function ObrigacaoForm({ value, onChange, empresas, onCancel, onSave }: Obrigaca
                 max={31}
                 value={value.diaDataLegal}
                 onChange={(e) => set('diaDataLegal', Number(e.target.value) || 1)}
-                className="w-full rounded-xl bg-gray-50 px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                className="ct-input text-sm"
               />
             </Field>
             <Field label="Data meta (tipo)" hint="Prazo interno, normalmente antes da data legal">
               <select
                 value={value.tipoDataMeta}
                 onChange={(e) => set('tipoDataMeta', e.target.value as ObrigacaoTipoData)}
-                className="w-full rounded-xl bg-gray-50 px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                className="ct-input text-sm"
               >
                 {TIPOS_DATA.map((t) => (
                   <option key={t.value} value={t.value}>{t.label}</option>
@@ -903,7 +890,7 @@ function ObrigacaoForm({ value, onChange, empresas, onCancel, onSave }: Obrigaca
                 max={31}
                 value={value.diaDataMeta}
                 onChange={(e) => set('diaDataMeta', Number(e.target.value) || 1)}
-                className="w-full rounded-xl bg-gray-50 px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                className="ct-input text-sm"
               />
             </Field>
           </div>
@@ -961,7 +948,7 @@ function ObrigacaoForm({ value, onChange, empresas, onCancel, onSave }: Obrigaca
                 value={value.templateEmailAssunto ?? ''}
                 onChange={(e) => set('templateEmailAssunto', e.target.value)}
                 placeholder="Ex.: Guia {{empresa}} - competência {{competencia}}"
-                className="w-full rounded-xl bg-gray-50 px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+                className="ct-input text-sm"
               />
             </Field>
             <Field label="Corpo">
@@ -1086,7 +1073,7 @@ function ObrigacaoForm({ value, onChange, empresas, onCancel, onSave }: Obrigaca
               value={value.descricao ?? ''}
               onChange={(e) => set('descricao', e.target.value)}
               placeholder="Notas internas sobre essa obrigação"
-              className="w-full rounded-xl bg-gray-50 px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+              className="ct-input text-sm"
             />
           </Field>
         </section>
