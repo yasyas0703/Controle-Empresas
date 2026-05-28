@@ -184,23 +184,27 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
         isOpen={isOpen}
         onClose={onClose}
         labelledBy="modal-emails-cliente-titulo"
-        dialogClassName="w-full max-w-2xl rounded-2xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto"
+        dialogClassName="w-full max-w-2xl rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] shadow-[0_8px_24px_rgba(0,0,0,0.18)] max-h-[90vh] overflow-y-auto"
         zIndex={zIndex}
       >
-        <div className="bg-gradient-to-r from-indigo-500 to-blue-600 text-white p-5 rounded-t-2xl flex items-start gap-3">
-          <div className="p-2 bg-white/20 rounded-xl">
-            <Mail size={22} />
+        <div className="border-b border-[var(--border-subtle)] p-5 flex items-start gap-3">
+          <div className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-[var(--surface-3)] text-[var(--text-2)] shrink-0">
+            <Mail size={18} />
           </div>
           <div className="flex-1 min-w-0">
-            <h2 id="modal-emails-cliente-titulo" className="text-lg font-bold">E-mails do cliente</h2>
-            <p className="text-xs text-white/85 truncate">
+            <h2 id="modal-emails-cliente-titulo" className="text-base font-bold text-[var(--text-1)]">E-mails do cliente</h2>
+            <p className="text-xs text-[var(--text-2)] truncate mt-0.5">
               {empresa.codigo} · {empresa.razao_social ?? empresa.apelido ?? 'Sem nome'}
             </p>
-            <p className="text-[11px] text-white/75 mt-0.5">
+            <p className="text-[11px] text-[var(--text-3)] mt-0.5">
               Destinatários para envio automático de guias e notificações.
             </p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-white/20 transition" aria-label="Fechar">
+          <button
+            onClick={onClose}
+            className="rounded-md p-2 text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition shrink-0"
+            aria-label="Fechar"
+          >
             <X size={18} />
           </button>
         </div>
@@ -214,41 +218,41 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
 
           {/* Form de adição */}
           {canManage && (
-            <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 mb-5">
-              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Adicionar e-mail</h3>
+            <div className="bg-[var(--surface-3)] rounded-[var(--radius)] p-4 border border-[var(--border)] mb-5">
+              <h3 className="text-xs font-bold text-[var(--text-3)] uppercase tracking-wider mb-3">Adicionar e-mail</h3>
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
                 <input
                   type="email"
                   placeholder="email@cliente.com.br *"
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className="sm:col-span-6 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="ct-input sm:col-span-6"
                 />
                 <input
                   type="text"
                   placeholder="Rótulo (opcional, ex.: Financeiro)"
                   value={form.rotulo}
                   onChange={(e) => setForm({ ...form, rotulo: e.target.value })}
-                  className="sm:col-span-4 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="ct-input sm:col-span-4"
                 />
                 <button
                   onClick={handleAdd}
                   disabled={salvando || !form.email.trim()}
-                  className="sm:col-span-2 rounded-lg bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white px-3 py-2 text-sm font-semibold flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  className="ct-btn-primary sm:col-span-2"
                 >
                   {salvando ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
                   Adicionar
                 </button>
               </div>
-              <label className="mt-2 inline-flex items-center gap-2 cursor-pointer text-xs text-gray-700">
+              <label className="mt-2 inline-flex items-center gap-2 cursor-pointer text-xs text-[var(--text-2)]">
                 <input
                   type="checkbox"
                   checked={form.principal}
                   onChange={(e) => setForm({ ...form, principal: e.target.checked })}
-                  className="h-4 w-4 accent-indigo-600 cursor-pointer"
+                  className="h-4 w-4 accent-[var(--brand)] cursor-pointer"
                 />
-                <Star size={13} className="text-amber-500" />
-                <span>Marcar como <strong>principal</strong> (será o destinatário primário)</span>
+                <Star size={13} className="text-[var(--warn)]" />
+                <span>Marcar como <strong className="font-semibold text-[var(--text-1)]">principal</strong> (será o destinatário primário)</span>
               </label>
             </div>
           )}
@@ -279,23 +283,23 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
                           type="email"
                           value={editForm.email}
                           onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                          className="sm:col-span-6 rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          className="ct-input sm:col-span-6"
                         />
                         <input
                           type="text"
                           value={editForm.rotulo}
                           onChange={(e) => setEditForm({ ...editForm, rotulo: e.target.value })}
                           placeholder="Rótulo"
-                          className="sm:col-span-3 rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          className="ct-input sm:col-span-3"
                         />
-                        <label className="sm:col-span-2 inline-flex items-center gap-1 text-[11px] text-gray-700 cursor-pointer">
+                        <label className="sm:col-span-2 inline-flex items-center gap-1 text-[11px] text-[var(--text-2)] cursor-pointer">
                           <input
                             type="checkbox"
                             checked={editForm.principal}
                             onChange={(e) => setEditForm({ ...editForm, principal: e.target.checked })}
-                            className="h-3.5 w-3.5 accent-indigo-600"
+                            className="h-3.5 w-3.5 accent-[var(--brand)]"
                           />
-                          <Star size={11} className="text-amber-500" /> Principal
+                          <Star size={11} className="text-[var(--warn)]" /> Principal
                         </label>
                         <div className="sm:col-span-1 flex gap-1 justify-end">
                           <button
@@ -317,12 +321,12 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
                       </div>
                     ) : (
                       <div className="flex items-center gap-3">
-                        <Mail size={14} className="text-indigo-600 shrink-0" />
+                        <Mail size={14} className="text-[var(--brand)] shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <div className="font-mono text-sm text-gray-900 flex items-center gap-2 flex-wrap">
+                          <div className="ct-num text-sm text-gray-900 flex items-center gap-2 flex-wrap">
                             <span className="truncate">{item.email}</span>
                             {item.principal && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-100 text-amber-700 rounded px-1.5 py-0.5">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-[var(--warn-soft)] text-[var(--warn)] rounded px-1.5 py-0.5">
                                 <Star size={10} /> PRINCIPAL
                               </span>
                             )}
