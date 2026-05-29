@@ -238,9 +238,13 @@ async function processarArquivo(caminho) {
   const hash = createHash('sha256').update(buffer).digest('hex');
 
   // 2. Já processado localmente? (idempotência rápida)
+  // EXCEÇÃO: se a última tentativa foi falha de REDE ('erro_rede'), a requisição
+  // nunca chegou no servidor (nada foi gravado lá), então re-tentamos na próxima
+  // varredura. Sem isso, um blip de rede (deploy, queda momentânea) travava o
+  // arquivo até alguém renomear na mão.
   const stEntry = state.processados[caminho];
-  if (stEntry && stEntry.hash === hash) {
-    // Mesma versão exata — pula
+  if (stEntry && stEntry.hash === hash && stEntry.status !== 'erro_rede') {
+    // Mesma versão exata, já resolvida — pula
     return;
   }
 
