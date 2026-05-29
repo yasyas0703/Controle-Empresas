@@ -23,6 +23,7 @@ import {
 import { useSistema } from '@/app/context/SistemaContext';
 import { supabase } from '@/lib/supabase';
 import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
+import { VENCIMENTOS_FISCAIS_NOMES, VENCIMENTOS_FISCAIS_SN_NOMES } from '@/app/types';
 
 interface Problema {
   id: string;
@@ -267,6 +268,58 @@ export default function AutoProblemasPage() {
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Atualizar
         </button>
       </div>
+
+      {/* Referência fixa de como nomear as guias — pra equipe não esquecer.
+          Os nomes vêm direto de types.ts, então nunca ficam desatualizados. */}
+      <details className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-1)] overflow-hidden">
+        <summary className="flex items-center gap-2 cursor-pointer select-none px-4 py-3 text-sm font-semibold text-[var(--text-1)] hover:bg-[var(--surface-2)]">
+          <FileText size={15} className="text-[var(--text-2)]" />
+          Como nomear as guias (clique para abrir)
+        </summary>
+        <div className="px-4 pb-4 pt-1 space-y-3 text-xs text-[var(--text-2)] border-t border-[var(--border)]">
+          <div>
+            <p className="text-[var(--text-1)] font-medium mb-1">Formato do nome do arquivo:</p>
+            <p className="font-mono text-[13px] text-[var(--text-1)] bg-[var(--surface-2)] rounded px-2 py-1 inline-block">
+              AAAA-MM OBRIGAÇÃO.pdf
+            </p>
+            <p className="mt-1.5">
+              A data vem <strong>no começo</strong> (ano-mês). Exemplos:{' '}
+              <span className="font-mono">2026-05 ICMS TDD.pdf</span>,{' '}
+              <span className="font-mono">2026-04 PIS.pdf</span>,{' '}
+              <span className="font-mono">2026-05 IPI.pdf</span>.
+              Salve dentro da pasta da empresa, em <span className="font-mono">FECHAMENTO</span> ou{' '}
+              <span className="font-mono">SIMPLES NACIONAL</span>, na pasta do ano.
+            </p>
+            <p className="mt-1">
+              Pode usar maiúscula/minúscula e acento à vontade — o sistema entende. Alguns apelidos
+              também valem (ex: <span className="font-mono">SPED FISCAL</span> = SPED ICMS/IPI,{' '}
+              <span className="font-mono">DAS</span> = EMISSÃO GUIA DAS).
+            </p>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <p className="text-[var(--text-1)] font-medium mb-1.5">Regime Normal</p>
+              <div className="flex flex-wrap gap-1">
+                {VENCIMENTOS_FISCAIS_NOMES.map((n) => (
+                  <span key={n} className="font-mono text-[11px] bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 text-[var(--text-1)]">
+                    {n}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-[var(--text-1)] font-medium mb-1.5">Simples Nacional</p>
+              <div className="flex flex-wrap gap-1">
+                {VENCIMENTOS_FISCAIS_SN_NOMES.map((n) => (
+                  <span key={n} className="font-mono text-[11px] bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 text-[var(--text-1)]">
+                    {n}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </details>
 
       {/* Tabs internas */}
       <div className="inline-flex items-center gap-1 rounded-[var(--radius)] bg-[var(--surface-2)] p-1 border border-[var(--border)]">
