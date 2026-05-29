@@ -201,6 +201,13 @@ const log = {
 let processando = false;
 const fila = [];
 
+// Conta falhas de REDE consecutivas. Conexão keep-alive da Vercel às vezes
+// "morre" depois de uma requisição lenta (cold start) e o undici fica reusando
+// o socket podre → "fetch failed" pra sempre. Se acontecer N vezes seguidas, a
+// gente sai do processo; o watcher-3-prod.bat reinicia em 10s com conexão nova.
+let falhasRedeSeguidas = 0;
+const MAX_FALHAS_REDE_SEGUIDAS = 5;
+
 function enfileirar(caminho) {
   if (fila.includes(caminho)) return;
   fila.push(caminho);
@@ -279,6 +286,14 @@ async function processarArquivo(caminho) {
           hash, status: 'erro_rede', ultimaTentativa: ts(), tentativas: tentativas.length, erro: err.message,
         };
         salvarStateDebounced();
+        // Auto-cura: se a conexão azedou (N falhas de rede seguidas), sai pro
+        // bat reiniciar com socket novo. Sem isso, ficava preso até reiniciar na mão.
+        falhasRedeSeguidas++;
+        if (falhasRedeSeguidas >= MAX_FALHAS_REDE_SEGUIDAS) {
+          log.err(`${falhasRedeSeguidas} falhas de rede seguidas — conexão travou. Saindo pro watcher reiniciar (renova conexão).`);
+          salvarStateSync();
+          process.exit(1);
+        }
         return;
       }
       log.warn(`Tentativa ${i + 1} falhou: ${err.message} — esperando ${tentativas[i + 1] / 1000}s`);
@@ -288,6 +303,7 @@ async function processarArquivo(caminho) {
 
   // 4. Loga e atualiza state
   if (!resultado) return;
+  falhasRedeSeguidas = 0; // chegou no servidor — zera o contador de falhas de rede
 
   const cor = {
     enviado: CORES.verde,
@@ -333,7 +349,9 @@ async function enviarParaApi(caminho, buffer, hash) {
   try {
     res = await fetch(API_URL, {
       method: 'POST',
-      headers: { 'X-Machine-Token': TOKEN },
+      // 'Connection: close' força conexão nova a cada envio — evita reusar
+      // socket keep-alive que "morre" após requisição lenta (cold start Vercel).
+      headers: { 'X-Machine-Token': TOKEN, 'Connection': 'close' },
       body: form,
       signal: ac.signal,
     });
