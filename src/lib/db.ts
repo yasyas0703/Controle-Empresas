@@ -1263,7 +1263,9 @@ export async function getDocumentoSignedUrl(arquivoUrl: string): Promise<string>
   if (idx >= 0) {
     path = decodeURIComponent(arquivoUrl.substring(idx + publicPrefix.length));
   }
-  const { data, error } = await supabase.storage.from('documentos').createSignedUrl(path, 3600);
+  // TTL curto (5min) — link gerado pra abrir AGORA no browser, não pra ser
+  // salvo/compartilhado. Se vazar por screenshot/whats, expira rápido.
+  const { data, error } = await supabase.storage.from('documentos').createSignedUrl(path, 300);
   if (error) throw error;
   return data.signedUrl;
 }
@@ -2981,7 +2983,8 @@ export async function deleteExtrato(id: UUID): Promise<void> {
 }
 
 export async function getExtratoSignedUrl(arquivoPath: string): Promise<string> {
-  const { data, error } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(arquivoPath, 3600);
+  // TTL curto (5min) — link pra abrir agora, não pra compartilhar.
+  const { data, error } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(arquivoPath, 300);
   if (error) throw error;
   return data.signedUrl;
 }
@@ -3463,7 +3466,8 @@ export async function uploadGuiaPdf(payload: {
 }
 
 export async function getGuiaSignedUrl(arquivoPath: string): Promise<string> {
-  const { data, error } = await supabase.storage.from(GUIA_BUCKET).createSignedUrl(arquivoPath, 3600);
+  // TTL curto (5min) — link pra abrir agora, não pra compartilhar.
+  const { data, error } = await supabase.storage.from(GUIA_BUCKET).createSignedUrl(arquivoPath, 300);
   if (error) throw error;
   return data.signedUrl;
 }

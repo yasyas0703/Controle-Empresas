@@ -5,21 +5,17 @@
 //   - Envio sai do Gmail do GHOST_USER_ID (não há "usuária logada")
 //   - Resolução de empresa, parser de nome e validações geram entradas em
 //     `guias_auto_problemas` em vez de erro pro cliente — daemon não tem
-//     UI pra resolver, então o problema fica no dashboard
+//     UI pra resolver, então o problema fica no painel /vencimentos-fiscais/auto-problemas
 //   - Idempotência por (caminho_servidor + hash_arquivo) em `guias_auto_processadas`
 //   - Modo conservador: 1ª vez de cada (empresa + obrigação) NÃO envia automaticamente,
-//     deixa pendente de aprovação pra Yasmin liberar manualmente
+//     deixa pendente de aprovação pra admin liberar manualmente
 //
-// O que NÃO duplica de `enviar-anexo`: a função `enviarGuiaPorGmail` mora aqui
-// porque tem ajustes (sem checklistId obrigatório, etc). Quando estiver tudo
-// testado, podemos refatorar pra um core compartilhado em _shared.ts.
+// Lógica de envio (Gmail + portal + checklist) mora em `_shared-envio.ts`
+// pra ser reusada pela rota /api/admin/guias-auto/aprovar-e-enviar.
 
 import { NextResponse } from 'next/server';
-import { google } from 'googleapis';
-import { randomUUID, createHash, timingSafeEqual } from 'node:crypto';
-import { getOAuthClient, decryptToken } from '@/lib/googleOAuth';
-import { sendPushToCliente } from '@/lib/webPush';
-import { vencimentoDoMes, vencimentoDoMesSn } from '@/app/utils/regrasVencimentosFiscais';
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { rateLimit, getClientIp } from '@/lib/rateLimit';
 import {
   validarPdfNoServidor, carregarEmpresaCompleta, getSupabaseAdmin, isErroApi,
 } from '../_shared';
@@ -27,16 +23,15 @@ import {
   parseNomeGuia, extrairNomeEmpresaDoCaminho, detectarRegimeDoCaminho,
   type ResultadoParseNome,
 } from '@/lib/parseNomeGuia';
+import {
+  enviarGuia, marcarChecklistComoFeito, jaEnviadaNoChecklist, subirPendente,
+} from './_shared-envio';
 import { basename } from 'node:path';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
 
 export const runtime = 'nodejs';
-// Body limite — guias passam de 1MB em casos raros (DARFs com gráfico). Generoso.
 export const maxDuration = 60;
-
-const BUCKET_DOCUMENTOS = 'documentos';
-const BUCKET_PORTAL = 'portal-documentos';
 
 // ─── Tipos do retorno ──────────────────────────────────────────────────────
 type StatusProcessamento =
@@ -50,19 +45,16 @@ type StatusProcessamento =
   | 'erro';
 
 // Quantos dias atrás é "competência antiga" — não envia automaticamente,
-// pede aprovação manual no widget. Evita mandar email "Sua guia de Março/2025"
+// pede aprovação manual no painel. Evita mandar email "Sua guia de Março/2025"
 // pro cliente em Maio/2026 quando alguém sobe PDF retroativo na pasta.
 const MAX_DIAS_COMPETENCIA_AUTOMATICA = 60;
 
 function competenciaEhRecente(competencia: string): boolean {
-  // competencia = "YYYY-MM". Considera o último dia do mês como referência.
   const [y, m] = competencia.split('-').map(Number);
   if (!y || !m) return false;
-  // último dia do mês da competência (dia 0 do mês seguinte = último do anterior)
   const fimDoMesCompetencia = new Date(Date.UTC(y, m, 0));
   const hoje = new Date();
-  const diffMs = hoje.getTime() - fimDoMesCompetencia.getTime();
-  const diffDias = diffMs / (1000 * 60 * 60 * 24);
+  const diffDias = (hoje.getTime() - fimDoMesCompetencia.getTime()) / (1000 * 60 * 60 * 24);
   return diffDias <= MAX_DIAS_COMPETENCIA_AUTOMATICA;
 }
 
@@ -73,106 +65,12 @@ interface RespostaAuto {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
-/**
- * Compara duas strings de token em tempo constante (evita timing attack).
- * Retorna false se tamanhos diferentes — não vaza info.
- */
+/** Compara tokens em tempo constante (anti timing attack). */
 function tokensIguais(a: string, b: string): boolean {
   const ba = Buffer.from(a);
   const bb = Buffer.from(b);
   if (ba.length !== bb.length) return false;
   return timingSafeEqual(ba, bb);
-}
-
-// Strip CRLF — defesa contra header injection (atacante podia setar
-// razao_social com `\r\nBcc: evil@x.com` e injetar Bcc no email).
-function stripCrlf(text: string): string {
-  return text.replace(/[\r\n]/g, ' ').trim();
-}
-
-function encodeRfc2047(text: string): string {
-  const safe = stripCrlf(text);
-  if (/^[\x00-\x7F]*$/.test(safe)) return safe;
-  return `=?UTF-8?B?${Buffer.from(safe, 'utf8').toString('base64')}?=`;
-}
-
-// Sanitiza filename pra header MIME: remove CRLF (header injection) +
-// remove aspas duplas (`"`) que fechariam o atributo `filename="..."`.
-function sanitizeMimeFilename(name: string): string {
-  return stripCrlf(name).replace(/"/g, '');
-}
-
-function mimeTypeFromFilename(filename: string): string {
-  const ext = (filename.split('.').pop() ?? '').toLowerCase();
-  switch (ext) {
-    case 'pdf': return 'application/pdf';
-    case 'png': return 'image/png';
-    case 'jpg':
-    case 'jpeg': return 'image/jpeg';
-    default: return 'application/octet-stream';
-  }
-}
-
-function formatComp(iso?: string | null): string {
-  if (!iso) return '';
-  const [y, m] = iso.split('-');
-  if (!y || !m) return iso;
-  const meses = ['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-  return `${meses[Number(m)]}/${y}`;
-}
-
-function buildMime(params: {
-  from: string;
-  to: string[];
-  subject: string;
-  bodyText: string;
-  bodyHtml: string;
-  attachment: { filename: string; mime: string; content: Buffer };
-}): string {
-  const boundary = `----=_Part_${Math.random().toString(36).slice(2)}_${Date.now()}`;
-  const altBoundary = `----=_Alt_${Math.random().toString(36).slice(2)}_${Date.now()}`;
-
-  const headers = [
-    `From: ${stripCrlf(params.from)}`,
-    `To: ${params.to.map(stripCrlf).join(', ')}`,
-    `Subject: ${encodeRfc2047(params.subject)}`,
-    'MIME-Version: 1.0',
-    `Content-Type: multipart/mixed; boundary="${boundary}"`,
-  ].join('\r\n');
-
-  const altPart = [
-    `--${boundary}`,
-    `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
-    '',
-    `--${altBoundary}`,
-    'Content-Type: text/plain; charset="UTF-8"',
-    'Content-Transfer-Encoding: base64',
-    '',
-    Buffer.from(params.bodyText, 'utf8').toString('base64'),
-    '',
-    `--${altBoundary}`,
-    'Content-Type: text/html; charset="UTF-8"',
-    'Content-Transfer-Encoding: base64',
-    '',
-    Buffer.from(params.bodyHtml, 'utf8').toString('base64'),
-    '',
-    `--${altBoundary}--`,
-  ].join('\r\n');
-
-  const attachmentB64 = params.attachment.content.toString('base64');
-  const attachmentB64Wrapped = attachmentB64.match(/.{1,76}/g)?.join('\r\n') ?? attachmentB64;
-  const safeFilename = sanitizeMimeFilename(params.attachment.filename);
-  const safeMime = stripCrlf(params.attachment.mime);
-  const attPart = [
-    `--${boundary}`,
-    `Content-Type: ${safeMime}; name="${safeFilename}"`,
-    'Content-Transfer-Encoding: base64',
-    `Content-Disposition: attachment; filename="${safeFilename}"`,
-    '',
-    attachmentB64Wrapped,
-  ].join('\r\n');
-
-  return [headers, '', altPart, '', attPart, '', `--${boundary}--`].join('\r\n');
 }
 
 /**
@@ -189,17 +87,6 @@ function normalizarNomeEmpresa(s: string): string {
     .trim();
 }
 
-/**
- * Tenta achar a empresa pelo nome bruto da pasta no T:.
- *
- * Estratégia:
- *   1. Match exato em apelido normalizado
- *   2. Match exato em razão social normalizada
- *   3. Match exato em "código" (se a pasta for o código)
- *
- * Se houver múltiplos matches, retorna ambíguo → vira problema "empresa_nao_encontrada"
- * (admin precisa cadastrar apelido único ou corrigir nome da pasta).
- */
 async function resolverEmpresaPorNomePasta(
   admin: SupabaseClient,
   nomePasta: string,
@@ -207,10 +94,7 @@ async function resolverEmpresaPorNomePasta(
   const normPasta = normalizarNomeEmpresa(nomePasta);
   if (!normPasta) return { erro: 'nao_encontrada' };
 
-  const { data, error } = await admin
-    .from('empresas')
-    .select('*');
-
+  const { data, error } = await admin.from('empresas').select('*');
   if (error || !data) return { erro: 'nao_encontrada' };
 
   const matches: Empresa[] = [];
@@ -231,7 +115,6 @@ async function resolverEmpresaPorNomePasta(
     };
   }
 
-  // Empresa achada — recarrega "completa" pra ter vencimentos_fiscais formatados
   const completa = await carregarEmpresaCompleta(admin, matches[0].id);
   if (isErroApi(completa)) return { erro: 'nao_encontrada' };
   return { empresa: completa };
@@ -240,17 +123,12 @@ async function resolverEmpresaPorNomePasta(
 /**
  * Verifica se já houve algum envio (em qualquer mês) dessa combinação empresa
  * + obrigação. Usado pelo modo conservador "1ª vez precisa aprovação".
- *
- * Conta tanto envios manuais (pela aba Envio) quanto automáticos. A intenção
- * é: assim que QUALQUER envio dessa combinação tiver acontecido com sucesso,
- * próximos podem ser automáticos.
  */
 async function jaTeveEnvioSucesso(
   admin: SupabaseClient,
   empresaId: string,
   obrigacao: string,
 ): Promise<boolean> {
-  // 1. Olha histórico em checklist_fiscal (envios manuais e automáticos)
   const { data: checklists } = await admin
     .from('checklist_fiscal')
     .select('envios_historico')
@@ -264,7 +142,6 @@ async function jaTeveEnvioSucesso(
     }
   }
 
-  // 2. Olha guias_auto_processadas (status enviado)
   const { count } = await admin
     .from('guias_auto_processadas')
     .select('id', { count: 'exact', head: true })
@@ -275,10 +152,6 @@ async function jaTeveEnvioSucesso(
   return (count ?? 0) > 0;
 }
 
-/**
- * Upsert em guias_auto_problemas (idempotente por caminho+hash).
- * Se o problema já existe pro mesmo arquivo, atualiza detalhes.
- */
 async function registrarProblema(
   admin: SupabaseClient,
   payload: {
@@ -306,7 +179,6 @@ async function registrarProblema(
         detalhes: payload.detalhes,
         competencia_parseada: payload.competenciaParseada,
         obrigacao_parseada: payload.obrigacaoParseada,
-        // Se está reabrindo o mesmo problema, zera resolução anterior
         resolvido_em: null,
         resolvido_por_id: null,
         resolvido_por_nome: null,
@@ -320,10 +192,6 @@ async function registrarProblema(
     );
 }
 
-/**
- * Insert em guias_auto_processadas (idempotente por caminho+hash).
- * Se já existe, atualiza status e processado_em.
- */
 async function registrarProcessado(
   admin: SupabaseClient,
   payload: {
@@ -375,6 +243,29 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { status: 'erro', detalhes: { motivo: 'Token inválido' } },
       { status: 401 },
+    );
+  }
+
+  // Rate limit defensivo contra runaway watcher. Gmail API tem hard cap de
+  // ~500 envios/dia por conta — se o daemon entrar em loop (bug, FS event
+  // duplicado, ataque) e mandar 1000 requests em 1min, queima a quota
+  // inteira da conta ghost e bloqueia também os envios manuais.
+  // Limites:
+  //   - 20 req/min por IP: cobre fluxo normal (1 req a cada 3s é muito).
+  //   - 300 req/h por IP: cobre mês inteiro em lote (~1000 PDFs em ~3h).
+  const clientIp = getClientIp(req);
+  const limitMin = rateLimit(`auto-enviar:min:${clientIp}`, 20, 60_000);
+  if (!limitMin.ok) {
+    return NextResponse.json(
+      { status: 'erro', detalhes: { motivo: 'Muitas requisições no último minuto. Watcher pode estar em loop.' } },
+      { status: 429 },
+    );
+  }
+  const limitHora = rateLimit(`auto-enviar:hora:${clientIp}`, 300, 60 * 60_000);
+  if (!limitHora.ok) {
+    return NextResponse.json(
+      { status: 'erro', detalhes: { motivo: 'Muitas requisições na última hora. Quota diária do Gmail em risco.' } },
+      { status: 429 },
     );
   }
 
@@ -546,10 +437,6 @@ export async function POST(req: Request) {
     | { ativa: boolean; codigos: string[]; nao_envia_cliente: boolean; motivo: string | null }
     | null;
 
-  // Default da tabela: linha ausente = ATIVA (modo "tudo ativo por padrão",
-  // conforme regra documentada em supabase-migration-empresa-obrigacoes-config.sql).
-  // Mas como o daemon está fazendo envio automático, vamos ser mais conservadores:
-  // se não tem config, pede pra admin configurar primeiro.
   if (!config) {
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,
@@ -617,15 +504,16 @@ export async function POST(req: Request) {
   }
 
   // 9.5. Safeguard: competência muito antiga não envia automaticamente.
-  // Evita: alguém subir PDF retroativo de Março/2025 em Maio/2026 e o sistema
-  // mandar email "Sua guia de Março/2025" pro cliente, que vai estranhar.
+  // Sobe o PDF pro Storage pra admin poder aprovar depois (Vercel não enxerga T:\).
   if (!competenciaEhRecente(competencia)) {
+    const upPend = await subirPendente(admin, fileBuffer, nomeArquivo);
+    const pathPendente = 'path' in upPend ? upPend.path : null;
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,
       empresaId: empresa.id, empresaNomePasta: nomePasta,
       tipoProblema: 'competencia_antiga',
       detalhes: {
-        motivo: `Competência ${competencia} tem mais de ${MAX_DIAS_COMPETENCIA_AUTOMATICA} dias. Aprove manualmente se realmente quiser enviar.`,
+        motivo: `Competência ${competencia} tem mais de ${MAX_DIAS_COMPETENCIA_AUTOMATICA} dias. Aprove no painel se realmente quiser enviar.`,
         diasLimite: MAX_DIAS_COMPETENCIA_AUTOMATICA,
         empresa: empresa.razao_social || empresa.apelido,
       },
@@ -634,12 +522,20 @@ export async function POST(req: Request) {
     await registrarProcessado(admin, {
       caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
       nomeArquivo, status: 'pendente_aprovacao_competencia_antiga',
-      detalhes: { motivo: 'competencia_antiga', diasLimite: MAX_DIAS_COMPETENCIA_AUTOMATICA },
+      detalhes: {
+        motivo: 'competencia_antiga',
+        diasLimite: MAX_DIAS_COMPETENCIA_AUTOMATICA,
+        // Persistir o path pra rota /aprovar-e-enviar baixar e reenviar.
+        // Se subirPendente falhou, o admin terá que usar /vencimentos-fiscais/envio manual.
+        arquivo_pendente_path: pathPendente,
+        codigos_esperados_snapshot: config.codigos ?? [],
+        perfil_validacao_snapshot: validacao.resultado.perfilUsado,
+      },
     });
     return NextResponse.json({
       status: 'pendente_aprovacao_competencia_antiga',
       detalhes: {
-        motivo: `Competência ${competencia} > ${MAX_DIAS_COMPETENCIA_AUTOMATICA} dias atrás. Use a UI manual de Envio de Guias se quiser enviar.`,
+        motivo: `Competência ${competencia} > ${MAX_DIAS_COMPETENCIA_AUTOMATICA} dias atrás. Aprove no painel /vencimentos-fiscais/auto-problemas.`,
       },
     });
   }
@@ -662,14 +558,17 @@ export async function POST(req: Request) {
   }
 
   // 11. Modo conservador: 1ª vez dessa empresa+obrigação?
+  // Sobe o PDF pro Storage pra admin poder aprovar depois.
   const jaEnviouAntes = await jaTeveEnvioSucesso(admin, empresa.id, obrigacao);
   if (!jaEnviouAntes) {
+    const upPend = await subirPendente(admin, fileBuffer, nomeArquivo);
+    const pathPendente = 'path' in upPend ? upPend.path : null;
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,
       empresaId: empresa.id, empresaNomePasta: nomePasta,
       tipoProblema: 'primeira_vez_precisa_aprovacao',
       detalhes: {
-        motivo: `Primeira vez enviando "${obrigacao}" pra esta empresa via sistema automático. Aprove manualmente — próximos envios sairão automáticos.`,
+        motivo: `Primeira vez enviando "${obrigacao}" pra esta empresa via sistema automático. Aprove no painel — próximos envios sairão automáticos.`,
         empresa: empresa.razao_social || empresa.apelido,
         competencia,
       },
@@ -678,11 +577,17 @@ export async function POST(req: Request) {
     await registrarProcessado(admin, {
       caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
       nomeArquivo, status: 'pendente_aprovacao_primeira_vez',
-      detalhes: { motivo: 'primeira_vez', validacao: validacao.resultado.perfilUsado },
+      detalhes: {
+        motivo: 'primeira_vez',
+        validacao: validacao.resultado.perfilUsado,
+        arquivo_pendente_path: pathPendente,
+        codigos_esperados_snapshot: config.codigos ?? [],
+        perfil_validacao_snapshot: validacao.resultado.perfilUsado,
+      },
     });
     return NextResponse.json({
       status: 'pendente_aprovacao_primeira_vez',
-      detalhes: { motivo: '1ª vez — admin precisa aprovar', empresa: empresa.razao_social || empresa.apelido, obrigacao, competencia },
+      detalhes: { motivo: '1ª vez — admin precisa aprovar no painel', empresa: empresa.razao_social || empresa.apelido, obrigacao, competencia },
     });
   }
 
@@ -703,223 +608,43 @@ export async function POST(req: Request) {
     });
   }
 
-  // 13. Carrega token Gmail do ghost user
-  const { data: tokenRow } = await admin
-    .from('usuario_gmail_tokens')
-    .select('email, refresh_token_enc, revoked')
-    .eq('usuario_id', ghostUserId)
-    .maybeSingle();
-
-  if (!tokenRow || tokenRow.revoked) {
-    await registrarProblema(admin, {
-      caminhoServidor, nomeArquivo, hashArquivo,
-      empresaId: empresa.id, empresaNomePasta: nomePasta,
-      tipoProblema: 'gmail_nao_conectado',
-      detalhes: { motivo: 'Conta Gmail do ghost user (envio automático) não está conectada. Configure em /vencimentos-fiscais.' },
-      competenciaParseada: competencia, obrigacaoParseada: obrigacao,
-    });
-    await registrarProcessado(admin, {
-      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
-      nomeArquivo, status: 'pendente_correcao',
-      detalhes: { tipoProblema: 'gmail_nao_conectado' },
-    });
-    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'gmail_nao_conectado' } });
-  }
-
-  let refreshToken: string;
-  try {
-    refreshToken = decryptToken(tokenRow.refresh_token_enc);
-  } catch {
-    await registrarProblema(admin, {
-      caminhoServidor, nomeArquivo, hashArquivo,
-      empresaId: empresa.id, empresaNomePasta: nomePasta,
-      tipoProblema: 'gmail_nao_conectado',
-      detalhes: { motivo: 'Falha ao decodificar token Gmail. Reconecte conta do ghost user.' },
-      competenciaParseada: competencia, obrigacaoParseada: obrigacao,
-    });
-    await registrarProcessado(admin, {
-      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
-      nomeArquivo, status: 'pendente_correcao',
-      detalhes: { tipoProblema: 'gmail_nao_conectado' },
-    });
-    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'gmail_nao_conectado' } });
-  }
-
-  // 14. Carrega emails da empresa
-  const { data: emailsRes } = await admin
-    .from('empresa_emails_cliente')
-    .select('email')
-    .eq('empresa_id', empresa.id)
-    .eq('ativo', true);
-
-  const emails = ((emailsRes ?? []) as Array<{ email: string }>).map((r) => r.email).filter(Boolean);
-  if (emails.length === 0) {
-    await registrarProblema(admin, {
-      caminhoServidor, nomeArquivo, hashArquivo,
-      empresaId: empresa.id, empresaNomePasta: nomePasta,
-      tipoProblema: 'sem_emails',
-      detalhes: { motivo: 'Empresa não tem emails de cliente cadastrados. Cadastre em /empresas antes de envios automáticos.' },
-      competenciaParseada: competencia, obrigacaoParseada: obrigacao,
-    });
-    await registrarProcessado(admin, {
-      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
-      nomeArquivo, status: 'pendente_correcao',
-      detalhes: { tipoProblema: 'sem_emails' },
-    });
-    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'sem_emails' } });
-  }
-
-  // 15. Upload no Storage (bucket 'documentos' — pra histórico interno)
-  const docPath = `empresas/${empresa.id}/auto/${randomUUID()}-${nomeArquivo}`;
-  const { error: upErr } = await admin.storage
-    .from(BUCKET_DOCUMENTOS)
-    .upload(docPath, fileBuffer, { contentType: 'application/pdf', upsert: false });
-
-  if (upErr) {
-    await registrarProblema(admin, {
-      caminhoServidor, nomeArquivo, hashArquivo,
-      empresaId: empresa.id, empresaNomePasta: nomePasta,
-      tipoProblema: 'erro_envio',
-      detalhes: { motivo: 'Falha ao subir arquivo no Storage', erro: upErr.message },
-      competenciaParseada: competencia, obrigacaoParseada: obrigacao,
-    });
-    await registrarProcessado(admin, {
-      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
-      nomeArquivo, status: 'erro',
-      detalhes: { motivo: 'storage_upload_failed', erro: upErr.message },
-    });
-    return NextResponse.json({ status: 'erro', detalhes: { motivo: 'storage_upload_failed', erro: upErr.message } }, { status: 500 });
-  }
-
-  // 16. Monta e envia email
-  const empresaNome = empresa.razao_social || empresa.apelido || empresa.codigo;
-  const competenciaLabel = formatComp(competencia);
-  const vencimentoIso = calcularVencimento(obrigacao, empresa, competencia);
-  const vencimentoLabel = vencimentoIso
-    ? new Date(vencimentoIso.length === 10 ? vencimentoIso + 'T00:00:00' : vencimentoIso).toLocaleDateString('pt-BR')
-    : null;
-  const subject = `${obrigacao} — ${empresaNome} (${competenciaLabel})`;
-  const linhaVencimento = vencimentoLabel ? `\nVencimento: ${vencimentoLabel}\n` : '';
-  const bodyText =
-    `Olá,\n\n` +
-    `Segue em anexo o arquivo referente à obrigação ${obrigacao}, competência ${competenciaLabel}.` +
-    linhaVencimento +
-    `\nQualquer dúvida, estamos à disposição.\n\n` +
-    `Atenciosamente.`;
-  const escapeHtml = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
-  const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(bodyText)}</div>`;
-
-  const oauth2 = getOAuthClient();
-  oauth2.setCredentials({ refresh_token: refreshToken });
-  const gmail = google.gmail({ version: 'v1', auth: oauth2 });
-
-  const mime = buildMime({
-    from: tokenRow.email, to: emails, subject, bodyText, bodyHtml,
-    attachment: { filename: nomeArquivo, mime: mimeTypeFromFilename(nomeArquivo), content: fileBuffer },
-  });
-  const raw = Buffer.from(mime, 'utf8').toString('base64')
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-  let gmailMessageId: string | undefined;
-  try {
-    const sendRes = await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
-    gmailMessageId = sendRes.data.id ?? undefined;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Falha Gmail';
-    await registrarProblema(admin, {
-      caminhoServidor, nomeArquivo, hashArquivo,
-      empresaId: empresa.id, empresaNomePasta: nomePasta,
-      tipoProblema: 'erro_envio',
-      detalhes: { motivo: 'Falha ao enviar pelo Gmail', erro: message },
-      competenciaParseada: competencia, obrigacaoParseada: obrigacao,
-    });
-    await registrarProcessado(admin, {
-      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
-      nomeArquivo, status: 'erro',
-      detalhes: { motivo: 'gmail_send_failed', erro: message },
-    });
-    return NextResponse.json({ status: 'erro', detalhes: { motivo: 'gmail_send_failed', erro: message } }, { status: 502 });
-  }
-
-  const nowIso = new Date().toISOString();
-  await admin.from('usuario_gmail_tokens').update({ last_used_at: nowIso }).eq('usuario_id', ghostUserId);
-
-  // 17. Marca checklist como feito + adiciona ao envios_historico
-  const checklistId = await marcarChecklistComoFeito(admin, {
-    empresaId: empresa.id, mes: competencia, obrigacao, ghostUserId,
-    arquivoNome: nomeArquivo, fonte: 'auto-enviado', destinatarios: emails,
-    gmailMessageId,
+  // 13. Envia (Gmail + portal + checklist) — fluxo compartilhado com /aprovar-e-enviar
+  const envio = await enviarGuia(admin, {
+    empresa, obrigacao, competencia, nomeArquivo, fileBuffer, ghostUserId,
   });
 
-  // 18. Publica no portal cliente (best-effort)
-  let portalDocumentoId: string | null = null;
-  try {
-    const portalPath = `${empresa.id}/${randomUUID()}-${nomeArquivo}`;
-    const { error: upPortalErr } = await admin.storage
-      .from(BUCKET_PORTAL)
-      .upload(portalPath, fileBuffer, { contentType: 'application/pdf', upsert: false });
-    if (!upPortalErr) {
-      if (checklistId) {
-        await admin
-          .from('portal_documentos')
-          .update({ removido_em: nowIso, removido_por_usuario_id: ghostUserId })
-          .eq('checklist_fiscal_id', checklistId)
-          .is('removido_em', null);
-      }
-      const { data: novoPortal } = await admin
-        .from('portal_documentos')
-        .insert({
-          empresa_id: empresa.id,
-          checklist_fiscal_id: checklistId,
-          obrigacao_nome: obrigacao,
-          competencia,
-          vencimento: vencimentoIso,
-          arquivo_storage_path: portalPath,
-          arquivo_nome_original: nomeArquivo,
-          arquivo_mime: 'application/pdf',
-          arquivo_tamanho_bytes: fileBuffer.byteLength,
-          enviado_email: true,
-          enviado_email_em: nowIso,
-          criado_por_usuario_id: ghostUserId,
-        })
-        .select('id')
-        .maybeSingle();
-      portalDocumentoId = novoPortal?.id ?? null;
-
-      // Push best-effort
-      if (portalDocumentoId) {
-        try {
-          const { data: clienteRow } = await admin
-            .from('clientes_portal').select('id').eq('empresa_id', empresa.id).eq('ativo', true).maybeSingle();
-          if (clienteRow?.id) {
-            const pushBody = vencimentoLabel
-              ? `Competência ${competenciaLabel} · vence ${vencimentoLabel}.`
-              : `Competência ${competenciaLabel}. Toque para abrir.`;
-            await sendPushToCliente(clienteRow.id, {
-              title: `Nova guia: ${obrigacao}`,
-              body: pushBody,
-              url: `/portal/documentos/${portalDocumentoId}`,
-              tag: `portal-doc-${portalDocumentoId}`,
-            });
-          }
-        } catch (pushErr) {
-          console.error('[auto-enviar] falha push:', pushErr);
-        }
-      }
-    }
-  } catch (portalErr) {
-    console.error('[auto-enviar] falha ao publicar no portal:', portalErr);
+  if (!envio.ok) {
+    await registrarProblema(admin, {
+      caminhoServidor, nomeArquivo, hashArquivo,
+      empresaId: empresa.id, empresaNomePasta: nomePasta,
+      tipoProblema: envio.motivo === 'sem_emails' ? 'sem_emails'
+                    : envio.motivo === 'gmail_nao_conectado' ? 'gmail_nao_conectado'
+                    : 'erro_envio',
+      detalhes: { motivo: envio.erro, falha: envio.motivo },
+      competenciaParseada: competencia, obrigacaoParseada: obrigacao,
+    });
+    const statusFinal: StatusProcessamento =
+      (envio.motivo === 'sem_emails' || envio.motivo === 'gmail_nao_conectado') ? 'pendente_correcao' : 'erro';
+    await registrarProcessado(admin, {
+      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
+      nomeArquivo, status: statusFinal,
+      detalhes: { motivo: envio.motivo, erro: envio.erro },
+    });
+    const httpStatus = envio.motivo === 'gmail_send_failed' ? 502
+                     : envio.motivo === 'storage_upload_failed' ? 500
+                     : 200;
+    return NextResponse.json({ status: statusFinal, detalhes: { motivo: envio.motivo, erro: envio.erro } }, { status: httpStatus });
   }
 
-  // 19. Registra como processado com sucesso
+  // 14. Sucesso
   await registrarProcessado(admin, {
     caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
     nomeArquivo, status: 'enviado',
     detalhes: {
-      gmailMessageId,
-      destinatarios: emails,
-      portalDocumentoId,
-      checklistId,
+      gmailMessageId: envio.gmailMessageId,
+      destinatarios: envio.destinatarios,
+      portalDocumentoId: envio.portalDocumentoId,
+      checklistId: envio.checklistId,
       perfilValidacao: validacao.resultado.perfilUsado,
     },
   });
@@ -930,130 +655,12 @@ export async function POST(req: Request) {
       empresa: empresa.razao_social || empresa.apelido || empresa.codigo,
       obrigacao,
       competencia,
-      destinatarios: emails,
-      enviadoDe: tokenRow.email,
-      gmailMessageId,
-      portalDocumentoId,
-      checklistId,
+      destinatarios: envio.destinatarios,
+      enviadoDe: envio.enviadoDe,
+      gmailMessageId: envio.gmailMessageId,
+      portalDocumentoId: envio.portalDocumentoId,
+      checklistId: envio.checklistId,
     },
   };
   return NextResponse.json(resposta);
-}
-
-// ─── Helpers DB ────────────────────────────────────────────────────────────
-
-function calcularVencimento(obrigacao: string, empresa: Empresa, mes: string): string | null {
-  const fiscal = vencimentoDoMes(obrigacao, empresa.estado, mes, empresa.cidade);
-  if (fiscal) return fiscal;
-  const sn = vencimentoDoMesSn(obrigacao, empresa.estado, mes, empresa.cidade);
-  if (sn) return sn;
-  const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
-  const obrigAlvo = norm(obrigacao);
-  const manual = (empresa.vencimentosFiscais ?? []).find((v) => v?.nome && norm(v.nome) === obrigAlvo);
-  return manual?.vencimento || null;
-}
-
-async function jaEnviadaNoChecklist(
-  admin: SupabaseClient, empresaId: string, mes: string, obrigacao: string,
-): Promise<{ enviadoEm: string } | null> {
-  const { data } = await admin
-    .from('checklist_fiscal')
-    .select('envios_historico')
-    .eq('empresa_id', empresaId).eq('mes', mes).eq('obrigacao', obrigacao)
-    .maybeSingle();
-  if (!data) return null;
-  const envios = ((data as { envios_historico?: Array<{ sucesso?: boolean; enviado_em?: string }> | null })
-    .envios_historico ?? []);
-  const sucessos = envios.filter((e) => e.sucesso === true);
-  if (sucessos.length === 0) return null;
-  return { enviadoEm: sucessos[sucessos.length - 1].enviado_em ?? '' };
-}
-
-/**
- * Upsert checklist_fiscal: marca status feito + adiciona entrada em envios_historico.
- * Retorna o id do checklist (pra usar em portal_documentos).
- */
-async function marcarChecklistComoFeito(
-  admin: SupabaseClient,
-  payload: {
-    empresaId: string;
-    mes: string;
-    obrigacao: string;
-    ghostUserId: string;
-    arquivoNome: string;
-    fonte: 'auto-enviado' | 'auto-interna';
-    destinatarios?: string[];
-    gmailMessageId?: string;
-  },
-): Promise<string | null> {
-  const nowIso = new Date().toISOString();
-
-  // Carrega ghost user pra nome no envio
-  const { data: ghostRow } = await admin
-    .from('usuarios').select('nome').eq('id', payload.ghostUserId).maybeSingle();
-  const ghostNome = (ghostRow as { nome?: string } | null)?.nome ?? 'Sistema (automático)';
-
-  // Busca checklist existente
-  const { data: existente } = await admin
-    .from('checklist_fiscal')
-    .select('id, envios_historico')
-    .eq('empresa_id', payload.empresaId)
-    .eq('mes', payload.mes)
-    .eq('obrigacao', payload.obrigacao)
-    .maybeSingle();
-
-  // Evento usa snake_case pra alinhar com o resto do JSONB (normalizarEnviosHistorico
-  // aceita ambos, mas o sistema salva em snake_case).
-  const novoEvento = {
-    id: randomUUID(),
-    sucesso: payload.fonte === 'auto-enviado',
-    enviado_em: nowIso,
-    enviado_por_id: payload.ghostUserId,
-    enviado_por_nome: ghostNome,
-    destinatarios: payload.destinatarios ?? [],
-    arquivo_nome: payload.arquivoNome,
-    gmail_message_id: payload.gmailMessageId,
-    // Flag custom — permite filtrar no relatório "envios automáticos"
-    automatico: true,
-    fonte: payload.fonte,
-  };
-
-  // Tabela usa `concluido` (boolean) + `concluido_em` + `concluido_por_id` + `concluido_por_nome`
-  // Status 'feito' marca também o boolean concluido=true. Veja src/lib/db.ts:upsertChecklistFiscal.
-  const isSucesso = payload.fonte === 'auto-enviado' || payload.fonte === 'auto-interna';
-  const camposChecklist = isSucesso
-    ? {
-        concluido: true,
-        status: 'feito',
-        concluido_em: nowIso,
-        concluido_por_id: payload.ghostUserId,
-        concluido_por_nome: ghostNome,
-        atualizado_em: nowIso,
-      }
-    : { atualizado_em: nowIso };
-
-  if (existente) {
-    const historico = ((existente as { envios_historico?: unknown[] | null }).envios_historico ?? []) as unknown[];
-    await admin
-      .from('checklist_fiscal')
-      .update({
-        ...camposChecklist,
-        envios_historico: [...historico, novoEvento],
-      })
-      .eq('id', (existente as { id: string }).id);
-    return (existente as { id: string }).id;
-  }
-
-  const { data: novo } = await admin
-    .from('checklist_fiscal')
-    .insert({
-      empresa_id: payload.empresaId,
-      mes: payload.mes,
-      obrigacao: payload.obrigacao,
-      ...camposChecklist,
-      envios_historico: [novoEvento],
-    })
-    .select('id')
-    .maybeSingle();
-  return (novo as { id?: string } | null)?.id ?? null;
 }

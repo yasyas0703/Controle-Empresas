@@ -38,3 +38,10 @@ FISCAL/
 # planilhas e outputs com CNPJs reais e códigos de receita por empresa
 CODIGOS EMPRESAS.xlsx
 scripts/output-*.csv
+
+# watcher local (estado e logs por máquina — não devem ser versionados)
+scripts/.watcher-state.json
+scripts/.watcher.log
+
+# TypeScript build cache (regenerado a cada build)
+tsconfig.tsbuildinfo
