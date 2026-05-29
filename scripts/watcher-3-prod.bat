@@ -31,12 +31,12 @@ cd /d "%~dp0.."
 echo.
 echo ============================================================
 echo  [%date% %time%] Iniciando watcher PROD...
-echo  URL: https://controle-triar.vercel.app
+echo  URL: https://controle-empresas.vercel.app
 echo  Pasta: T:\Fiscal\EMPRESA  (todas)
 echo ============================================================
 echo.
 
-node scripts\watcher-guias.mjs --url https://controle-triar.vercel.app
+node scripts\watcher-guias.mjs --url https://controle-empresas.vercel.app
 
 echo.
 echo ============================================================

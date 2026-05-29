@@ -41,7 +41,7 @@ echo  Pressione CTRL+C pra cancelar agora, ou
 pause
 
 node scripts\watcher-guias.mjs ^
-  --url https://controle-triar.vercel.app ^
+  --url https://controle-empresas.vercel.app ^
   --empresa 2GETHER ^
   --limit 5 ^
   --once
@@ -51,7 +51,7 @@ echo ============================================================
 echo  TERMINOU.
 echo.
 echo  Proximos passos:
-echo   1. Abra https://controle-triar.vercel.app/vencimentos-fiscais
+echo   1. Abra https://controle-empresas.vercel.app/vencimentos-fiscais
 echo   2. Clique na aba "Pendencias Auto"
 echo   3. Veja se aparecem as 5 guias (ou as que passaram)
 echo   4. Se aparecer botao "Aprovar e enviar", o sistema esta OK

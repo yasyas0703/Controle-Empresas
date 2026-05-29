@@ -298,6 +298,19 @@ export function extrairNomeEmpresaDoCaminho(caminhoCompleto: string): string | n
 }
 
 /**
+ * Extrai só o nome do arquivo de um caminho completo, cortando em `/` E `\`.
+ *
+ * NÃO use `path.basename` aqui: o watcher roda no Windows e manda caminhos com
+ * barra invertida (`T:\Fiscal\...\2026-05 ICMS.pdf`), mas a API roda na Vercel
+ * (Linux), onde `path.basename` é POSIX e NÃO corta em `\` — devolveria o
+ * caminho inteiro e o parser acharia "data inválida". Cortamos nas duas barras.
+ */
+export function extrairNomeArquivoDoCaminho(caminhoCompleto: string): string {
+  const partes = caminhoCompleto.split(/[\\/]+/).filter(Boolean);
+  return partes[partes.length - 1] ?? caminhoCompleto;
+}
+
+/**
  * Detecta se o caminho indica regime SN (pasta "SIMPLES NACIONAL") ou Normal
  * (pasta "FECHAMENTO"). Útil pro endpoint decidir qual lista de obrigações
  * usar pra checar a obrigação parseada.

@@ -29,7 +29,7 @@ echo ============================================================
 echo.
 
 node scripts\watcher-guias.mjs ^
-  --url https://controle-triar.vercel.app ^
+  --url https://controle-empresas.vercel.app ^
   --empresa 2GETHER ^
   --limit 5 ^
   --once ^

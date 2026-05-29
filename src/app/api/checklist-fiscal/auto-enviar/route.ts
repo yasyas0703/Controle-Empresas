@@ -20,13 +20,12 @@ import {
   validarPdfNoServidor, carregarEmpresaCompleta, getSupabaseAdmin, isErroApi,
 } from '../_shared';
 import {
-  parseNomeGuia, extrairNomeEmpresaDoCaminho, detectarRegimeDoCaminho,
+  parseNomeGuia, extrairNomeEmpresaDoCaminho, extrairNomeArquivoDoCaminho, detectarRegimeDoCaminho,
   type ResultadoParseNome,
 } from '@/lib/parseNomeGuia';
 import {
   enviarGuia, marcarChecklistComoFeito, jaEnviadaNoChecklist, subirPendente,
 } from './_shared-envio';
-import { basename } from 'node:path';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
 
@@ -314,7 +313,9 @@ export async function POST(req: Request) {
   }
 
   const caminhoServidor = meta.caminhoServidor;
-  const nomeArquivo = basename(caminhoServidor);
+  // Corta em / E \ — caminho vem do Windows (watcher), API roda no Linux (Vercel).
+  // path.basename POSIX não corta em \, então usamos helper próprio.
+  const nomeArquivo = extrairNomeArquivoDoCaminho(caminhoServidor);
   const fileBuffer = Buffer.from(await file.arrayBuffer());
 
   // 3. Hash do arquivo (confere com o que o daemon mandou; recalcula pra garantir)
