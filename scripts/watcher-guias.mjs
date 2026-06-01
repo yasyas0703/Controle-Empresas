@@ -26,6 +26,7 @@
 //   - Não bate em LIVROS FISCAIS, SPED, REINF (só FECHAMENTO e SIMPLES NACIONAL).
 
 import chokidar from 'chokidar';
+import { Agent } from 'undici';
 import { readFileSync, writeFileSync, existsSync, appendFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { basename, resolve, dirname, sep } from 'node:path';
@@ -347,32 +348,44 @@ async function enviarParaApi(caminho, buffer, hash) {
   form.append('arquivo', blob, basename(caminho));
   form.append('meta', JSON.stringify({ caminhoServidor: caminho, hash }));
 
-  // Timeout de 60s — PDFs grandes + validação pode demorar
-  const ac = new AbortController();
-  const tid = setTimeout(() => ac.abort('timeout'), 60_000);
+  // Pool de conexão NOVO e descartável por requisição. Era a causa do
+  // "fetch failed" em cascata: depois de uma requisição lenta (cold start da
+  // Vercel), o socket reaproveitado "azedava" e todas as próximas falhavam ao
+  // conectar — mesmo com Connection: close. Um Agent novo por envio equivale a
+  // um processo novo (que sempre conectava na hora). Destruído no finally.
+  const dispatcher = new Agent({
+    connect: { timeout: 30_000 },
+    keepAliveTimeout: 1,
+    keepAliveMaxTimeout: 1,
+    pipelining: 0,
+  });
 
-  let res;
+  // Timeout amplo (90s): cold start da Vercel às vezes passa de 60s; não
+  // queremos abortar uma requisição que ainda ia responder.
+  const ac = new AbortController();
+  const tid = setTimeout(() => ac.abort('timeout'), 90_000);
+
   try {
-    res = await fetch(API_URL, {
+    const res = await fetch(API_URL, {
       method: 'POST',
-      // 'Connection: close' força conexão nova a cada envio — evita reusar
-      // socket keep-alive que "morre" após requisição lenta (cold start Vercel).
-      headers: { 'X-Machine-Token': TOKEN, 'Connection': 'close' },
+      headers: { 'X-Machine-Token': TOKEN },
       body: form,
       signal: ac.signal,
+      dispatcher,
     });
+
+    if (!res.ok && res.status >= 500) {
+      // 5xx = erro do servidor, vale tentar de novo
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    // 4xx e 2xx — o servidor já decidiu, não adianta re-tentar.
+    // Retorna o JSON pra logar (mesmo se for erro de validação)
+    return await res.json().catch(() => ({ status: 'erro', detalhes: { motivo: 'resposta_nao_json', http: res.status } }));
   } finally {
     clearTimeout(tid);
+    dispatcher.destroy().catch(() => {}); // fecha o pool dessa requisição
   }
-
-  if (!res.ok && res.status >= 500) {
-    // 5xx = erro do servidor, vale tentar de novo
-    throw new Error(`HTTP ${res.status}`);
-  }
-
-  // 4xx e 2xx — o servidor já decidiu, não adianta re-tentar.
-  // Retorna o JSON pra logar (mesmo se for erro de validação)
-  return await res.json().catch(() => ({ status: 'erro', detalhes: { motivo: 'resposta_nao_json', http: res.status } }));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
