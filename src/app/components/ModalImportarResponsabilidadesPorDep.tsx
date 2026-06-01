@@ -117,6 +117,9 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
   const [fileName, setFileName] = useState('');
   const [importing, setImporting] = useState(false);
   const [expandedBlock, setExpandedBlock] = useState<string | null>(null);
+  // Desligado por padrão: importar uma planilha parcial NÃO pode apagar o responsável
+  // das empresas que não estão nela (já causou perda de dados em produção).
+  const [limparAusentes, setLimparAusentes] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, success: 0, skipped: 0 });
   const abortRef = useRef(false);
   const [result, setResult] = useState<{
@@ -304,24 +307,28 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
         });
       }
 
-      // ── LIMPEZA: remover responsável do departamento de empresas que NÃO estão na planilha ──
+      // ── LIMPEZA (opt-in): remover responsável do departamento de empresas que NÃO estão na planilha.
+      // Só roda quando a usuária marca explicitamente — uma planilha parcial não pode apagar
+      // o responsável de quem ficou de fora dela.
       const codigosNaPlanilha = new Set(matches.map((m) => m.codigo.trim()));
       let limpezaCount = 0;
 
-      for (const empresa of empresas) {
-        if (abortRef.current) break;
-        if (codigosNaPlanilha.has(empresa.codigo)) continue;
+      if (limparAusentes) {
+        for (const empresa of empresas) {
+          if (abortRef.current) break;
+          if (codigosNaPlanilha.has(empresa.codigo)) continue;
 
-        const responsavelAtual = (empresa.responsaveis || {})[departamentoSelecionado.id];
-        if (!responsavelAtual) continue; // já sem responsável nesse dept
+          const responsavelAtual = (empresa.responsaveis || {})[departamentoSelecionado.id];
+          if (!responsavelAtual) continue; // já sem responsável nesse dept
 
-        try {
-          await atualizarEmpresa(empresa.id, {
-            responsaveis: { [departamentoSelecionado.id]: null },
-          });
-          limpezaCount++;
-        } catch (err) {
-          console.error(`[IMPORT-DEP] Erro ao limpar responsável de ${empresa.codigo}:`, err);
+          try {
+            await atualizarEmpresa(empresa.id, {
+              responsaveis: { [departamentoSelecionado.id]: null },
+            });
+            limpezaCount++;
+          } catch (err) {
+            console.error(`[IMPORT-DEP] Erro ao limpar responsável de ${empresa.codigo}:`, err);
+          }
         }
       }
 
@@ -523,6 +530,22 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
               <strong>{naoEncontradas.length}</strong> empresa(s) nao foram encontradas no sistema. Elas serao ignoradas.
             </div>
           )}
+
+          {/* Opção destrutiva — desligada por padrão */}
+          <label className="flex items-start gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface-3)] p-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={limparAusentes}
+              onChange={(e) => setLimparAusentes(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--danger)]"
+            />
+            <span className="text-sm text-[var(--text-2)]">
+              <span className="font-semibold text-[var(--text-1)]">Remover o responsável de {departamentoSelecionado?.nome ?? 'do departamento'} das empresas que NÃO estão nesta planilha.</span>
+              <span className="block mt-0.5 text-xs text-[var(--text-3)]">
+                Cuidado: use só se esta planilha for a lista <strong>completa</strong> do departamento. Se for parcial, deixe desmarcado — senão apaga o responsável de quem ficou de fora.
+              </span>
+            </span>
+          </label>
 
           {/* Barra de progresso durante importação */}
           {importing && progress.total > 0 && (
