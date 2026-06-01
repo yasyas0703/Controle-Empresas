@@ -163,6 +163,12 @@ function ts() {
   return new Date().toISOString();
 }
 
+// Hora pra exibir na tela — horário de Brasília (o ts() do log fica em UTC,
+// que é padrão pra arquivo de log; só a tela mostra o fuso local).
+function horaCli() {
+  return new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour12: false });
+}
+
 function logFile(level, msg, extra = {}) {
   const entry = { ts: ts(), level, msg, ...extra };
   try {
@@ -179,7 +185,7 @@ const CORES = {
 };
 
 function logCli(cor, prefix, msg) {
-  const linha = `${CORES.dim}${ts().slice(11, 19)}${CORES.reset} ${cor}${prefix}${CORES.reset} ${msg}`;
+  const linha = `${CORES.dim}${horaCli()}${CORES.reset} ${cor}${prefix}${CORES.reset} ${msg}`;
   console.log(linha);
 }
 
