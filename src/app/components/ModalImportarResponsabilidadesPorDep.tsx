@@ -125,6 +125,7 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
     usuariosCriados: string[];
     departamentoNome: string;
     limpeza?: number;
+    falhasResponsavel?: string[];
   } | null>(null);
 
   const departamentoSelecionado = useMemo(
@@ -224,6 +225,7 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
       };
 
       const responsaveisUnicos = [...new Set(blocks.map((b) => b.nome))];
+      const falhasResponsavel: string[] = [];
       for (const nomeResp of responsaveisUnicos) {
         if (abortRef.current) break;
         const key = norm(nomeResp);
@@ -242,18 +244,26 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
         }
         usedEmails.add(email.toLowerCase());
 
-        const id = await criarUsuario({
-          nome: nomeResp,
-          email,
-          senha: gerarSenhaSegura(16),
-          role: 'usuario',
-          departamentoId: departamentoSelecionado.id,
-          ativo: true,
-        });
+        // Falha ao criar UM responsável não pode abortar o import inteiro:
+        // as empresas cujo responsável já existe ainda precisam ser atualizadas.
+        try {
+          const id = await criarUsuario({
+            nome: nomeResp,
+            email,
+            senha: gerarSenhaSegura(16),
+            role: 'usuario',
+            departamentoId: departamentoSelecionado.id,
+            ativo: true,
+          });
 
-        if (id) {
-          userIdByName.set(key, id);
-          usuariosCriados.push(nomeResp);
+          if (id) {
+            userIdByName.set(key, id);
+            usuariosCriados.push(nomeResp);
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[IMPORT-DEP] Falha ao criar responsável "${nomeResp}":`, msg);
+          falhasResponsavel.push(nomeResp);
         }
       }
 
@@ -273,6 +283,9 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
         const results = await Promise.allSettled(
           batch.map((match) => {
             const userId = resolveUserId(match.responsavelNome);
+            // Responsável não resolvido (ex.: usuário não pôde ser criado): não mexe na
+            // empresa — sobrescrever com null apagaria o responsável atual sem querer.
+            if (userId === null) return Promise.reject(new Error('responsável não resolvido'));
             return atualizarEmpresa(match.empresaId!, {
               responsaveis: { [departamentoSelecionado.id]: userId },
             });
@@ -322,6 +335,7 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
         usuariosCriados,
         departamentoNome: departamentoSelecionado.nome,
         limpeza: limpezaCount,
+        falhasResponsavel,
       });
 
       if (atualizadas > 0 || limpezaCount > 0) {
@@ -587,6 +601,18 @@ export default function ModalImportarResponsabilidadesPorDep({ onClose }: ModalI
             {result.usuariosCriados.length > 0 && (
               <div className="text-xs text-[var(--text-3)] mt-2">
                 Usuários criados automaticamente: <span className="text-[var(--text-2)] font-semibold">{result.usuariosCriados.join(', ')}</span>
+              </div>
+            )}
+            {(result.falhasResponsavel?.length ?? 0) > 0 && (
+              <div className="mt-3 rounded-[var(--radius)] bg-[var(--warn-soft)] border border-[var(--warn)]/40 p-3 text-xs text-[var(--text-2)] text-left">
+                <div className="flex items-center gap-1.5 font-semibold text-[var(--text-1)] mb-1">
+                  <AlertTriangle size={14} className="text-[var(--warn)]" />
+                  Não foi possível criar {result.falhasResponsavel!.length} responsável(eis)
+                </div>
+                <div>{result.falhasResponsavel!.join(', ')}</div>
+                <div className="mt-1 text-[var(--text-3)]">
+                  As empresas desses responsáveis foram ignoradas (o responsável atual foi mantido).
+                </div>
               </div>
             )}
           </div>
