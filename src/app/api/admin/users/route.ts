@@ -90,7 +90,15 @@ export async function POST(req: Request) {
     const msg = String(createError?.message || '').toLowerCase();
     const isDuplicateEmail = msg.includes('already been registered') || msg.includes('already registered') || msg.includes('already exists');
     if (!isDuplicateEmail) {
-      return NextResponse.json({ error: 'Não foi possível criar o usuário.' }, { status: 400 });
+      // Expõe o motivo real do Supabase (rota só de gerente/admin) pra ser diagnosticável.
+      return NextResponse.json(
+        {
+          error: createError?.message
+            ? `Não foi possível criar o usuário: ${createError.message}`
+            : 'Não foi possível criar o usuário.',
+        },
+        { status: 400 }
+      );
     }
 
     const existingId = await findAuthUserIdByEmail(admin, body.email);
