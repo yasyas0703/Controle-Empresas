@@ -41,8 +41,10 @@ function tipoMatchForte(emp: Empresa, digitosPdf: string): TipoMatchEmpresa | nu
   if (cnpj.length === 14 && digitosPdf.includes(cnpj)) return 'cnpj';
   // CNPJ-base (8 dígitos) — algumas guias estaduais (DARE-SP) só trazem ele.
   if (cnpj.length === 14 && digitosPdf.includes(cnpj.slice(0, 8))) return 'cnpj';
+  // IE so vale como "forte" com 8+ digitos: 6 digitos aparecem por acaso em
+  // guias cheias de numeros (valores, codigos), gerando falso-positivo.
   const ie = apenasDigitos(emp.inscricao_estadual ?? '');
-  if (ie.length >= 6 && (digitosPdf.includes(ie) || digitosPdf.includes(ie.replace(/^0+/, '')))) return 'ie';
+  if (ie.length >= 8 && (digitosPdf.includes(ie) || digitosPdf.includes(ie.replace(/^0+/, '')))) return 'ie';
   return null;
 }
 
@@ -66,11 +68,6 @@ export function identificarEmpresa(texto: string, empresas: Empresa[]): Resultad
 
   const digitosPdf = apenasDigitos(texto);
 
-  // Quem tem identificador FORTE (CNPJ ou IE) presente no PDF.
-  const fortes = ranqueados
-    .map((c) => ({ cand: c, tipo: tipoMatchForte(c.empresa, digitosPdf) }))
-    .filter((x): x is { cand: typeof x.cand; tipo: TipoMatchEmpresa } => x.tipo !== null);
-
   const candidatos = ranqueados.slice(0, 5).map((c) => ({
     id: c.empresa.id,
     nome: nomeEmpresa(c.empresa),
@@ -78,16 +75,30 @@ export function identificarEmpresa(texto: string, empresas: Empresa[]): Resultad
     motivos: c.motivos,
   }));
 
-  if (fortes.length === 1) {
-    return { empresa: fortes[0].cand.empresa, tipoMatch: fortes[0].tipo, forte: true, ambiguo: false, candidatos };
-  }
-  if (fortes.length > 1) {
-    // Duas empresas com CNPJ/IE no mesmo PDF — não dá pra decidir com segurança.
-    return { empresa: null, tipoMatch: null, forte: false, ambiguo: true, candidatos };
-  }
+  const cnpjDigitos = (emp: Empresa) => apenasDigitos(emp.cnpj ?? '');
+  const temCnpjFull = (emp: Empresa) => { const c = cnpjDigitos(emp); return c.length === 14 && digitosPdf.includes(c); };
+  // Raiz (8 digitos) é compartilhada por matriz/filiais do mesmo grupo — só usar
+  // como desempate quando NINGUEM bateu o CNPJ inteiro.
+  const temCnpjBase = (emp: Empresa) => { const c = cnpjDigitos(emp); return c.length === 14 && digitosPdf.includes(c.slice(0, 8)); };
+  const temIe = (emp: Empresa) => {
+    const ie = apenasDigitos(emp.inscricao_estadual ?? '');
+    return ie.length >= 8 && (digitosPdf.includes(ie) || digitosPdf.includes(ie.replace(/^0+/, '')));
+  };
 
-  // Nenhum identificador forte — melhor candidato é só por nome (fraco).
-  return { empresa: ranqueados[0].empresa, tipoMatch: 'nome', forte: false, ambiguo: false, candidatos };
+  const decidir = (lista: typeof ranqueados, tipo: TipoMatchEmpresa): ResultadoIdentEmpresa | null => {
+    if (lista.length === 1) return { empresa: lista[0].empresa, tipoMatch: tipo, forte: true, ambiguo: false, candidatos };
+    if (lista.length > 1) return { empresa: null, tipoMatch: null, forte: false, ambiguo: true, candidatos };
+    return null;
+  };
+
+  // Ordem de confiança: CNPJ completo > raiz do CNPJ > Inscricao Estadual.
+  return (
+    decidir(ranqueados.filter((c) => temCnpjFull(c.empresa)), 'cnpj')
+    ?? decidir(ranqueados.filter((c) => temCnpjBase(c.empresa)), 'cnpj')
+    ?? decidir(ranqueados.filter((c) => temIe(c.empresa)), 'ie')
+    // Nenhum identificador forte — melhor candidato é só por nome (fraco).
+    ?? { empresa: ranqueados[0].empresa, tipoMatch: 'nome', forte: false, ambiguo: false, candidatos }
+  );
 }
 
 // ─── Obrigação ───────────────────────────────────────────────────────────────
