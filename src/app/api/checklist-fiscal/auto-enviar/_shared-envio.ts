@@ -36,6 +36,18 @@ export function sanitizeMimeFilename(name: string): string {
   return stripCrlf(name).replace(/"/g, '');
 }
 
+// Chave de objeto do Storage do Supabase precisa ser ASCII — acento gera
+// "Invalid key" no upload. Mantém espaços e pontuação ASCII; tira acentos
+// (EMISSÃO -> EMISSAO) e qualquer caractere não-ASCII restante. NÃO usar pro
+// nome de exibição (anexo do email / arquivo no T:), que podem ter acento.
+export function storageKeySafe(name: string): string {
+  return stripCrlf(name)
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^\x20-\x7E]/g, '-')
+    .replace(/"/g, '');
+}
+
 export function mimeTypeFromFilename(filename: string): string {
   const ext = (filename.split('.').pop() ?? '').toLowerCase();
   switch (ext) {
@@ -132,7 +144,7 @@ const PATH_PENDENTE_PREFIX = 'pendentes-auto/';
  * UUID isola pendências do mesmo arquivo no nome.
  */
 export function pathPendenteAuto(uuid: string, nomeArquivo: string): string {
-  return `${PATH_PENDENTE_PREFIX}${uuid}-${sanitizeMimeFilename(nomeArquivo)}`;
+  return `${PATH_PENDENTE_PREFIX}${uuid}-${storageKeySafe(nomeArquivo)}`;
 }
 
 /** Confere se um path veio do prefixo de pendente — defesa contra
@@ -252,7 +264,7 @@ export async function enviarGuia(
   }
 
   // 3. Upload bucket interno
-  const docPath = `empresas/${params.empresa.id}/auto/${randomUUID()}-${sanitizeMimeFilename(params.nomeArquivo)}`;
+  const docPath = `empresas/${params.empresa.id}/auto/${randomUUID()}-${storageKeySafe(params.nomeArquivo)}`;
   const { error: upErr } = await admin.storage
     .from(BUCKET_DOCUMENTOS)
     .upload(docPath, params.fileBuffer, { contentType: 'application/pdf', upsert: false });
@@ -317,7 +329,7 @@ export async function enviarGuia(
   // 6. Portal (best-effort)
   let portalDocumentoId: string | null = null;
   try {
-    const portalPath = `${params.empresa.id}/${randomUUID()}-${sanitizeMimeFilename(params.nomeArquivo)}`;
+    const portalPath = `${params.empresa.id}/${randomUUID()}-${storageKeySafe(params.nomeArquivo)}`;
     const { error: upPortalErr } = await admin.storage
       .from(BUCKET_PORTAL)
       .upload(portalPath, params.fileBuffer, { contentType: 'application/pdf', upsert: false });
