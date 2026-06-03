@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Archive, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, Grid3x3, ListChecks, FileStack, Eye, EyeOff, Smartphone, Sparkles } from 'lucide-react';
+import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Archive, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, Grid3x3, ListChecks, FileStack, Eye, EyeOff, Smartphone, Sparkles, Download } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, isRetRenovado } from '@/app/utils/date';
 import { getDepartamentoSlugDoUsuario, getDepartamentoSlugsDoUsuario, type DepartamentoSlug } from '@/app/utils/departamento';
@@ -47,6 +47,7 @@ const nav: NavItem[] = [
   { href: '/vencimentos-cadastro', label: 'Vencimentos Cadastro', icon: Grid3x3, department: 'cadastro' },
   { href: '/vencimentos-cadastro/controle', label: 'Controle Cadastro', icon: ListChecks, department: 'cadastro' },
   { href: '/calendario', label: 'Calendário', icon: CalendarDays },
+  { href: '/aplicativos', label: 'Aplicativos', icon: Download },
   { href: '/dev', label: 'Controle', icon: Terminal, ghostOnly: true },
   { href: '/obrigacoes', label: 'Obrigações', icon: FileStack, emailOnly: ['admin@triarcontabilidade.com.br', 'yasmin@triarcontabilidade.com.br'] },
   { href: '/empresas', label: 'Empresas', icon: Building2 },
@@ -545,7 +546,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
             >
               <Bell size={20} className={notifsNaoLidas > 0 ? 'text-[var(--brand)]' : 'text-[var(--text-3)]'} />
               {notifsNaoLidas > 0 && (
-                <span className="absolute top-1 right-1 min-w-[14px] h-[14px] rounded-full bg-red-500 text-white text-[8px] font-black flex items-center justify-center px-0.5">
+                <span className="absolute top-1 right-1 min-w-[14px] h-[14px] rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center px-0.5">
                   {notifsNaoLidas > 9 ? '9+' : notifsNaoLidas}
                 </span>
               )}
@@ -608,7 +609,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                 <Icon size={18} className="shrink-0" />
                 <span className="flex-1">{i.label}</span>
                 {showBadge && (
-                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-red-600 text-white text-[9px] font-black px-1 animate-pulse">
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-red-600 text-white text-[9px] font-bold px-1 animate-pulse">
                     {vencidosCount}
                   </span>
                 )}
@@ -710,7 +711,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                 <Icon size={18} className="shrink-0" />
                 {sidebarOpen && <span className="truncate flex-1">{i.label}</span>}
                 {showBadge && (
-                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-red-600 text-white text-[9px] font-black px-1 animate-pulse">
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-red-600 text-white text-[9px] font-bold px-1 animate-pulse">
                     {vencidosCount}
                   </span>
                 )}
@@ -763,7 +764,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                 <Bell size={16} className={notifsNaoLidas > 0 ? 'text-[var(--brand)]' : 'text-[var(--text-3)]'} />
                 {notifsNaoLidas > 0 && (
                   <span
-                    className="absolute top-1 right-1 inline-flex items-center justify-center min-w-[14px] h-[14px] rounded-full bg-red-500 text-white text-[8px] font-black px-0.5"
+                    className="absolute top-1 right-1 inline-flex items-center justify-center min-w-[14px] h-[14px] rounded-full bg-red-500 text-white text-[8px] font-bold px-0.5"
                     style={{ animation: 'notifPulse 2s infinite' }}
                   >
                     {notifsNaoLidas > 9 ? '9+' : notifsNaoLidas}
