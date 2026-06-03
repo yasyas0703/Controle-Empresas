@@ -1,14 +1,18 @@
-// Endpoint chamado pelo daemon local que olha a pasta T:/Fiscal/EMPRESA/.../*.pdf.
+// Endpoint chamado pelo daemon local que olha a pasta única
+// T:/Fiscal/EMPRESA/1-GUIAS A ENVIAR/*.pdf.
 //
 // Diferenças do `enviar-anexo`:
 //   - Auth via header `X-Machine-Token` (env `AUTO_ENVIO_TOKEN`), não cookie de sessão
 //   - Envio sai do Gmail do GHOST_USER_ID (não há "usuária logada")
-//   - Resolução de empresa, parser de nome e validações geram entradas em
-//     `guias_auto_problemas` em vez de erro pro cliente — daemon não tem
-//     UI pra resolver, então o problema fica no painel /vencimentos-fiscais/auto-problemas
-//   - Idempotência por (caminho_servidor + hash_arquivo) em `guias_auto_processadas`
+//   - Identificação 100% pelo CONTEÚDO do PDF (OCR/extração de texto): empresa por
+//     CNPJ/Inscrição Estadual, obrigação pelo perfil de validação, competência pelo
+//     período de apuração. Não usa mais nome de pasta nem padrão de nome de arquivo.
+//   - Falhas geram entradas em `guias_auto_problemas` em vez de erro pro cliente —
+//     daemon não tem UI; o problema fica no painel /vencimentos-fiscais/auto-problemas
+//   - Idempotência por hash do arquivo em `guias_auto_processadas`
 //   - Modo conservador: 1ª vez de cada (empresa + obrigação) NÃO envia automaticamente,
 //     deixa pendente de aprovação pra admin liberar manualmente
+//   - Resposta de sucesso inclui `destino` pro daemon arquivar o PDF na pasta da empresa
 //
 // Lógica de envio (Gmail + portal + checklist) mora em `_shared-envio.ts`
 // pra ser reusada pela rota /api/admin/guias-auto/aprovar-e-enviar.
@@ -17,15 +21,15 @@ import { NextResponse } from 'next/server';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { rateLimit, getClientIp } from '@/lib/rateLimit';
 import {
-  validarPdfNoServidor, carregarEmpresaCompleta, getSupabaseAdmin, isErroApi,
+  validarPdfNoServidor, carregarEmpresaCompleta, getSupabaseAdmin, isErroApi, extrairTextoPdfServidor,
 } from '../_shared';
-import {
-  parseNomeGuia, extrairNomeEmpresaDoCaminho, extrairNomeArquivoDoCaminho, detectarRegimeDoCaminho,
-  type ResultadoParseNome,
-} from '@/lib/parseNomeGuia';
+import { extrairNomeArquivoDoCaminho } from '@/lib/parseNomeGuia';
 import {
   enviarGuia, marcarChecklistComoFeito, jaEnviadaNoChecklist, subirPendente,
 } from './_shared-envio';
+import {
+  identificarEmpresa, identificarObrigacao, competenciaDoPdf, type ConfigObrigacao,
+} from './_identificar';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
 
@@ -35,7 +39,7 @@ export const maxDuration = 60;
 // ─── Tipos do retorno ──────────────────────────────────────────────────────
 type StatusProcessamento =
   | 'enviado'                              // tudo certo, email saiu
-  | 'ja_processado'                        // hash+caminho já existem em processadas
+  | 'ja_processado'                        // hash já foi enviado antes
   | 'pendente_correcao'                    // problema registrado pra admin resolver
   | 'pendente_aprovacao_primeira_vez'      // modo conservador: 1ª vez, espera aprovação
   | 'pendente_aprovacao_competencia_antiga' // competência > 60 dias atrás
@@ -57,9 +61,15 @@ function competenciaEhRecente(competencia: string): boolean {
   return diffDias <= MAX_DIAS_COMPETENCIA_AUTOMATICA;
 }
 
-interface RespostaAuto {
-  status: StatusProcessamento;
-  detalhes: Record<string, unknown>;
+// Competência à frente do mês corrente. As guias costumam ser do mês anterior;
+// uma competência no futuro quase sempre é PDF do mês errado na pasta.
+function competenciaEhFutura(competencia: string): boolean {
+  const [y, m] = competencia.split('-').map(Number);
+  if (!y || !m) return false;
+  const hoje = new Date();
+  const atualYM = hoje.getUTCFullYear() * 12 + hoje.getUTCMonth(); // mês corrente (0-based)
+  const compYM = y * 12 + (m - 1);
+  return compYM > atualYM;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -72,51 +82,33 @@ function tokensIguais(a: string, b: string): boolean {
   return timingSafeEqual(ba, bb);
 }
 
-/**
- * Normalização forte usada pra match de nome de empresa (pasta T: vs cadastro).
- * Tira: ltda/me/sa/eireli/epp, acentos, pontuação, espaços extras.
- */
-function normalizarNomeEmpresa(s: string): string {
-  return String(s || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/\bltda\b|\bme\b|\bs\.?a\.?\b|\beireli\b|\beirelli\b|\bepp\b/gi, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
+/** Tira caracteres inválidos pra nome de arquivo (Windows + storage path). */
+function sanitizeNomeArquivo(nome: string): string {
+  return nome.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim();
 }
 
-async function resolverEmpresaPorNomePasta(
-  admin: SupabaseClient,
-  nomePasta: string,
-): Promise<{ empresa: Empresa } | { erro: 'nao_encontrada' | 'ambigua'; candidatos?: string[] }> {
-  const normPasta = normalizarNomeEmpresa(nomePasta);
-  if (!normPasta) return { erro: 'nao_encontrada' };
+/** Nome canônico da guia — usado no anexo do email E no arquivo arquivado no T:. */
+function nomeCanonicoGuia(competencia: string, obrigacao: string): string {
+  return `${sanitizeNomeArquivo(`${competencia} - ${obrigacao}`)}.pdf`;
+}
 
-  const { data, error } = await admin.from('empresas').select('*');
-  if (error || !data) return { erro: 'nao_encontrada' };
+/** Pasta de regime no T: conforme a tributação da empresa. */
+function regimePastaDaEmpresa(empresa: Empresa): 'FECHAMENTO' | 'SIMPLES NACIONAL' {
+  return empresa.tributacao === 'simples_nacional' ? 'SIMPLES NACIONAL' : 'FECHAMENTO';
+}
 
-  const matches: Empresa[] = [];
-  for (const row of data as Empresa[]) {
-    const apelido = normalizarNomeEmpresa(row.apelido ?? '');
-    const razao = normalizarNomeEmpresa(row.razao_social ?? '');
-    const codigo = normalizarNomeEmpresa(row.codigo ?? '');
-    if (apelido === normPasta || razao === normPasta || codigo === normPasta) {
-      matches.push(row);
-    }
-  }
-
-  if (matches.length === 0) return { erro: 'nao_encontrada' };
-  if (matches.length > 1) {
-    return {
-      erro: 'ambigua',
-      candidatos: matches.map((m) => `${m.codigo ?? '?'} - ${m.razao_social ?? m.apelido}`),
-    };
-  }
-
-  const completa = await carregarEmpresaCompleta(admin, matches[0].id);
-  if (isErroApi(completa)) return { erro: 'nao_encontrada' };
-  return { empresa: completa };
+/**
+ * Monta o bloco `destino` que o daemon usa pra mover o PDF da pasta de entrada
+ * pra pasta definitiva da empresa: T:/Fiscal/EMPRESA/<EMPRESA>/<REGIME>/<ANO>/.
+ * O daemon resolve a pasta real da empresa por fuzzy match dos candidatos.
+ */
+function montarDestino(empresa: Empresa, competencia: string, nomeArquivo: string) {
+  return {
+    candidatosPasta: [empresa.apelido, empresa.razao_social, empresa.codigo].filter((v): v is string => !!v),
+    regime: regimePastaDaEmpresa(empresa),
+    ano: competencia.slice(0, 4),
+    nomeArquivo,
+  };
 }
 
 /**
@@ -314,7 +306,6 @@ export async function POST(req: Request) {
 
   const caminhoServidor = meta.caminhoServidor;
   // Corta em / E \ — caminho vem do Windows (watcher), API roda no Linux (Vercel).
-  // path.basename POSIX não corta em \, então usamos helper próprio.
   const nomeArquivo = extrairNomeArquivoDoCaminho(caminhoServidor);
   const fileBuffer = Buffer.from(await file.arrayBuffer());
 
@@ -330,122 +321,177 @@ export async function POST(req: Request) {
 
   const admin = getSupabaseAdmin();
 
-  // 4. Idempotência: já foi processado esse arquivo nesse caminho?
+  // 4. Idempotência por HASH (conteúdo). Como agora todas as guias caem na mesma
+  // pasta de entrada e o arquivo é movido após processar, o caminho não é estável
+  // — a chave passa a ser o hash. Só faz curto-circuito em status TERMINAL de
+  // sucesso; pendências/erros podem ser reprocessados (re-soltar após corrigir
+  // config, p.ex.). Double-send segue barrado pelo guard de duplicado (passo 14).
   const { data: jaProcessado } = await admin
     .from('guias_auto_processadas')
     .select('id, status, processado_em')
-    .eq('caminho_servidor', caminhoServidor)
     .eq('hash_arquivo', hashArquivo)
+    .in('status', ['enviado', 'interno_marcado_feito'])
+    .order('processado_em', { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (jaProcessado) {
     return NextResponse.json({
       status: 'ja_processado' as StatusProcessamento,
       detalhes: {
-        motivo: 'Mesmo arquivo (path + hash) já foi processado antes',
+        motivo: 'Mesmo arquivo (hash) já foi enviado antes',
         statusAnterior: jaProcessado.status,
         processadoEm: jaProcessado.processado_em,
       },
     });
   }
 
-  // 5. Resolve empresa pelo nome da pasta
-  const nomePasta = extrairNomeEmpresaDoCaminho(caminhoServidor);
-  if (!nomePasta) {
+  // 5. Extrai o texto do PDF UMA vez — base de toda a identificação por conteúdo.
+  let textoPdf = '';
+  try {
+    textoPdf = await extrairTextoPdfServidor(fileBuffer);
+  } catch {
+    textoPdf = '';
+  }
+  if (!textoPdf.trim()) {
+    // PDF imagem/escaneado/criptografado — sem texto não dá pra identificar nada.
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,
       empresaId: null, empresaNomePasta: null,
-      tipoProblema: 'empresa_nao_encontrada',
-      detalhes: { motivo: 'Caminho não tem segmento "EMPRESA" — verifique padrão T:\\Fiscal\\EMPRESA\\<NOME>\\...' },
+      tipoProblema: 'pdf_ilegivel',
+      detalhes: { motivo: 'Não consegui extrair texto do PDF (provavelmente imagem/escaneado). Identificação por conteúdo impossível.' },
       competenciaParseada: null, obrigacaoParseada: null,
     });
     await registrarProcessado(admin, {
       caminhoServidor, hashArquivo, empresaId: null, competencia: null, obrigacao: null,
       nomeArquivo, status: 'pendente_correcao',
-      detalhes: { tipoProblema: 'empresa_nao_encontrada' },
+      detalhes: { tipoProblema: 'pdf_ilegivel' },
     });
-    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'empresa_nao_encontrada' } });
+    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'pdf_ilegivel' } });
   }
 
-  const resEmpresa = await resolverEmpresaPorNomePasta(admin, nomePasta);
-  if ('erro' in resEmpresa) {
+  // 6. Identifica a EMPRESA pelo conteúdo (CNPJ/IE = forte; só razão social = fraco).
+  const { data: empresasRows } = await admin.from('empresas').select('*');
+  const todasEmpresas = (empresasRows ?? []) as Empresa[];
+  const identEmpresa = identificarEmpresa(textoPdf, todasEmpresas);
+
+  if (!identEmpresa.empresa) {
+    const tipoProblema = identEmpresa.ambiguo ? 'empresa_ambigua' : 'empresa_nao_identificada';
+    const motivo = identEmpresa.ambiguo
+      ? 'Mais de uma empresa com CNPJ/Inscrição no PDF — não dá pra decidir com segurança.'
+      : 'Nenhuma empresa cadastrada foi reconhecida no conteúdo do PDF (CNPJ, IE ou razão social).';
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,
-      empresaId: null, empresaNomePasta: nomePasta,
-      tipoProblema: 'empresa_nao_encontrada',
+      empresaId: null, empresaNomePasta: null,
+      tipoProblema,
+      detalhes: { motivo, candidatos: identEmpresa.candidatos },
+      competenciaParseada: null, obrigacaoParseada: null,
+    });
+    await registrarProcessado(admin, {
+      caminhoServidor, hashArquivo, empresaId: null, competencia: null, obrigacao: null,
+      nomeArquivo, status: 'pendente_correcao',
+      detalhes: { tipoProblema, candidatos: identEmpresa.candidatos },
+    });
+    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema, candidatos: identEmpresa.candidatos } });
+  }
+
+  const empresaBase = identEmpresa.empresa;
+
+  // Match fraco (só razão social) NÃO envia sozinho — risco de mandar pro cliente
+  // errado. Vira pendência pra um humano confirmar e mandar pela aba de Envio.
+  if (!identEmpresa.forte) {
+    await registrarProblema(admin, {
+      caminhoServidor, nomeArquivo, hashArquivo,
+      empresaId: empresaBase.id, empresaNomePasta: null,
+      tipoProblema: 'empresa_match_fraco',
       detalhes: {
-        motivo: resEmpresa.erro === 'ambigua'
-          ? `Nome de pasta "${nomePasta}" bate com múltiplas empresas`
-          : `Nome de pasta "${nomePasta}" não corresponde a nenhuma empresa cadastrada`,
-        candidatos: resEmpresa.candidatos,
+        motivo: `A guia parece ser de "${empresaBase.razao_social || empresaBase.apelido}", mas o PDF não traz o CNPJ nem a Inscrição Estadual dela. Por segurança, não envio automaticamente.`,
+        empresaSuspeita: empresaBase.razao_social || empresaBase.apelido,
+        candidatos: identEmpresa.candidatos,
       },
       competenciaParseada: null, obrigacaoParseada: null,
     });
     await registrarProcessado(admin, {
-      caminhoServidor, hashArquivo, empresaId: null, competencia: null, obrigacao: null,
+      caminhoServidor, hashArquivo, empresaId: empresaBase.id, competencia: null, obrigacao: null,
       nomeArquivo, status: 'pendente_correcao',
-      detalhes: { tipoProblema: 'empresa_nao_encontrada', erro: resEmpresa.erro },
+      detalhes: { tipoProblema: 'empresa_match_fraco' },
     });
-    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'empresa_nao_encontrada', erro: resEmpresa.erro } });
+    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'empresa_match_fraco' } });
   }
-  const empresa = resEmpresa.empresa;
 
-  // 6. Detecta regime do path (FECHAMENTO / SIMPLES NACIONAL) — só pra logar/debug
-  const regimePath = detectarRegimeDoCaminho(caminhoServidor);
+  // Recarrega a empresa no shape completo (vencimentosFiscais etc.) pro downstream.
+  const empresaCompleta = await carregarEmpresaCompleta(admin, empresaBase.id);
+  if (isErroApi(empresaCompleta)) {
+    return NextResponse.json({ status: 'erro', detalhes: { motivo: 'Falha ao carregar empresa identificada.' } }, { status: 500 });
+  }
+  const empresa = empresaCompleta;
 
-  // 7. Parseia nome do arquivo
-  const parse: ResultadoParseNome = parseNomeGuia(nomeArquivo);
-  if (!parse.valido || !parse.competencia || !parse.obrigacao) {
-    const tipoProblema = parse.erros.includes('obrigacao_desconhecida')
-      ? 'obrigacao_desconhecida'
-      : 'nome_fora_padrao';
+  // 7. Carrega TODAS as configs de obrigação da empresa (pra identificar e validar).
+  const { data: configRows } = await admin
+    .from('empresa_obrigacoes_config')
+    .select('obrigacao, ativa, codigos, nao_envia_cliente, motivo')
+    .eq('empresa_id', empresa.id);
+
+  const configs = new Map<string, ConfigObrigacao>();
+  for (const row of (configRows ?? []) as Array<{ obrigacao: string; ativa: boolean; codigos: string[] | null; nao_envia_cliente: boolean; motivo: string | null }>) {
+    configs.set(row.obrigacao, {
+      ativa: row.ativa,
+      codigos: Array.isArray(row.codigos) ? row.codigos : [],
+      naoEnviaCliente: row.nao_envia_cliente,
+      motivo: row.motivo,
+    });
+  }
+
+  // 8. Identifica a OBRIGAÇÃO pelo conteúdo + a COMPETÊNCIA.
+  const identObr = identificarObrigacao(textoPdf, empresa, configs);
+  if (!identObr.obrigacao) {
+    const tipoProblema = identObr.ambiguo ? 'obrigacao_ambigua' : 'obrigacao_nao_identificada';
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,
-      empresaId: empresa.id, empresaNomePasta: nomePasta,
+      empresaId: empresa.id, empresaNomePasta: null,
       tipoProblema,
       detalhes: {
-        erros: parse.erros,
-        obrigacaoEscrita: parse.obrigacaoOriginal,
-        nomeSugerido: parse.nomeSugerido,
-        regimePath,
+        motivo: identObr.ambiguo
+          ? 'Mais de um tipo de guia bate com o conteúdo e o código de receita não desempatou.'
+          : 'Não reconheci o tipo de guia pelo conteúdo do PDF.',
+        candidatos: identObr.candidatos,
       },
-      competenciaParseada: parse.competencia,
-      obrigacaoParseada: parse.obrigacao,
+      competenciaParseada: null, obrigacaoParseada: null,
     });
     await registrarProcessado(admin, {
-      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia: parse.competencia,
-      obrigacao: parse.obrigacao, nomeArquivo, status: 'pendente_correcao',
-      detalhes: { tipoProblema, erros: parse.erros },
+      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia: null, obrigacao: null,
+      nomeArquivo, status: 'pendente_correcao',
+      detalhes: { tipoProblema, candidatos: identObr.candidatos },
     });
-    return NextResponse.json({
-      status: 'pendente_correcao',
-      detalhes: { tipoProblema, erros: parse.erros, nomeSugerido: parse.nomeSugerido },
+    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema, candidatos: identObr.candidatos } });
+  }
+  const obrigacao = identObr.obrigacao;
+
+  const competencia = competenciaDoPdf(textoPdf);
+  if (!competencia) {
+    await registrarProblema(admin, {
+      caminhoServidor, nomeArquivo, hashArquivo,
+      empresaId: empresa.id, empresaNomePasta: null,
+      tipoProblema: 'competencia_nao_identificada',
+      detalhes: { motivo: 'Não achei a competência (mês/ano de referência) no PDF.' },
+      competenciaParseada: null, obrigacaoParseada: obrigacao,
     });
+    await registrarProcessado(admin, {
+      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia: null, obrigacao,
+      nomeArquivo, status: 'pendente_correcao',
+      detalhes: { tipoProblema: 'competencia_nao_identificada' },
+    });
+    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'competencia_nao_identificada' } });
   }
 
-  const competencia = parse.competencia;
-  const obrigacao = parse.obrigacao;
-
-  // 8. Carrega config da obrigação pra empresa
-  const { data: configRow } = await admin
-    .from('empresa_obrigacoes_config')
-    .select('ativa, codigos, nao_envia_cliente, motivo')
-    .eq('empresa_id', empresa.id)
-    .eq('obrigacao', obrigacao)
-    .maybeSingle();
-
-  const config = configRow as
-    | { ativa: boolean; codigos: string[]; nao_envia_cliente: boolean; motivo: string | null }
-    | null;
-
+  // 9. Confere a config da obrigação identificada.
+  const config = configs.get(obrigacao) ?? null;
   if (!config) {
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,
-      empresaId: empresa.id, empresaNomePasta: nomePasta,
+      empresaId: empresa.id, empresaNomePasta: null,
       tipoProblema: 'obrigacao_nao_configurada',
-      detalhes: {
-        motivo: `A obrigação "${obrigacao}" não tem configuração cadastrada pra esta empresa. Configure em "Configurar Obrigações" (códigos esperados, se aplicável) antes de envios automáticos.`,
-      },
+      detalhes: { motivo: `A obrigação "${obrigacao}" não tem configuração cadastrada pra esta empresa. Configure em "Configurar Obrigações" antes de envios automáticos.` },
       competenciaParseada: competencia, obrigacaoParseada: obrigacao,
     });
     await registrarProcessado(admin, {
@@ -459,12 +505,9 @@ export async function POST(req: Request) {
   if (!config.ativa) {
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,
-      empresaId: empresa.id, empresaNomePasta: nomePasta,
+      empresaId: empresa.id, empresaNomePasta: null,
       tipoProblema: 'obrigacao_inativa',
-      detalhes: {
-        motivo: `A obrigação "${obrigacao}" está marcada como INATIVA pra esta empresa.`,
-        motivoConfig: config.motivo,
-      },
+      detalhes: { motivo: `A obrigação "${obrigacao}" está marcada como INATIVA pra esta empresa.`, motivoConfig: config.motivo },
       competenciaParseada: competencia, obrigacaoParseada: obrigacao,
     });
     await registrarProcessado(admin, {
@@ -475,7 +518,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'obrigacao_inativa' } });
   }
 
-  // 9. Validação rigorosa de PDF (defesa em profundidade — o daemon não valida)
+  // Nome canônico — não depende mais do nome que a pessoa deu ao arquivo na entrada.
+  const nomeCanonico = nomeCanonicoGuia(competencia, obrigacao);
+
+  // 10. Validação rigorosa de PDF (defesa em profundidade).
   const validacao = await validarPdfNoServidor({
     buffer: fileBuffer, empresa, obrigacao,
     codigosEsperados: config.codigos ?? [],
@@ -484,13 +530,9 @@ export async function POST(req: Request) {
   if (isErroApi(validacao)) {
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,
-      empresaId: empresa.id, empresaNomePasta: nomePasta,
+      empresaId: empresa.id, empresaNomePasta: null,
       tipoProblema: 'validacao_falhou',
-      detalhes: {
-        motivo: validacao.error,
-        bloqueios: validacao.meta?.bloqueios,
-        perfilUsado: validacao.meta?.perfilUsado,
-      },
+      detalhes: { motivo: validacao.error, bloqueios: validacao.meta?.bloqueios, perfilUsado: validacao.meta?.perfilUsado },
       competenciaParseada: competencia, obrigacaoParseada: obrigacao,
     });
     await registrarProcessado(admin, {
@@ -498,20 +540,32 @@ export async function POST(req: Request) {
       nomeArquivo, status: 'pendente_correcao',
       detalhes: { tipoProblema: 'validacao_falhou' },
     });
-    return NextResponse.json({
-      status: 'pendente_correcao',
-      detalhes: { tipoProblema: 'validacao_falhou', bloqueios: validacao.meta?.bloqueios },
-    });
+    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'validacao_falhou', bloqueios: validacao.meta?.bloqueios } });
   }
 
-  // 9.5. Safeguard: competência muito antiga não envia automaticamente.
-  // Sobe o PDF pro Storage pra admin poder aprovar depois (Vercel não enxerga T:\).
+  // 11. Safeguard de competência: nem no futuro, nem muito antiga.
+  if (competenciaEhFutura(competencia)) {
+    await registrarProblema(admin, {
+      caminhoServidor, nomeArquivo, hashArquivo,
+      empresaId: empresa.id, empresaNomePasta: null,
+      tipoProblema: 'competencia_futura',
+      detalhes: { motivo: `Competência ${competencia} está no futuro. As guias costumam ser do mês anterior — confira se o PDF é o certo.` },
+      competenciaParseada: competencia, obrigacaoParseada: obrigacao,
+    });
+    await registrarProcessado(admin, {
+      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
+      nomeArquivo, status: 'pendente_correcao',
+      detalhes: { tipoProblema: 'competencia_futura' },
+    });
+    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'competencia_futura' } });
+  }
+
   if (!competenciaEhRecente(competencia)) {
-    const upPend = await subirPendente(admin, fileBuffer, nomeArquivo);
+    const upPend = await subirPendente(admin, fileBuffer, nomeCanonico);
     const pathPendente = 'path' in upPend ? upPend.path : null;
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,
-      empresaId: empresa.id, empresaNomePasta: nomePasta,
+      empresaId: empresa.id, empresaNomePasta: null,
       tipoProblema: 'competencia_antiga',
       detalhes: {
         motivo: `Competência ${competencia} tem mais de ${MAX_DIAS_COMPETENCIA_AUTOMATICA} dias. Aprove no painel se realmente quiser enviar.`,
@@ -526,8 +580,7 @@ export async function POST(req: Request) {
       detalhes: {
         motivo: 'competencia_antiga',
         diasLimite: MAX_DIAS_COMPETENCIA_AUTOMATICA,
-        // Persistir o path pra rota /aprovar-e-enviar baixar e reenviar.
-        // Se subirPendente falhou, o admin terá que usar /vencimentos-fiscais/envio manual.
+        // Path pra rota /aprovar-e-enviar baixar e reenviar depois.
         arquivo_pendente_path: pathPendente,
         codigos_esperados_snapshot: config.codigos ?? [],
         perfil_validacao_snapshot: validacao.resultado.perfilUsado,
@@ -535,17 +588,15 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({
       status: 'pendente_aprovacao_competencia_antiga',
-      detalhes: {
-        motivo: `Competência ${competencia} > ${MAX_DIAS_COMPETENCIA_AUTOMATICA} dias atrás. Aprove no painel /vencimentos-fiscais/auto-problemas.`,
-      },
+      detalhes: { motivo: `Competência ${competencia} > ${MAX_DIAS_COMPETENCIA_AUTOMATICA} dias atrás. Aprove no painel /vencimentos-fiscais/auto-problemas.` },
     });
   }
 
-  // 10. Obrigação INTERNA (nao_envia_cliente=true): não envia email, só marca check
-  if (config.nao_envia_cliente) {
+  // 12. Obrigação INTERNA (nao_envia_cliente=true): não envia email, só marca check.
+  if (config.naoEnviaCliente) {
     await marcarChecklistComoFeito(admin, {
       empresaId: empresa.id, mes: competencia, obrigacao, ghostUserId,
-      arquivoNome: nomeArquivo, fonte: 'auto-interna',
+      arquivoNome: nomeCanonico, fonte: 'auto-interna',
     });
     await registrarProcessado(admin, {
       caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
@@ -555,18 +606,18 @@ export async function POST(req: Request) {
     return NextResponse.json({
       status: 'interno_marcado_feito',
       detalhes: { empresa: empresa.codigo || empresa.razao_social, obrigacao, competencia },
+      destino: montarDestino(empresa, competencia, nomeCanonico),
     });
   }
 
-  // 11. Modo conservador: 1ª vez dessa empresa+obrigação?
-  // Sobe o PDF pro Storage pra admin poder aprovar depois.
+  // 13. Modo conservador: 1ª vez dessa empresa+obrigação?
   const jaEnviouAntes = await jaTeveEnvioSucesso(admin, empresa.id, obrigacao);
   if (!jaEnviouAntes) {
-    const upPend = await subirPendente(admin, fileBuffer, nomeArquivo);
+    const upPend = await subirPendente(admin, fileBuffer, nomeCanonico);
     const pathPendente = 'path' in upPend ? upPend.path : null;
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,
-      empresaId: empresa.id, empresaNomePasta: nomePasta,
+      empresaId: empresa.id, empresaNomePasta: null,
       tipoProblema: 'primeira_vez_precisa_aprovacao',
       detalhes: {
         motivo: `Primeira vez enviando "${obrigacao}" pra esta empresa via sistema automático. Aprove no painel — próximos envios sairão automáticos.`,
@@ -592,32 +643,26 @@ export async function POST(req: Request) {
     });
   }
 
-  // 12. Guard duplicado: já foi enviada essa empresa+mes+obrigação?
+  // 14. Guard duplicado: já foi enviada essa empresa+mes+obrigação?
   const duplicado = await jaEnviadaNoChecklist(admin, empresa.id, competencia, obrigacao);
   if (duplicado) {
     await registrarProcessado(admin, {
       caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
       nomeArquivo, status: 'duplicado_periodo',
-      detalhes: {
-        motivo: 'Já houve envio anterior com sucesso pra essa empresa+competência+obrigação',
-        enviadoEm: duplicado.enviadoEm,
-      },
+      detalhes: { motivo: 'Já houve envio anterior com sucesso pra essa empresa+competência+obrigação', enviadoEm: duplicado.enviadoEm },
     });
-    return NextResponse.json({
-      status: 'duplicado_periodo',
-      detalhes: { motivo: 'Já enviado antes', enviadoEm: duplicado.enviadoEm },
-    });
+    return NextResponse.json({ status: 'duplicado_periodo', detalhes: { motivo: 'Já enviado antes', enviadoEm: duplicado.enviadoEm } });
   }
 
-  // 13. Envia (Gmail + portal + checklist) — fluxo compartilhado com /aprovar-e-enviar
+  // 15. Envia (Gmail + portal + checklist) — anexo com nome canônico.
   const envio = await enviarGuia(admin, {
-    empresa, obrigacao, competencia, nomeArquivo, fileBuffer, ghostUserId,
+    empresa, obrigacao, competencia, nomeArquivo: nomeCanonico, fileBuffer, ghostUserId,
   });
 
   if (!envio.ok) {
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,
-      empresaId: empresa.id, empresaNomePasta: nomePasta,
+      empresaId: empresa.id, empresaNomePasta: null,
       tipoProblema: envio.motivo === 'sem_emails' ? 'sem_emails'
                     : envio.motivo === 'gmail_nao_conectado' ? 'gmail_nao_conectado'
                     : 'erro_envio',
@@ -637,7 +682,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ status: statusFinal, detalhes: { motivo: envio.motivo, erro: envio.erro } }, { status: httpStatus });
   }
 
-  // 14. Sucesso
+  // 16. Sucesso
   await registrarProcessado(admin, {
     caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
     nomeArquivo, status: 'enviado',
@@ -647,10 +692,11 @@ export async function POST(req: Request) {
       portalDocumentoId: envio.portalDocumentoId,
       checklistId: envio.checklistId,
       perfilValidacao: validacao.resultado.perfilUsado,
+      tipoMatchEmpresa: identEmpresa.tipoMatch,
     },
   });
 
-  const resposta: RespostaAuto = {
+  return NextResponse.json({
     status: 'enviado',
     detalhes: {
       empresa: empresa.razao_social || empresa.apelido || empresa.codigo,
@@ -662,6 +708,6 @@ export async function POST(req: Request) {
       portalDocumentoId: envio.portalDocumentoId,
       checklistId: envio.checklistId,
     },
-  };
-  return NextResponse.json(resposta);
+    destino: montarDestino(empresa, competencia, nomeCanonico),
+  });
 }

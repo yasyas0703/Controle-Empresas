@@ -1,35 +1,43 @@
-// Daemon local que observa T:/Fiscal/EMPRESA/*/{FECHAMENTO,SIMPLES NACIONAL}/
+// Daemon local que observa a pasta ÚNICA T:/Fiscal/EMPRESA/1-GUIAS A ENVIAR/
 // e dispara POST pra /api/checklist-fiscal/auto-enviar quando detecta PDFs novos.
+//
+// O servidor identifica empresa/obrigação/competência pelo CONTEÚDO do PDF (OCR)
+// — não precisa mais de padrão de nome de arquivo nem de pasta por empresa.
 //
 // Como rodar:
 //   node scripts/watcher-guias.mjs                # roda em foreground (envia de verdade)
 //   node scripts/watcher-guias.mjs --dry-run      # só loga o que faria, NÃO chama API
 //   node scripts/watcher-guias.mjs --limit 5      # processa só os 5 primeiros (teste)
 //   node scripts/watcher-guias.mjs --once         # processa o que tem e sai
-//   node scripts/watcher-guias.mjs --url https://controle-triar.vercel.app
+//   node scripts/watcher-guias.mjs --url https://controle-empresas.vercel.app
 //
 // Como rodar em background no Windows (sobrevive reboot):
 //   1. Crie um .bat com: node scripts/watcher-guias.mjs > C:\watcher.log 2>&1
 //   2. Task Scheduler → criar tarefa básica → ao logar → executar o .bat
-//   (Ou use node-windows pra instalar como Serviço — ver scripts/README-watcher.md)
 //
 // O que faz:
-//   - chokidar olha as pastas com awaitWriteFinish (espera arquivo terminar de copiar)
+//   - chokidar olha a pasta de entrada com awaitWriteFinish (espera o arquivo
+//     terminar de copiar). Qualquer PDF na raiz da pasta vale.
 //   - Pra cada PDF novo: calcula SHA-256, faz POST multipart pra API
-//   - State local em scripts/.watcher-state.json (path → hash → status) evita re-POST
-//     mesmo após restart. O servidor também faz idempotência (defesa em profundidade).
+//   - APÓS a resposta, MOVE o arquivo:
+//       enviado/interno_marcado_feito → T:/Fiscal/EMPRESA/<EMPRESA>/<REGIME>/<ANO>/
+//       qualquer outro status        → T:/Fiscal/EMPRESA/1-GUIAS A ENVIAR/_PENDENTES/
+//   - State local em scripts/.watcher-state.json evita re-POST; o servidor também
+//     faz idempotência por hash (defesa em profundidade).
 //   - Retry com backoff exponencial (1s, 4s, 16s) em falha de rede
 //   - Logs estruturados em scripts/.watcher.log
 //
 // O que NÃO faz (intencional):
-//   - Não move/renomeia/apaga arquivos no T:. Apenas LÊ.
-//   - Não bate em LIVROS FISCAIS, SPED, REINF (só FECHAMENTO e SIMPLES NACIONAL).
+//   - Não desce em subpastas que começam com "_" (ex: _PENDENTES).
+//   - Em falha de rede, NÃO move o arquivo (fica na entrada pra re-tentar).
 
 import chokidar from 'chokidar';
 import { Agent } from 'undici';
-import { readFileSync, writeFileSync, existsSync, appendFileSync, readdirSync } from 'node:fs';
+import {
+  readFileSync, writeFileSync, existsSync, appendFileSync, readdirSync, renameSync, mkdirSync,
+} from 'node:fs';
 import { createHash } from 'node:crypto';
-import { basename, resolve, dirname, sep } from 'node:path';
+import { basename, resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -38,29 +46,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // Configuração
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Raiz onde ficam as pastas das empresas (destino dos arquivos arquivados).
 const T_ROOT = 'T:\\Fiscal\\EMPRESA';
+// Nome da pasta única de entrada (também é o que ignoramos ao resolver empresa).
+const NOME_PASTA_ENTRADA = '1-GUIAS A ENVIAR';
+const PASTA_ENTRADA = resolve(T_ROOT, NOME_PASTA_ENTRADA);
+const PASTA_PENDENTES = resolve(PASTA_ENTRADA, '_PENDENTES');
 
-// Anos que valem a pena observar (ajustar conforme passa o tempo).
-// Generoso pra trás (pegar correções de meses anteriores) e pra frente
-// (pra quando virar ano sem precisar mudar o daemon).
-const ANOS = [2024, 2025, 2026, 2027];
-const ANOS_SET = new Set(ANOS.map(String));
-
-// chokidar 4.x removeu suporte a glob — agora a gente observa T:/Fiscal/EMPRESA
-// inteiro (recursive) e filtra paths com regex no callback. Mais robusto
-// (não depende de glob no Windows) e tem o mesmo resultado.
-const PATH_PATTERN = /[\\/]EMPRESA[\\/][^\\/]+[\\/](FECHAMENTO|SIMPLES NACIONAL)[\\/](\d{4})[\\/].*\.pdf$/i;
-
+// Interessa: PDF na pasta de entrada que NÃO esteja numa subpasta "_" (ex: _PENDENTES).
 function pathInteressa(caminho) {
-  const m = caminho.match(PATH_PATTERN);
-  if (!m) return false;
-  if (!ANOS_SET.has(m[2])) return false;
-  if (EMPRESA_FILTRO) {
-    // Extrai a parte do nome da empresa (entre EMPRESA\ e \FECHAMENTO|SIMPLES NACIONAL)
-    const me = caminho.match(/[\\/]EMPRESA[\\/]([^\\/]+)[\\/]/i);
-    const nome = me?.[1] ?? '';
-    if (!nome.toUpperCase().includes(EMPRESA_FILTRO.toUpperCase())) return false;
-  }
+  if (!/\.pdf$/i.test(caminho)) return false;
+  if (/[\\/]_[^\\/]*([\\/]|$)/.test(caminho)) return false;
   return true;
 }
 
@@ -81,6 +77,7 @@ const LIMIT = (() => {
   const n = Number(args[i + 1]);
   return Number.isFinite(n) && n > 0 ? n : Infinity;
 })();
+// --empresa não filtra mais (pasta é única e mista); mantido só pra não quebrar bats.
 const EMPRESA_FILTRO = (() => {
   const i = args.indexOf('--empresa');
   return i >= 0 ? args[i + 1] : null;
@@ -121,8 +118,6 @@ const API_URL = `${BASE_URL.replace(/\/+$/, '')}/api/checklist-fiscal/auto-envia
 // State local (idempotência rápida — não substitui a do servidor)
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Shape:
-//   { "T:/.../arquivo.pdf": { hash: "...", status: "enviado", ultimaTentativa: "ISO", tentativas: 1 } }
 let state = { processados: {}, ultimaSalvada: null };
 
 function carregarState() {
@@ -139,7 +134,6 @@ function carregarState() {
 
 let saveTimer = null;
 function salvarStateDebounced() {
-  // Debounce: não escrever a cada arquivo, agrupar em ~500ms
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
@@ -164,8 +158,7 @@ function ts() {
   return new Date().toISOString();
 }
 
-// Hora pra exibir na tela — horário de Brasília (o ts() do log fica em UTC,
-// que é padrão pra arquivo de log; só a tela mostra o fuso local).
+// Hora pra exibir na tela — horário de Brasília (o ts() do log fica em UTC).
 function horaCli() {
   return new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour12: false });
 }
@@ -200,18 +193,130 @@ const log = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Arquivamento (move o PDF da entrada pro destino correto)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Normalização forte pra casar nome de empresa (resposta da API vs pasta no T:).
+// Mesma lógica do servidor: tira ltda/me/sa/eireli/epp, acentos, pontuação.
+function normalizarNomeEmpresa(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\bltda\b|\bme\b|\bs\.?a\.?\b|\beireli\b|\beirelli\b|\bepp\b/gi, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+// Acha a pasta real da empresa no T: a partir dos candidatos (apelido/razão/código).
+// Retorna o caminho absoluto ou null se não achar / estiver ambíguo (seguro: null).
+function acharPastaEmpresa(candidatos) {
+  let dirs;
+  try {
+    dirs = readdirSync(T_ROOT, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .filter((n) => normalizarNomeEmpresa(n) !== normalizarNomeEmpresa(NOME_PASTA_ENTRADA));
+  } catch {
+    return null;
+  }
+  const normDirs = dirs.map((n) => ({ nome: n, norm: normalizarNomeEmpresa(n) }));
+
+  // 1. Match exato normalizado.
+  for (const cand of candidatos || []) {
+    const c = normalizarNomeEmpresa(cand);
+    if (!c) continue;
+    const exatos = normDirs.filter((d) => d.norm === c);
+    if (exatos.length === 1) return resolve(T_ROOT, exatos[0].nome);
+    if (exatos.length > 1) return null; // ambíguo — não arrisca
+  }
+  // 2. Fallback: prefixo (um começa com o outro), com tamanho mínimo pra evitar lixo.
+  for (const cand of candidatos || []) {
+    const c = normalizarNomeEmpresa(cand);
+    if (c.length < 6) continue;
+    const pref = normDirs.filter((d) => d.norm.startsWith(c) || c.startsWith(d.norm));
+    if (pref.length === 1) return resolve(T_ROOT, pref[0].nome);
+  }
+  return null;
+}
+
+// Evita sobrescrever: se o nome já existe, adiciona " (2)", " (3)"...
+function caminhoSemColisao(dir, nome) {
+  if (!existsSync(join(dir, nome))) return join(dir, nome);
+  const ponto = nome.lastIndexOf('.');
+  const ext = ponto > 0 ? nome.slice(ponto) : '';
+  const base = ponto > 0 ? nome.slice(0, ponto) : nome;
+  let i = 2;
+  while (existsSync(join(dir, `${base} (${i})${ext}`))) i++;
+  return join(dir, `${base} (${i})${ext}`);
+}
+
+function moverParaPendentes(caminho) {
+  try {
+    mkdirSync(PASTA_PENDENTES, { recursive: true });
+  } catch {
+    // se nem a pasta de pendentes dá pra criar, deixa o arquivo onde está
+  }
+  const alvo = caminhoSemColisao(PASTA_PENDENTES, basename(caminho));
+  try {
+    renameSync(caminho, alvo);
+    log.info(`Movido pra _PENDENTES: ${basename(alvo)}`);
+    return true;
+  } catch (err) {
+    log.err(`Falha ao mover ${basename(caminho)} pra _PENDENTES: ${err.message}`);
+    return false;
+  }
+}
+
+// Arquiva o PDF enviado na pasta definitiva da empresa.
+function arquivarNaEmpresa(caminho, destino) {
+  const pasta = acharPastaEmpresa(destino?.candidatosPasta || []);
+  if (!pasta) {
+    log.warn(`Enviado, mas não achei a pasta da empresa no T: (${(destino?.candidatosPasta || []).join(' / ')}). Vai pra _PENDENTES pra arquivar na mão.`);
+    return moverParaPendentes(caminho);
+  }
+  const destDir = join(pasta, destino.regime || 'FECHAMENTO', String(destino.ano || ''));
+  try {
+    mkdirSync(destDir, { recursive: true });
+  } catch (err) {
+    log.err(`Falha ao criar ${destDir}: ${err.message}. Vai pra _PENDENTES.`);
+    return moverParaPendentes(caminho);
+  }
+  const nome = destino.nomeArquivo || basename(caminho);
+  const alvo = caminhoSemColisao(destDir, nome);
+  try {
+    renameSync(caminho, alvo);
+    log.ok(`Arquivado: ${basename(alvo)} → ${destDir}`);
+    return true;
+  } catch (err) {
+    log.err(`Falha ao arquivar ${basename(caminho)} em ${destDir}: ${err.message}`);
+    return false;
+  }
+}
+
+// Decide pra onde o arquivo vai conforme o status retornado pela API.
+function moverConformeResultado(caminho, resultado) {
+  const enviou = resultado.status === 'enviado' || resultado.status === 'interno_marcado_feito';
+  if (enviou && resultado.destino) {
+    arquivarNaEmpresa(caminho, resultado.destino);
+  } else {
+    // pendente_*, erro, duplicado_periodo, ja_processado → sai da entrada
+    moverParaPendentes(caminho);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Processamento de arquivo
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Fila simples: garante 1 processamento por vez pra não estourar API
-// nem sobrecarregar a máquina com PDFs grandes em paralelo.
+// Fila simples: garante 1 processamento por vez pra não estourar API.
 let processando = false;
 const fila = [];
 
 // Conta falhas de REDE consecutivas. Conexão keep-alive da Vercel às vezes
 // "morre" depois de uma requisição lenta (cold start) e o undici fica reusando
-// o socket podre → "fetch failed" pra sempre. Se acontecer N vezes seguidas, a
-// gente sai do processo; o watcher-3-prod.bat reinicia em 10s com conexão nova.
+// o socket podre. Se acontecer N vezes seguidas, sai do processo; o
+// watcher-3-prod.bat reinicia em 10s com conexão nova.
 let falhasRedeSeguidas = 0;
 const MAX_FALHAS_REDE_SEGUIDAS = 5;
 
@@ -253,19 +358,16 @@ async function processarArquivo(caminho) {
 
   // 2. Já processado localmente? (idempotência rápida)
   // EXCEÇÃO: se a última tentativa foi falha de REDE ('erro_rede'), a requisição
-  // nunca chegou no servidor (nada foi gravado lá), então re-tentamos na próxima
-  // varredura. Sem isso, um blip de rede (deploy, queda momentânea) travava o
-  // arquivo até alguém renomear na mão.
+  // nunca chegou no servidor, então re-tentamos.
   const stEntry = state.processados[caminho];
   if (stEntry && stEntry.hash === hash && stEntry.status !== 'erro_rede') {
-    // Mesma versão exata, já resolvida — pula
     return;
   }
 
   log.step(`Processando ${basename(caminho)} (${(buffer.length / 1024).toFixed(1)} KB)`);
   processedCount++;
 
-  // DRY RUN: só loga o que faria, sem chamar API
+  // DRY RUN: só loga o que faria, sem chamar API nem mover.
   if (DRY_RUN) {
     log.info(`[DRY-RUN] Faria POST pra ${API_URL} com ${basename(caminho)} (hash: ${hash.slice(0, 12)}...)`);
     state.processados[caminho] = {
@@ -287,17 +389,15 @@ async function processarArquivo(caminho) {
       const ultima = i === tentativas.length - 1;
       if (ultima) {
         log.err(`Falha definitiva pra ${basename(caminho)} após ${tentativas.length} tentativas: ${err.message}`, { caminho, hash });
-        // Marca no state pra não ficar re-tentando em loop. Vai re-tentar
-        // se hash do arquivo mudar.
+        // Marca no state pra não re-tentar em loop. Re-tenta se hash mudar.
+        // NÃO move o arquivo — fica na entrada pra próxima varredura tentar de novo.
         state.processados[caminho] = {
           hash, status: 'erro_rede', ultimaTentativa: ts(), tentativas: tentativas.length, erro: err.message,
         };
         salvarStateDebounced();
-        // Auto-cura: se a conexão azedou (N falhas de rede seguidas), sai pro
-        // bat reiniciar com socket novo. Sem isso, ficava preso até reiniciar na mão.
         falhasRedeSeguidas++;
         if (falhasRedeSeguidas >= MAX_FALHAS_REDE_SEGUIDAS) {
-          log.err(`${falhasRedeSeguidas} falhas de rede seguidas — conexão travou. Saindo pro watcher reiniciar (renova conexão).`);
+          log.err(`${falhasRedeSeguidas} falhas de rede seguidas — conexão travou. Saindo pro watcher reiniciar.`);
           salvarStateSync();
           process.exit(1);
         }
@@ -308,30 +408,34 @@ async function processarArquivo(caminho) {
     }
   }
 
-  // 4. Loga e atualiza state
+  // 4. Loga, move o arquivo e atualiza state
   if (!resultado) return;
-  falhasRedeSeguidas = 0; // chegou no servidor — zera o contador de falhas de rede
+  falhasRedeSeguidas = 0; // chegou no servidor — zera contador de falhas de rede
 
   const cor = {
     enviado: CORES.verde,
     ja_processado: CORES.dim,
     pendente_correcao: CORES.amarelo,
     pendente_aprovacao_primeira_vez: CORES.amarelo,
+    pendente_aprovacao_competencia_antiga: CORES.amarelo,
     duplicado_periodo: CORES.dim,
     interno_marcado_feito: CORES.verde,
     erro: CORES.vermelho,
   }[resultado.status] || CORES.branco;
 
   const linhaResumo = `${cor}${resultado.status}${CORES.reset} ${CORES.dim}|${CORES.reset} ${basename(caminho)}`;
-  if (resultado.status === 'enviado') {
+  if (resultado.status === 'enviado' || resultado.status === 'interno_marcado_feito') {
     log.ok(linhaResumo, { caminho, resposta: resultado });
   } else if (resultado.status === 'erro') {
     log.err(linhaResumo, { caminho, resposta: resultado });
-  } else if (resultado.status === 'pendente_correcao' || resultado.status === 'pendente_aprovacao_primeira_vez') {
+  } else if (String(resultado.status).startsWith('pendente')) {
     log.warn(`${linhaResumo} — ${JSON.stringify(resultado.detalhes ?? {})}`, { caminho, resposta: resultado });
   } else {
     log.info(linhaResumo, { caminho, resposta: resultado });
   }
+
+  // Move conforme o resultado (enviado → pasta da empresa; resto → _PENDENTES).
+  moverConformeResultado(caminho, resultado);
 
   state.processados[caminho] = {
     hash,
@@ -350,9 +454,8 @@ async function enviarParaApi(caminho, buffer, hash) {
 
   // Pool de conexão NOVO e descartável por requisição. Era a causa do
   // "fetch failed" em cascata: depois de uma requisição lenta (cold start da
-  // Vercel), o socket reaproveitado "azedava" e todas as próximas falhavam ao
-  // conectar — mesmo com Connection: close. Um Agent novo por envio equivale a
-  // um processo novo (que sempre conectava na hora). Destruído no finally.
+  // Vercel), o socket reaproveitado "azedava". Um Agent novo por envio equivale
+  // a um processo novo. Destruído no finally.
   const dispatcher = new Agent({
     connect: { timeout: 30_000 },
     keepAliveTimeout: 1,
@@ -360,8 +463,7 @@ async function enviarParaApi(caminho, buffer, hash) {
     pipelining: 0,
   });
 
-  // Timeout amplo (90s): cold start da Vercel às vezes passa de 60s; não
-  // queremos abortar uma requisição que ainda ia responder.
+  // Timeout amplo (90s): cold start da Vercel às vezes passa de 60s.
   const ac = new AbortController();
   const tid = setTimeout(() => ac.abort('timeout'), 90_000);
 
@@ -380,7 +482,6 @@ async function enviarParaApi(caminho, buffer, hash) {
     }
 
     // 4xx e 2xx — o servidor já decidiu, não adianta re-tentar.
-    // Retorna o JSON pra logar (mesmo se for erro de validação)
     return await res.json().catch(() => ({ status: 'erro', detalhes: { motivo: 'resposta_nao_json', http: res.status } }));
   } finally {
     clearTimeout(tid);
@@ -398,17 +499,18 @@ function imprimirCabecalho() {
   console.log('║  Watcher de Guias Fiscais — Controle Triar                   ║');
   console.log('╚══════════════════════════════════════════════════════════════╝');
   console.log('');
-  console.log(`  📁 Observando:  ${T_ROOT}`);
-  console.log(`  📅 Anos:        ${ANOS.join(', ')}`);
-  console.log(`  📂 Pastas:      FECHAMENTO, SIMPLES NACIONAL`);
+  console.log(`  📥 Entrada:     ${PASTA_ENTRADA}`);
+  console.log(`  📦 Arquiva em:  ${T_ROOT}\\<EMPRESA>\\<REGIME>\\<ANO>\\`);
+  console.log(`  ⏳ Pendências:  ${PASTA_PENDENTES}`);
   console.log(`  🌐 API:         ${API_URL}`);
   console.log(`  🔑 Token:       ${TOKEN.slice(0, 8)}...${TOKEN.slice(-4)}`);
   console.log(`  💾 State:       ${STATE_FILE}`);
   console.log(`  📝 Log:         ${LOG_FILE}`);
   console.log(`  ♻️  Já no state: ${Object.keys(state.processados).length} arquivos`);
-  if (DRY_RUN) console.log(`  ${CORES.amarelo}🧪 MODO DRY-RUN — NÃO vai chamar a API.${CORES.reset}`);
+  if (DRY_RUN) console.log(`  ${CORES.amarelo}🧪 MODO DRY-RUN — NÃO vai chamar a API nem mover arquivos.${CORES.reset}`);
   if (Number.isFinite(LIMIT)) console.log(`  ${CORES.amarelo}🔢 LIMIT: processa só ${LIMIT} arquivos${CORES.reset}`);
   if (ONCE) console.log(`  ${CORES.amarelo}⏭️  ONCE: processa o que tem e sai${CORES.reset}`);
+  if (EMPRESA_FILTRO) console.log(`  ${CORES.amarelo}ℹ️  --empresa "${EMPRESA_FILTRO}" ignorado (pasta única e mista).${CORES.reset}`);
   console.log('');
   console.log('  Pressione Ctrl+C pra parar (salva state antes).');
   console.log('');
@@ -422,32 +524,15 @@ function iniciar() {
     log.err(`Pasta ${T_ROOT} não existe ou não está mapeada. Verifique se o T: está acessível.`);
     process.exit(1);
   }
-
-  // Se --empresa foi passado, observa só a pasta dessa empresa (scan mais rápido).
-  // Senão observa T:/Fiscal/EMPRESA inteiro.
-  let pastaObservada = T_ROOT;
-  if (EMPRESA_FILTRO) {
-    // Tenta achar a pasta exata. Match case-insensitive contendo o filtro.
-    try {
-      const subs = readdirSync(T_ROOT);
-      const match = subs.find((d) => d.toUpperCase().includes(EMPRESA_FILTRO.toUpperCase()));
-      if (match) {
-        pastaObservada = resolve(T_ROOT, match);
-        log.info(`Filtro --empresa: observando só ${pastaObservada}`);
-      } else {
-        log.err(`Nenhuma pasta em ${T_ROOT} contém "${EMPRESA_FILTRO}".`);
-        process.exit(1);
-      }
-    } catch (err) {
-      log.err(`Falha ao listar ${T_ROOT}: ${err.message}`);
-      process.exit(1);
-    }
+  if (!existsSync(PASTA_ENTRADA)) {
+    log.err(`Pasta de entrada ${PASTA_ENTRADA} não existe. Crie-a no servidor antes de rodar.`);
+    process.exit(1);
   }
 
-  log.info(`Watcher iniciado. Observando ${pastaObservada} (recursivo, filtro regex).`);
-  logFile('info', 'startup', { root: pastaObservada, anos: ANOS, apiUrl: API_URL });
+  log.info(`Watcher iniciado. Observando ${PASTA_ENTRADA}.`);
+  logFile('info', 'startup', { entrada: PASTA_ENTRADA, apiUrl: API_URL });
 
-  const watcher = chokidar.watch(pastaObservada, {
+  const watcher = chokidar.watch(PASTA_ENTRADA, {
     persistent: true,
     ignoreInitial: false, // processa o que já tá lá (state local filtra os já processados)
     awaitWriteFinish: {
@@ -457,30 +542,21 @@ function iniciar() {
     ignored: (path) => {
       // chokidar 4.x: filtro chamado pra cada path (arquivo ou diretório).
       // Retornar true = ignorar; false = processar.
-      //
-      // Estratégia sem statSync (evita IO síncrono em cada path):
-      //   - dotfiles e temp do Office → ignora sempre
-      //   - .pdf → só permite se bate com nosso pattern (FECHAMENTO/SN/ano OK)
-      //   - outras extensões conhecidas (.xlsx, .doc, .zip etc) → ignora
-      //   - sem extensão (provavelmente diretório) → deixa passar pra chokidar descer
-      if (/(^|[\\\/])\.[^.]/.test(path)) return true;
-      if (/~\$/.test(path)) return true;
-      if (/\.pdf$/i.test(path)) return !pathInteressa(path);
-      if (/\.[a-z0-9]{1,5}$/i.test(path)) return true;
-      return false;
+      if (/(^|[\\/])\.[^.]/.test(path)) return true;          // dotfiles
+      if (/~\$/.test(path)) return true;                       // temp do Office
+      if (/[\\/]_[^\\/]*([\\/]|$)/.test(path)) return true;    // subpastas "_" (ex: _PENDENTES)
+      if (/\.pdf$/i.test(path)) return false;                  // PDFs interessam
+      if (/\.[a-z0-9]{1,5}$/i.test(path)) return true;         // outros arquivos
+      return false;                                            // diretórios passam
     },
-    // T: é drive de rede no Windows. fs.watch (ReadDirectoryChangesW) NÃO
-    // funciona em drives de rede — dá "UNKNOWN: unknown error, watch".
-    // Polling é a única forma confiável aqui. Custa CPU, mas é o que tem.
-    // 30s entre polls é compromisso aceitável (guia que cai à 14:00:00 vira
-    // email no máximo 14:00:30). Se quiser local, passa --no-poll.
+    // T: é drive de rede no Windows. fs.watch não funciona em drives de rede —
+    // polling é a única forma confiável. 30s entre scans é compromisso aceitável.
     usePolling: !NO_POLL,
-    interval: 30_000,        // 30s entre scans completos
-    binaryInterval: 30_000,  // mesmo pra binários
+    interval: 30_000,
+    binaryInterval: 30_000,
   });
 
   let totalDetectado = 0;
-  let inicializado = false;
 
   watcher.on('add', (caminho) => {
     if (!pathInteressa(caminho)) return; // dupla checagem
@@ -490,7 +566,6 @@ function iniciar() {
 
   watcher.on('change', (caminho) => {
     if (!pathInteressa(caminho)) return;
-    // Arquivo modificado — invalida state e reprocessa
     log.info(`Mudou: ${basename(caminho)}`);
     delete state.processados[caminho];
     enfileirar(caminho);
@@ -498,9 +573,8 @@ function iniciar() {
 
   watcher.on('unlink', (caminho) => {
     if (!pathInteressa(caminho)) return;
-    log.info(`Removido: ${basename(caminho)} (mantendo histórico no state)`);
-    // NÃO removemos do state — se voltar com mesmo conteúdo, queremos
-    // saber que já foi processado. Limpeza é manual via comando.
+    // Sai da entrada (movido por nós ou removido na mão) — só loga.
+    log.info(`Saiu da entrada: ${basename(caminho)}`);
   });
 
   watcher.on('error', (err) => {
@@ -508,7 +582,6 @@ function iniciar() {
   });
 
   watcher.on('ready', () => {
-    inicializado = true;
     log.info(`Scan inicial completo. ${totalDetectado} arquivos detectados, fila: ${fila.length}.`);
     if (ONCE) {
       const espera = setInterval(() => {
@@ -536,7 +609,6 @@ function iniciar() {
       log.info('Watcher fechado. Tchau!');
       process.exit(0);
     });
-    // Failsafe — se watcher.close() pendurar, força saída em 5s
     setTimeout(() => process.exit(0), 5000);
   };
   process.on('SIGINT', () => shutdown('SIGINT'));

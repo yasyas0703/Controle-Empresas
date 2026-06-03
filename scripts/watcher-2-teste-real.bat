@@ -1,60 +1,55 @@
 @echo off
 REM ============================================================
-REM  ETAPA 2 - TESTE REAL (envia email DE VERDADE)
+REM  TESTE REAL - pasta unica (envia email DE VERDADE)
 REM ============================================================
 REM
-REM  Roda o watcher SEM dry-run:
-REM   - Filtra so a empresa 2GETHER
-REM   - Limita a 5 PDFs
-REM   - Sai sozinho (--once)
+REM  Como testar:
+REM   1. Coloque uma ou mais guias (PDF) dentro da pasta:
+REM        T:\Fiscal\EMPRESA\1-GUIAS A ENVIAR
+REM   2. De 2 cliques neste arquivo.
+REM   3. Olhe os logs no terminal preto.
 REM
-REM  ATENCAO: emails REAIS sairao pra 2GETHER (max 5).
+REM  O watcher le cada PDF por dentro (OCR), descobre a empresa,
+REM  o imposto e o mes, e:
+REM    - se estiver tudo certo -> ENVIA o email e move a guia
+REM      pra pasta da empresa (T:\Fiscal\EMPRESA\<EMPRESA>\...)
+REM    - se nao -> move pra subpasta _PENDENTES e registra no
+REM      painel /vencimentos-fiscais/auto-problemas
 REM
-REM  Mas o sistema tem 3 protecoes que vao filtrar:
-REM   1. 1a vez = nao envia, vira pendencia pra voce aprovar
-REM   2. Competencia > 60 dias = nao envia, vira pendencia
-REM   3. Validacao de PDF rigorosa (CNPJ, codigo de receita)
+REM  Protecoes que podem segurar o envio (nao manda):
+REM   1. Mesmo arquivo ja enviado antes (por conteudo)
+REM   2. 1a vez de uma empresa+imposto = vira pendencia pra aprovar
+REM   3. Competencia (mes) antiga (> 60 dias) ou no futuro
+REM   4. Validacao de PDF (CNPJ / codigo de receita)
 REM
-REM  Na pratica: na 1a rodada PROVAVELMENTE nada sai por email,
-REM  tudo vira pendencia. Voce vai aprovar no painel
-REM  /vencimentos-fiscais/auto-problemas e ai sim o email sai.
-REM
-REM  Confira o painel apos rodar.
-REM
+REM  --limit 5 = processa no maximo 5 guias.  --once = roda e sai.
 REM  ============================================================
 
 cd /d "%~dp0.."
 
 echo.
 echo ============================================================
-echo  WATCHER - ETAPA 2 (TESTE REAL, envio liberado)
-echo  Empresa: 2GETHER  ^|  Limite: 5  ^|  URL: prod
+echo  WATCHER - TESTE REAL (envio liberado)
+echo  Pasta: T:\Fiscal\EMPRESA\1-GUIAS A ENVIAR   ^|  Limite: 5
+echo  URL: https://controle-empresas.vercel.app
 echo.
-echo  Emails REAIS podem sair se a empresa+obrigacao ja teve
-echo  envio anterior. Caso contrario vira pendencia pra
-echo  voce aprovar no painel /vencimentos-fiscais/auto-problemas
+echo  Coloque as guias na pasta ANTES de continuar.
+echo  Emails REAIS podem sair. Ctrl+C cancela.
 echo ============================================================
 echo.
-
-REM Pequena confirmacao manual antes de disparar
-echo  Pressione CTRL+C pra cancelar agora, ou
 pause
 
 node scripts\watcher-guias.mjs ^
   --url https://controle-empresas.vercel.app ^
-  --empresa 2GETHER ^
   --limit 5 ^
   --once
 
 echo.
 echo ============================================================
 echo  TERMINOU.
-echo.
-echo  Proximos passos:
-echo   1. Abra https://controle-empresas.vercel.app/vencimentos-fiscais
-echo   2. Clique na aba "Pendencias Auto"
-echo   3. Veja se aparecem as 5 guias (ou as que passaram)
-echo   4. Se aparecer botao "Aprovar e enviar", o sistema esta OK
+echo   - Guias enviadas: foram pra pasta da empresa.
+echo   - Guias seguradas/com erro: foram pra _PENDENTES e
+echo     aparecem em /vencimentos-fiscais/auto-problemas
 echo.
 echo  Pressione qualquer tecla para fechar.
 echo ============================================================

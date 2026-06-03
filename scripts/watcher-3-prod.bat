@@ -1,10 +1,12 @@
 @echo off
 REM ============================================================
-REM  ETAPA 3 - PRODUCAO (rodando direto pra todas as empresas)
+REM  ETAPA 3 - PRODUCAO (pasta unica, dia a dia)
 REM ============================================================
 REM
 REM  Modo "esquecer e funcionar":
-REM   - Observa T:\Fiscal\EMPRESA inteiro (todas as empresas)
+REM   - Observa a pasta T:\Fiscal\EMPRESA\1-GUIAS A ENVIAR
+REM   - O pessoal joga as guias la; o sistema identifica por
+REM     dentro (OCR), envia e move pra pasta da empresa.
 REM   - Sem limite
 REM   - Loop com auto-restart: se cair, espera 10s e sobe de novo
 REM
@@ -32,7 +34,7 @@ echo.
 echo ============================================================
 echo  [%date% %time%] Iniciando watcher PROD...
 echo  URL: https://controle-empresas.vercel.app
-echo  Pasta: T:\Fiscal\EMPRESA  (todas)
+echo  Pasta: T:\Fiscal\EMPRESA\1-GUIAS A ENVIAR
 echo ============================================================
 echo.
 
