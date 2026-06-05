@@ -82,10 +82,14 @@ CREATE POLICY pa_select ON public.portal_acessos
   );
 
 DROP POLICY IF EXISTS pa_insert ON public.portal_acessos;
+-- O cliente só registra login/logout direto (PortalContext.registrarAcesso). As
+-- ações reais ('visualizou'/'baixou'/'marcou_pago') entram por service-role.
+-- Travar a `acao` aqui impede o cliente forjar analítica (ex: inflar "baixou").
 CREATE POLICY pa_insert ON public.portal_acessos
   FOR INSERT
   WITH CHECK (
-    cliente_id IN (SELECT id FROM public.clientes_portal WHERE auth_user_id = auth.uid())
+    acao IN ('login', 'logout')
+    AND cliente_id IN (SELECT id FROM public.clientes_portal WHERE auth_user_id = auth.uid())
   );
 
 -- ─── portal_push_subscriptions (escrita real é via API service-role) ────────
