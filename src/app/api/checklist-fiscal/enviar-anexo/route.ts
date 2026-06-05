@@ -152,6 +152,13 @@ export async function POST(req: Request) {
       );
     }
 
+    // Anti path-traversal / IDOR de arquivo: o caminho TEM que ser desta empresa
+    // (uploads vão pra empresas/<empresaId>/...). Sem isso, um usuário autorizado
+    // nesta empresa poderia baixar e enviar um arquivo de OUTRA empresa.
+    if (!body.arquivoPath.startsWith(`empresas/${body.empresaId}/`) || body.arquivoPath.includes('..')) {
+      return NextResponse.json({ error: 'Caminho de arquivo inválido.' }, { status: 400 });
+    }
+
     const admin = getSupabaseAdmin();
 
     // ─── 1. Permissão: funcionário comum só envia das empresas dele ───

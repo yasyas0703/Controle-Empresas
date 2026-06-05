@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { timingSafeEqual } from 'node:crypto';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { obrigacaoAplicaParaEmpresa, obrigacaoSnAplicaParaEmpresa } from '@/app/utils/regrasVencimentosFiscais';
 import {
@@ -80,13 +81,18 @@ function mensagemAgregada(marco: Marco, items: CandidatoOut[]): string {
 }
 
 export async function GET(req: Request) {
-  // Autoriza só se vier do Vercel Cron (Authorization: Bearer ${CRON_SECRET})
+  // Autoriza só se vier do Vercel Cron (Authorization: Bearer ${CRON_SECRET}).
+  // Fail-closed: sem CRON_SECRET configurado, o endpoint NÃO roda (antes ficava aberto).
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const auth = req.headers.get('authorization');
-    if (auth !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-    }
+  if (!cronSecret) {
+    return NextResponse.json({ error: 'CRON_SECRET não configurado' }, { status: 503 });
+  }
+  const auth = req.headers.get('authorization') || '';
+  const esperado = `Bearer ${cronSecret}`;
+  const ba = Buffer.from(auth);
+  const bb = Buffer.from(esperado);
+  if (ba.length !== bb.length || !timingSafeEqual(ba, bb)) {
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   }
 
   // Modo simulação: ?simular=2026-05-18 finge que "hoje" é essa data e ?dry=1 não grava nada

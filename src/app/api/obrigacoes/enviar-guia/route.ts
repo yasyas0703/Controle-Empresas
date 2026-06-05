@@ -4,6 +4,7 @@ import { google } from 'googleapis';
 import { getOAuthClient, decryptToken } from '@/lib/googleOAuth';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { getBearerToken } from '@/lib/apiAuth';
+import { checkRateLimit, isErroApi } from '../../checklist-fiscal/_shared';
 
 export const runtime = 'nodejs';
 
@@ -44,9 +45,16 @@ function applyTemplate(tpl: string, vars: Record<string, string>): string {
   return tpl.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => vars[key] ?? '');
 }
 
+// Tira CR/LF pra impedir injeção de cabeçalho de e-mail (um nome de empresa com
+// "\nBcc: ..." poderia injetar cabeçalhos no MIME).
+function stripCrlf(text: string): string {
+  return text.replace(/[\r\n]/g, ' ').trim();
+}
+
 function encodeRfc2047(text: string): string {
-  if (/^[\x00-\x7F]*$/.test(text)) return text;
-  return `=?UTF-8?B?${Buffer.from(text, 'utf8').toString('base64')}?=`;
+  const safe = stripCrlf(text);
+  if (/^[\x00-\x7F]*$/.test(safe)) return safe;
+  return `=?UTF-8?B?${Buffer.from(safe, 'utf8').toString('base64')}?=`;
 }
 
 function buildMime(params: {
@@ -61,8 +69,8 @@ function buildMime(params: {
   const altBoundary = `----=_Alt_${Math.random().toString(36).slice(2)}_${Date.now()}`;
 
   const headers = [
-    `From: ${params.from}`,
-    `To: ${params.to.join(', ')}`,
+    `From: ${stripCrlf(params.from)}`,
+    `To: ${params.to.map(stripCrlf).join(', ')}`,
     `Subject: ${encodeRfc2047(params.subject)}`,
     'MIME-Version: 1.0',
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
@@ -89,11 +97,12 @@ function buildMime(params: {
 
   const attachmentB64 = params.attachment.content.toString('base64');
   const attachmentB64Wrapped = attachmentB64.match(/.{1,76}/g)?.join('\r\n') ?? attachmentB64;
+  const safeFilename = stripCrlf(params.attachment.filename).replace(/"/g, '');
   const attPart = [
     `--${boundary}`,
-    `Content-Type: ${params.attachment.mime}; name="${params.attachment.filename}"`,
+    `Content-Type: ${stripCrlf(params.attachment.mime)}; name="${safeFilename}"`,
     'Content-Transfer-Encoding: base64',
-    `Content-Disposition: attachment; filename="${params.attachment.filename}"`,
+    `Content-Disposition: attachment; filename="${safeFilename}"`,
     '',
     attachmentB64Wrapped,
   ].join('\r\n');
@@ -128,7 +137,35 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Payload inválido (empresaId, obrigacaoId, competencia, arquivoPath obrigatórios).' }, { status: 400 });
     }
 
+    // Anti path-traversal / IDOR de arquivo: o caminho TEM que ser desta empresa
+    // (uploadGuiaPdf salva em obrigacoes/<empresaId>/...). Sem isso, dava pra baixar
+    // e enviar qualquer arquivo do bucket apontando um path de outra empresa.
+    if (!body.arquivoPath.startsWith(`obrigacoes/${body.empresaId}/`) || body.arquivoPath.includes('..')) {
+      return NextResponse.json({ error: 'Caminho de arquivo inválido.' }, { status: 400 });
+    }
+
     const admin = getSupabaseAdmin();
+
+    // Autorização (IDOR): só admin/gerente, ou quem é responsável por esta empresa
+    // em algum departamento. Sem isso, qualquer staff logado enviava guia (e baixava
+    // arquivo) de QUALQUER empresa.
+    const [{ data: userRow }, { data: empAuth }] = await Promise.all([
+      admin.from('usuarios').select('role').eq('id', userId).maybeSingle(),
+      admin.from('empresas').select('responsaveis').eq('id', body.empresaId).maybeSingle(),
+    ]);
+    const role = (userRow as { role?: string } | null)?.role;
+    if (role !== 'admin' && role !== 'gerente') {
+      const responsaveis = ((empAuth as { responsaveis?: Record<string, string | null> } | null)?.responsaveis) ?? {};
+      if (!Object.values(responsaveis).includes(userId)) {
+        return NextResponse.json({ error: 'Você não é responsável por esta empresa.' }, { status: 403 });
+      }
+    }
+
+    // Rate limit (anti-abuso da quota Gmail do escritório).
+    const rl = await checkRateLimit(admin, userId);
+    if (isErroApi(rl)) {
+      return NextResponse.json({ error: rl.error }, { status: rl.status });
+    }
 
     // 1. Carrega token Gmail do usuário
     const { data: tokenRow, error: tokenErr } = await admin

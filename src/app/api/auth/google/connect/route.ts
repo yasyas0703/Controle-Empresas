@@ -45,25 +45,10 @@ export async function POST(req: Request) {
       include_granted_scopes: true,
     });
 
-    // DEBUG: log do que estamos enviando pro Google (remover depois que OAuth funcionar)
-    console.log('[OAUTH DEBUG] connect →', {
-      userId: data.user.id,
-      userEmail: data.user.email,
-      env: {
-        clientId: process.env.GOOGLE_CLIENT_ID?.slice(0, 30) + '...',
-        clientIdLength: process.env.GOOGLE_CLIENT_ID?.length,
-        redirectUri: process.env.GOOGLE_REDIRECT_URI,
-        hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
-        clientSecretLength: process.env.GOOGLE_CLIENT_SECRET?.length,
-      },
-      scopes: GMAIL_SCOPES,
-      authUrl,
-    });
-
     return NextResponse.json({ authUrl });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro inesperado';
-    console.error('[OAUTH DEBUG] connect ERROR:', err);
+    console.error('[oauth/connect] falha ao gerar authUrl');
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

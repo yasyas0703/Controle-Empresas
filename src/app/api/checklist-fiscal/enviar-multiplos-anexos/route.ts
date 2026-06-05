@@ -173,6 +173,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Máximo 20 arquivos por envio.' }, { status: 400 });
     }
 
+    // Anti path-traversal / IDOR de arquivo: TODO path tem que ser desta empresa
+    // (uploads vão pra empresas/<empresaId>/...). Barra apontar arquivo de outra empresa.
+    const prefixoEmpresa = `empresas/${body.empresaId}/`;
+    if (body.arquivos.some((a) => !a?.path || !a.path.startsWith(prefixoEmpresa) || a.path.includes('..'))) {
+      return NextResponse.json({ error: 'Caminho de arquivo inválido.' }, { status: 400 });
+    }
+
     const admin = getSupabaseAdmin();
 
     // ─── 1. Permissão: funcionário comum só envia das empresas dele ───
