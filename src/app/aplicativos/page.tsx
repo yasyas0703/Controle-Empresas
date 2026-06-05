@@ -15,7 +15,7 @@ const APPS: {
   {
     nome: 'TagFix',
     descricao: 'Automação para ajuste de tags.',
-    url: 'https://kamaxhrqdqbczvwgrfgf.supabase.co/storage/v1/object/public/downloads/TagFix.exe',
+    url: 'https://kamaxhrqdqbczvwgrfgf.supabase.co/storage/v1/object/public/downloads/TagFix_DISTRIBUIR.zip',
     icon: Tag,
   },
   {
