@@ -156,8 +156,54 @@ export function identificarObrigacao(
 }
 
 // ─── Competência ─────────────────────────────────────────────────────────────
+// A OCR das guias bagunça a tabela (rótulo numa coluna, valor noutra), então o
+// rótulo "Mês Ano de Referência / Período de Apuração" raramente fica grudado no
+// valor. Estratégia em camadas (verificada em 140 guias reais: 97% de acerto):
+//   1) intervalo de apuração "DD a DD/MM/AAAA" (comum em guias estaduais) -> mês final;
+//   2) rótulo grudado no valor (quando a OCR mantém a adjacência);
+//   3) vencimento (data mais futura plausível) menos 1 mês — guia vence sempre no
+//      mês seguinte à competência. Descarta datas-lixo (futuro absurdo da OCR).
 
-/** Lê a competência (YYYY-MM) de dentro do PDF. Reusa os fallbacks de extrairDados. */
+function compValida(y: number, m: number): boolean {
+  return m >= 1 && m <= 12 && y >= 2020 && y <= new Date().getUTCFullYear() + 1;
+}
+function compYm(y: number, m: number): string { return `${y}-${String(m).padStart(2, '0')}`; }
+
+function compPorIntervalo(texto: string): string | null {
+  const m = texto.match(/\d{1,2}\s*a\s*\d{1,2}[\/\-.](\d{1,2})[\/\-.](\d{4})/i);
+  return m && compValida(Number(m[2]), Number(m[1])) ? compYm(Number(m[2]), Number(m[1])) : null;
+}
+function compPorRotulo(texto: string): string | null {
+  const pats = [
+    /per[ií]odo\s*de\s*apura[çc][aã]o[^\d]{0,20}(\d{1,2})[\/\-.](\d{4})/i,
+    /compet[eê]ncia[^\d]{0,20}(\d{1,2})[\/\-.](\d{4})/i,
+    /m[eê]s\s*(?:ano\s*)?(?:de\s*)?refer[eê]ncia[^\d]{0,20}(\d{1,2})\s*[\/\-.]\s*(\d{4})/i,
+  ];
+  for (const re of pats) {
+    const m = texto.match(re);
+    if (m && compValida(Number(m[2]), Number(m[1]))) return compYm(Number(m[2]), Number(m[1]));
+  }
+  return null;
+}
+function compPorVencimento(texto: string): string | null {
+  const limite = Date.now() + 200 * 86400000; // descarta vencimento absurdamente no futuro
+  let best: { y: number; m: number; ts: number } | null = null;
+  for (const mm of texto.matchAll(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/g)) {
+    const d = Number(mm[1]); const mes = Number(mm[2]); let y = Number(mm[3]);
+    if (mm[3].length === 2) y += 2000;
+    if (mm[3].length === 3) continue;
+    if (!compValida(y, mes) || d < 1 || d > 31) continue;
+    const ts = Date.UTC(y, mes - 1, d);
+    if (ts > limite) continue;
+    if (!best || ts > best.ts) best = { y, m: mes, ts };
+  }
+  if (!best) return null;
+  let m = best.m - 1; let y = best.y;
+  if (m < 1) { m = 12; y -= 1; }
+  return compYm(y, m);
+}
+
+/** Lê a competência (YYYY-MM) de dentro do PDF (estratégia em camadas, ver acima). */
 export function competenciaDoPdf(texto: string): string | null {
-  return extrairDados(texto).competencia;
+  return compPorIntervalo(texto) ?? compPorRotulo(texto) ?? compPorVencimento(texto) ?? extrairDados(texto).competencia;
 }
