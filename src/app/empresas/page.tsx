@@ -307,13 +307,13 @@ export default function EmpresasPage() {
                       return null;
                     })()}
                     {totalVencidos > 0 && (
-                      <span className="rounded-sm bg-[var(--danger)] text-white px-2 py-0.5 text-[10px] font-bold flex items-center gap-1 animate-pulse">
-                        <AlertTriangle size={10} /> {totalVencidos} VENCIDO(S)
+                      <span className="ct-badge ct-badge-danger gap-1">
+                        <AlertTriangle size={10} /> <span className="ct-num">{totalVencidos}</span> VENCIDO(S)
                       </span>
                     )}
                     {totalRenovados > 0 && (
-                      <span className="rounded-sm bg-[var(--info)] text-white px-2 py-0.5 text-[10px] font-bold flex items-center gap-1">
-                        {totalRenovados} RENOVADO(S)
+                      <span className="ct-badge ct-badge-ok gap-1">
+                        <span className="ct-num">{totalRenovados}</span> RENOVADO(S)
                       </span>
                     )}
                     {proximoVencDias !== null && totalVencidos === 0 && (
@@ -375,15 +375,18 @@ export default function EmpresasPage() {
                 return (
                   <div className="mt-3 pt-3 border-t border-[var(--border-subtle)]">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                      {resps.map((r) => (
-                        <div
-                          key={r.dep}
-                          className="rounded-[var(--radius)] px-2 py-1 bg-[var(--surface-3)] border border-[var(--border)]"
-                        >
-                          <div className="text-[10px] font-semibold text-[var(--text-3)] uppercase tracking-wider">{r.dep}</div>
-                          <div className="text-[11px] font-semibold text-[var(--text-1)] truncate">{r.user}</div>
-                        </div>
-                      ))}
+                      {resps.map((r) => {
+                        const c = DEPT_COLORS[r.depIdx % 8];
+                        return (
+                          <div
+                            key={r.dep}
+                            className={`rounded-[var(--radius)] px-2 py-1 bg-[var(--surface-3)] border border-[var(--border-subtle)] border-l-[3px] ${c.bar}`}
+                          >
+                            <div className={`text-[10px] font-semibold ${c.text} uppercase tracking-wider`}>{r.dep}</div>
+                            <div className="text-[11px] font-semibold text-[var(--text-1)] truncate">{r.user}</div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );

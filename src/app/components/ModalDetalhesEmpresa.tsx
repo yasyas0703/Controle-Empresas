@@ -16,7 +16,7 @@ import ModalEmailsCliente from '@/app/components/ModalEmailsCliente';
 import { garantirVencimentosFiscais, garantirVencimentosFiscaisComRegras } from '@/app/utils/vencimentos';
 import { getDocumentoSignedUrl, getVencimentoFiscalSignedUrl, uploadDocumentoArquivo } from '@/lib/db';
 import { sortResponsaveisByNome } from '@/lib/sort';
-import { getDepartamentoSlugDoUsuario, type DepartamentoSlug } from '@/app/utils/departamento';
+import { getDepartamentoSlugDoUsuario, getSlugsParticularidadeVisiveis, DEPARTAMENTO_LABELS, type DepartamentoSlug } from '@/app/utils/departamento';
 import { useFileDropZone } from '@/app/hooks/useFileDropZone';
 import { formatRetNumber } from '@/app/utils/formatting';
 
@@ -477,6 +477,17 @@ export default function ModalDetalhesEmpresa({
               )}
             </Section>
 
+            <Section title="Endereço" tone="cyan">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Info label="CEP" value={empresa.cep || '-'} />
+                <Info label="Estado" value={empresa.estado || '-'} />
+                <Info label="Cidade" value={empresa.cidade || '-'} />
+                <Info label="Bairro" value={empresa.bairro || '-'} />
+                <Info label="Logradouro" value={empresa.logradouro || '-'} />
+                <Info label="Número" value={empresa.numero || '-'} />
+              </div>
+            </Section>
+
             <Section title="Inscrições e Regimes" tone="blue">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Info label="Inscrição Estadual" value={empresa.inscricao_estadual || '-'} />
@@ -485,16 +496,6 @@ export default function ModalDetalhesEmpresa({
                 <Info label="Regime Estadual" value={empresa.regime_estadual || '-'} />
                 <Info label="Regime Municipal" value={empresa.regime_municipal || '-'} />
               </div>
-            </Section>
-
-            <Section title="Particularidades da Empresa" tone="orange">
-              {empresa.particularidades ? (
-                <div className="text-sm text-gray-900 whitespace-pre-wrap break-words">
-                  {empresa.particularidades}
-                </div>
-              ) : (
-                <div className="text-sm text-gray-500 italic">Nenhuma particularidade registrada.</div>
-              )}
             </Section>
 
             <Section title="Responsáveis por Departamento" tone="cyan">
@@ -529,15 +530,24 @@ export default function ModalDetalhesEmpresa({
               })()}
             </Section>
 
-            <Section title="Endereço" tone="cyan">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Info label="CEP" value={empresa.cep || '-'} />
-                <Info label="Estado" value={empresa.estado || '-'} />
-                <Info label="Cidade" value={empresa.cidade || '-'} />
-                <Info label="Bairro" value={empresa.bairro || '-'} />
-                <Info label="Logradouro" value={empresa.logradouro || '-'} />
-                <Info label="Número" value={empresa.numero || '-'} />
-              </div>
+            <Section title="Particularidades por setor" tone="orange">
+              {(() => {
+                const slugs = getSlugsParticularidadeVisiveis(currentUser, departamentos, canManage || isPrivileged);
+                const comTexto = slugs.filter((s) => (empresa.particularidadesPorDep?.[s] || '').trim() !== '');
+                if (comTexto.length === 0) {
+                  return <div className="text-sm text-gray-500 italic">Nenhuma particularidade registrada{slugs.length > 1 ? ' para os seus setores' : ''}.</div>;
+                }
+                return (
+                  <div className="space-y-3">
+                    {comTexto.map((s) => (
+                      <div key={s}>
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-0.5">{DEPARTAMENTO_LABELS[s]}</div>
+                        <div className="text-sm text-gray-900 whitespace-pre-wrap break-words">{empresa.particularidadesPorDep?.[s]}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </Section>
 
             <Section title="RETs" tone="emerald">
@@ -561,7 +571,7 @@ export default function ModalDetalhesEmpresa({
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-gray-900 break-words">{r.nome}</span>
                             <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
-                              retInativo ? 'bg-red-600 text-white' : 'bg-emerald-100 text-emerald-700'
+                              retInativo ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
                             }`}>
                               {retInativo ? 'Inativo' : 'Ativo'}
                             </span>
@@ -569,7 +579,7 @@ export default function ModalDetalhesEmpresa({
                           {(r.tagVencimento || (r.historicoVencimento?.length ?? 0) > 0) && (
                             <div className="mt-2 flex flex-wrap gap-1.5">
                               {r.tagVencimento && (
-                                <span className="rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
+                                <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
                                   {r.tagVencimento}
                                 </span>
                               )}
@@ -692,7 +702,7 @@ export default function ModalDetalhesEmpresa({
                                 {(f.tagVencimento || histLen > 0) && (
                                   <div className="mt-1.5 flex flex-wrap gap-1">
                                     {f.tagVencimento && (
-                                      <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
+                                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
                                         {f.tagVencimento}
                                       </span>
                                     )}

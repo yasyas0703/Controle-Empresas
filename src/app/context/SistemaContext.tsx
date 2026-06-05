@@ -1279,7 +1279,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       // vencimentosFiscais/observacoes/responsaveis nao geram notif aqui,
       // porque ja tem seus proprios fluxos.
       const CAMPOS_CADASTRO_NOTIFICAVEIS = new Set([
-        'razao_social', 'apelido', 'cnpj', 'codigo', 'particularidades',
+        'razao_social', 'apelido', 'cnpj', 'codigo', 'particularidades', 'particularidadesPorDep',
         'regime_federal', 'regime_estadual', 'regime_municipal', 'tributacao',
         'cliente_desde', 'desligada_em', 'telefone', 'email',
         'cep', 'logradouro', 'numero', 'bairro', 'cidade', 'estado',

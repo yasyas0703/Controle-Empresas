@@ -95,6 +95,19 @@
   --ok: #4ade80;
   --ok-soft: #0e2820;
   --info: #60a5fa;
+
+  /* Acentos de departamento (dark) — chroma baixo de propósito.
+     No escuro, cor saturada halata e cansa a vista; estes tons
+     sóbrios são usados pelas barras border-l-*-400 e pelos labels
+     de depto. rose/pink só existem porque DEPT_COLORS os usa como
+     cor de DEPARTAMENTO (categoria), nunca como enfeite. */
+  --dept-blue: #6f86a8;
+  --dept-cyan: #5f96a6;
+  --dept-teal: #5f9b94;
+  --dept-emerald: #6f9e84;
+  --dept-amber: #a8946a;
+  --dept-rose: #a87f8c;
+  --dept-pink: #a87f95;
 }
 
 @theme inline {
@@ -383,27 +396,27 @@ select option {
 .dark .text-green-900,
 .dark .text-green-800,
 .dark .text-green-700,
-.dark .text-green-600 { color: #86efac !important; }
+.dark .text-green-600 { color: #8fc4a4 !important; }
 
 .dark .text-emerald-900,
 .dark .text-emerald-800,
 .dark .text-emerald-700,
-.dark .text-emerald-600 { color: #6ee7b7 !important; }
+.dark .text-emerald-600 { color: #8fc4a4 !important; }
 
 .dark .text-cyan-900,
 .dark .text-cyan-800,
 .dark .text-cyan-700,
-.dark .text-cyan-600 { color: #67e8f9 !important; }
+.dark .text-cyan-600 { color: #7fc4d4 !important; }
 
 .dark .text-teal-900,
 .dark .text-teal-800,
 .dark .text-teal-700,
-.dark .text-teal-600 { color: #5eead4 !important; }
+.dark .text-teal-600 { color: #7cc4ba !important; }
 
 .dark .text-blue-900,
 .dark .text-blue-800,
 .dark .text-blue-700,
-.dark .text-blue-600 { color: #93c5fd !important; }
+.dark .text-blue-600 { color: #9fb4d4 !important; }
 
 .dark .text-indigo-900,
 .dark .text-indigo-800,
@@ -461,6 +474,33 @@ select option {
 .dark .border-green-300 { border-color: #1f4a36 !important; }
 .dark .border-blue-300 { border-color: #244466 !important; }
 
+/* ─────────────────────────────────────────────────────────
+   DARK — acentos de departamento dessaturados.
+   No escuro, cor saturada vibra sobre #0e0f12 e cansa a vista.
+   As barras (border-l-*-400) e os ícones/labels de depto (-400/-500),
+   que não tinham override, caem nesses tons de chroma baixo em vez
+   do Tailwind cru (#60a5fa, #22d3ee, #2dd4bf...). Ícone de alerta
+   funcional vai pra --warn/--danger (já dessaturados no dark).
+   ───────────────────────────────────────────────────────── */
+.dark .border-l-blue-400 { border-left-color: var(--dept-blue) !important; }
+.dark .border-l-cyan-400 { border-left-color: var(--dept-cyan) !important; }
+.dark .border-l-teal-400 { border-left-color: var(--dept-teal) !important; }
+.dark .border-l-emerald-400 { border-left-color: var(--dept-emerald) !important; }
+.dark .border-l-amber-400 { border-left-color: var(--dept-amber) !important; }
+.dark .border-l-rose-400 { border-left-color: var(--dept-rose) !important; }
+.dark .border-l-pink-400 { border-left-color: var(--dept-pink) !important; }
+
+.dark .text-blue-400, .dark .text-blue-500 { color: var(--dept-blue) !important; }
+.dark .text-cyan-400, .dark .text-cyan-500 { color: var(--dept-cyan) !important; }
+.dark .text-teal-400, .dark .text-teal-500 { color: var(--dept-teal) !important; }
+.dark .text-emerald-400, .dark .text-emerald-500 { color: var(--dept-emerald) !important; }
+.dark .text-green-400, .dark .text-green-500 { color: var(--dept-emerald) !important; }
+.dark .text-rose-400, .dark .text-rose-500 { color: var(--dept-rose) !important; }
+.dark .text-pink-400, .dark .text-pink-500 { color: var(--dept-pink) !important; }
+.dark .text-sky-400, .dark .text-sky-500 { color: var(--dept-blue) !important; }
+.dark .text-amber-400, .dark .text-amber-500 { color: var(--warn) !important; }
+.dark .text-red-400, .dark .text-red-500 { color: var(--danger) !important; }
+
 /* Hovers */
 .dark .hover\:bg-white:hover { background-color: var(--muted) !important; }
 .dark .hover\:bg-gray-50:hover { background-color: var(--muted) !important; }
@@ -509,8 +549,8 @@ select option {
 .dark select:focus,
 .dark textarea:focus {
   outline: none !important;
-  border-color: #38bdf8 !important;
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25) !important;
+  border-color: var(--brand) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 30%, transparent) !important;
 }
 
 /* Sombras: visualmente menos chamativas no dark */
@@ -576,50 +616,50 @@ select option {
 
 /* Gradientes claros (from-X-50 / to-X-50 / via-X-50) — tons SATURADOS no dark
    pra continuar chamando atenção (alerta vermelho, sucesso verde, etc) */
-.dark .from-cyan-50 { --tw-gradient-from: #134556 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
-.dark .to-cyan-50 { --tw-gradient-to: #134556 var(--tw-gradient-to-position) !important; }
-.dark .from-teal-50 { --tw-gradient-from: #134e4a var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
-.dark .to-teal-50 { --tw-gradient-to: #134e4a var(--tw-gradient-to-position) !important; }
-.dark .from-emerald-50 { --tw-gradient-from: #14532d var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
-.dark .to-emerald-50 { --tw-gradient-to: #14532d var(--tw-gradient-to-position) !important; }
-.dark .from-green-50 { --tw-gradient-from: #14532d var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
-.dark .to-green-50 { --tw-gradient-to: #14532d var(--tw-gradient-to-position) !important; }
-.dark .from-amber-50 { --tw-gradient-from: #6a3a0c var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
-.dark .to-amber-50 { --tw-gradient-to: #6a3a0c var(--tw-gradient-to-position) !important; }
-.dark .from-yellow-50 { --tw-gradient-from: #6a4a0c var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
-.dark .to-yellow-50 { --tw-gradient-to: #6a4a0c var(--tw-gradient-to-position) !important; }
-.dark .from-blue-50 { --tw-gradient-from: #1e3a8a var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
-.dark .to-blue-50 { --tw-gradient-to: #1e3a8a var(--tw-gradient-to-position) !important; }
-.dark .from-purple-50 { --tw-gradient-from: #4c1d95 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
-.dark .to-purple-50 { --tw-gradient-to: #4c1d95 var(--tw-gradient-to-position) !important; }
-.dark .from-violet-50 { --tw-gradient-from: #4c1d95 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
-.dark .to-violet-50 { --tw-gradient-to: #4c1d95 var(--tw-gradient-to-position) !important; }
-.dark .from-pink-50 { --tw-gradient-from: #831843 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
-.dark .to-pink-50 { --tw-gradient-to: #831843 var(--tw-gradient-to-position) !important; }
-.dark .from-orange-50 { --tw-gradient-from: #7c2d12 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
-.dark .to-orange-50 { --tw-gradient-to: #7c2d12 var(--tw-gradient-to-position) !important; }
-.dark .from-indigo-50 { --tw-gradient-from: #312e81 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
-.dark .to-indigo-50 { --tw-gradient-to: #312e81 var(--tw-gradient-to-position) !important; }
-.dark .from-red-50 { --tw-gradient-from: #7f1d1d var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
-.dark .to-red-50 { --tw-gradient-to: #7f1d1d var(--tw-gradient-to-position) !important; }
-.dark .from-rose-50 { --tw-gradient-from: #881337 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
-.dark .to-rose-50 { --tw-gradient-to: #881337 var(--tw-gradient-to-position) !important; }
+.dark .from-cyan-50 { --tw-gradient-from: #0f2230 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
+.dark .to-cyan-50 { --tw-gradient-to: #0f2230 var(--tw-gradient-to-position) !important; }
+.dark .from-teal-50 { --tw-gradient-from: #0e2226 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
+.dark .to-teal-50 { --tw-gradient-to: #0e2226 var(--tw-gradient-to-position) !important; }
+.dark .from-emerald-50 { --tw-gradient-from: #0f2018 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
+.dark .to-emerald-50 { --tw-gradient-to: #0f2018 var(--tw-gradient-to-position) !important; }
+.dark .from-green-50 { --tw-gradient-from: #0f2018 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
+.dark .to-green-50 { --tw-gradient-to: #0f2018 var(--tw-gradient-to-position) !important; }
+.dark .from-amber-50 { --tw-gradient-from: #241b0a var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
+.dark .to-amber-50 { --tw-gradient-to: #241b0a var(--tw-gradient-to-position) !important; }
+.dark .from-yellow-50 { --tw-gradient-from: #25200f var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
+.dark .to-yellow-50 { --tw-gradient-to: #25200f var(--tw-gradient-to-position) !important; }
+.dark .from-blue-50 { --tw-gradient-from: #16202b var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
+.dark .to-blue-50 { --tw-gradient-to: #16202b var(--tw-gradient-to-position) !important; }
+.dark .from-purple-50 { --tw-gradient-from: #1a1430 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
+.dark .to-purple-50 { --tw-gradient-to: #1a1430 var(--tw-gradient-to-position) !important; }
+.dark .from-violet-50 { --tw-gradient-from: #1a1430 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
+.dark .to-violet-50 { --tw-gradient-to: #1a1430 var(--tw-gradient-to-position) !important; }
+.dark .from-pink-50 { --tw-gradient-from: #2a1620 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
+.dark .to-pink-50 { --tw-gradient-to: #2a1620 var(--tw-gradient-to-position) !important; }
+.dark .from-orange-50 { --tw-gradient-from: #2a1b12 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
+.dark .to-orange-50 { --tw-gradient-to: #2a1b12 var(--tw-gradient-to-position) !important; }
+.dark .from-indigo-50 { --tw-gradient-from: #141a2f var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
+.dark .to-indigo-50 { --tw-gradient-to: #141a2f var(--tw-gradient-to-position) !important; }
+.dark .from-red-50 { --tw-gradient-from: #3f1f27 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
+.dark .to-red-50 { --tw-gradient-to: #3f1f27 var(--tw-gradient-to-position) !important; }
+.dark .from-rose-50 { --tw-gradient-from: #2a1620 var(--tw-gradient-from-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent) !important; }
+.dark .to-rose-50 { --tw-gradient-to: #2a1620 var(--tw-gradient-to-position) !important; }
 
 /* via- (cor intermediária do gradient) */
-.dark .via-cyan-50 { --tw-gradient-via: #134556 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
-.dark .via-teal-50 { --tw-gradient-via: #134e4a !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
-.dark .via-emerald-50 { --tw-gradient-via: #14532d !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
-.dark .via-green-50 { --tw-gradient-via: #14532d !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
-.dark .via-amber-50 { --tw-gradient-via: #6a3a0c !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
-.dark .via-yellow-50 { --tw-gradient-via: #6a4a0c !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
-.dark .via-orange-50 { --tw-gradient-via: #7c2d12 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
-.dark .via-red-50 { --tw-gradient-via: #7f1d1d !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
-.dark .via-blue-50 { --tw-gradient-via: #1e3a8a !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
-.dark .via-purple-50 { --tw-gradient-via: #4c1d95 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
-.dark .via-violet-50 { --tw-gradient-via: #4c1d95 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
-.dark .via-indigo-50 { --tw-gradient-via: #312e81 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
-.dark .via-pink-50 { --tw-gradient-via: #831843 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
-.dark .via-rose-50 { --tw-gradient-via: #881337 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
+.dark .via-cyan-50 { --tw-gradient-via: #0f2230 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
+.dark .via-teal-50 { --tw-gradient-via: #0e2226 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
+.dark .via-emerald-50 { --tw-gradient-via: #0f2018 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
+.dark .via-green-50 { --tw-gradient-via: #0f2018 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
+.dark .via-amber-50 { --tw-gradient-via: #241b0a !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
+.dark .via-yellow-50 { --tw-gradient-via: #25200f !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
+.dark .via-orange-50 { --tw-gradient-via: #2a1b12 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
+.dark .via-red-50 { --tw-gradient-via: #3f1f27 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
+.dark .via-blue-50 { --tw-gradient-via: #16202b !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
+.dark .via-purple-50 { --tw-gradient-via: #1a1430 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
+.dark .via-violet-50 { --tw-gradient-via: #1a1430 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
+.dark .via-indigo-50 { --tw-gradient-via: #141a2f !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
+.dark .via-pink-50 { --tw-gradient-via: #2a1620 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
+.dark .via-rose-50 { --tw-gradient-via: #2a1620 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to) !important; }
 
 
 /* Scrollbar elegante */
@@ -632,7 +672,7 @@ select option {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #67e8f9;
+  background: var(--border-strong);
   border-radius: 3px;
 }
 

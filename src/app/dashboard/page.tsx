@@ -15,7 +15,7 @@ import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento'
 import ConfirmModal from '@/app/components/ConfirmModal';
 import { ehEmpresaHistorica } from '@/app/utils/empresaHistorica';
 import { garantirVencimentosFiscaisComRegras } from '@/app/utils/vencimentos';
-import { getDepartamentoSlugDoUsuario } from '@/app/utils/departamento';
+import { getDepartamentoSlugDoUsuario, getSlugsParticularidadeVisiveis, DEPARTAMENTO_LABELS } from '@/app/utils/departamento';
 import { exportEmpresasPdf, exportEmpresasResumoPdf } from '@/lib/exportPdf';
 import { exportEmpresasXlsx } from '@/lib/exportXlsx';
 import { comparePtBr, sortByPtBr, sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
@@ -56,8 +56,8 @@ function compareDashboardRiskItems(a: DashboardRiskItem, b: DashboardRiskItem): 
   return comparePtBr(a.nome, b.nome);
 }
 
-const DASHBOARD_TAG_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-200 px-2.5 py-1 text-[10px] font-black text-amber-950 shadow-sm';
-const DASHBOARD_HISTORY_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-500 px-2.5 py-1 text-[10px] font-black text-white shadow-sm';
+const DASHBOARD_TAG_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700';
+const DASHBOARD_HISTORY_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700';
 
 export default function DashboardPage() {
   const { empresas: empresasRaw, usuarios, departamentos, tags: tagsCadastradas, currentUser, currentUserId, canManage, canAdmin, isPrivileged, removerEmpresa, atualizarEmpresa, atualizarDocumento, mostrarAlerta } = useSistema();
@@ -421,7 +421,7 @@ export default function DashboardPage() {
 
       {/* VENCIDOS — Banner vermelho forte */}
       {vencidos.length > 0 && (
-        <div className="rounded-2xl bg-gradient-to-r from-red-600 to-red-700 p-5 shadow-lg ring-2 ring-red-300 animate-alert-banner">
+        <div className="rounded-2xl bg-red-700 p-5">
           <div className="flex items-center gap-3 mb-3">
             <div className="h-12 w-12 rounded-xl bg-white/20 flex items-center justify-center">
               <AlertTriangle className="text-white" size={28} />
@@ -809,7 +809,7 @@ export default function DashboardPage() {
                     )}
                     <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="shrink-0 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-500 text-white px-2.5 py-1 text-xs font-bold shadow-sm">
+                    <span className="shrink-0 rounded-lg bg-cyan-50 text-cyan-700 px-2.5 py-1 text-xs font-bold">
                       {e.codigo}
                     </span>
                     {(() => {
@@ -833,12 +833,12 @@ export default function DashboardPage() {
                       return null;
                     })()}
                     {totalVencidos > 0 && (
-                      <span className="rounded-md bg-red-600 text-white px-2 py-0.5 text-[10px] font-black flex items-center gap-1 animate-pulse">
+                      <span className="rounded-md bg-red-100 text-red-700 px-2 py-0.5 text-[10px] font-bold flex items-center gap-1">
                         <AlertTriangle size={10} /> {totalVencidos} VENCIDO(S)
                       </span>
                     )}
                     {totalRenovados > 0 && (
-                      <span className="rounded-md bg-blue-600 text-white px-2 py-0.5 text-[10px] font-black flex items-center gap-1">
+                      <span className="rounded-md bg-blue-100 text-blue-700 px-2 py-0.5 text-[10px] font-bold flex items-center gap-1">
                         {totalRenovados} RENOVADO(S)
                       </span>
                     )}
@@ -1036,7 +1036,7 @@ export default function DashboardPage() {
                       {resps.map((r) => {
                         const c = DEPT_COLORS[r.depIdx % 8];
                         return (
-                          <div key={r.dep} className={`rounded-lg px-2.5 py-1.5 border ${c.bg} ${c.border}`}>
+                          <div key={r.dep} className={`rounded-lg px-2.5 py-1.5 bg-[var(--surface-3)] border border-[var(--border-subtle)] border-l-[3px] ${c.bar}`}>
                             <div className={`text-[10px] font-bold ${c.text} uppercase tracking-wide`}>{r.dep}</div>
                             <div className="text-xs font-semibold text-gray-800 truncate">{r.user}</div>
                           </div>
@@ -1047,27 +1047,34 @@ export default function DashboardPage() {
                 );
               })()}
 
-              {/* Particularidade — bloquinho com o texto inteiro
-                  embaixo dos responsaveis (estilo igual aos chips de dept) */}
-              {e.particularidades && e.particularidades.trim() !== '' && (
-                <div className="mt-3">
-                  <div className="rounded-lg px-2.5 py-1.5 border bg-amber-50 border-amber-300">
-                    <div className="text-[10px] font-bold text-amber-700 uppercase tracking-wide flex items-center gap-1">
-                      <StickyNote size={11} /> Particularidade
-                    </div>
-                    <div className="text-xs text-gray-800 whitespace-pre-wrap mt-0.5">
-                      {e.particularidades}
-                    </div>
+              {/* Particularidade do(s) setor(es) do usuário (admin/gerente veem todas).
+                  Mesmo bloquinho neutro + barra âmbar dos demais chips. */}
+              {(() => {
+                const slugs = getSlugsParticularidadeVisiveis(currentUser, departamentos, canManage || isPrivileged);
+                const comTexto = slugs.filter((s) => (e.particularidadesPorDep?.[s] || '').trim() !== '');
+                if (comTexto.length === 0) return null;
+                return (
+                  <div className="mt-3 space-y-2">
+                    {comTexto.map((s) => (
+                      <div key={s} className="rounded-lg px-2.5 py-1.5 bg-[var(--surface-3)] border border-[var(--border-subtle)] border-l-[3px] border-l-amber-400">
+                        <div className="text-[10px] font-bold text-amber-700 uppercase tracking-wide flex items-center gap-1">
+                          <StickyNote size={11} /> Particularidade · {DEPARTAMENTO_LABELS[s]}
+                        </div>
+                        <div className="text-xs text-gray-800 whitespace-pre-wrap mt-0.5">
+                          {e.particularidadesPorDep?.[s]}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Forma de Envio — abaixo de Particularidade. Mostra as opcoes
                   marcadas (whatsapp/email/onvio/protocolo) com label legivel. */}
               {Array.isArray(e.formaEnvio) && e.formaEnvio.length > 0 && (
                 <div className="mt-2">
-                  <div className="rounded-lg px-2.5 py-1.5 border bg-teal-50 border-teal-300">
-                    <div className="text-[10px] font-bold text-teal-700 uppercase tracking-wide">
+                  <div className="rounded-lg px-2.5 py-1.5 bg-[var(--surface-3)] border border-[var(--border-subtle)]">
+                    <div className="text-[10px] font-bold text-[var(--text-3)] uppercase tracking-wide">
                       Forma de Envio
                     </div>
                     <div className="text-xs text-gray-800 mt-0.5 flex flex-wrap gap-1.5">
@@ -1076,7 +1083,7 @@ export default function DashboardPage() {
                         return (
                           <span
                             key={fe}
-                            className="inline-flex items-center rounded-md bg-white border border-teal-200 px-2 py-0.5 text-[11px] font-semibold text-teal-800"
+                            className="inline-flex items-center rounded-md bg-[var(--surface-2)] border border-[var(--border)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text-2)]"
                           >
                             {opt?.label ?? fe}
                           </span>

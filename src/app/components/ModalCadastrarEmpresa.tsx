@@ -14,6 +14,7 @@ import { garantirVencimentosFiscais, garantirVencimentosFiscaisComRegras } from 
 import { uploadDocumentoArquivo, getVencimentoFiscalSignedUrl } from '@/lib/db';
 import { sortByPtBr, sortStringsPtBr } from '@/lib/sort';
 import { formatRetNumber } from '@/app/utils/formatting';
+import { getSlugsParticularidadeVisiveis, DEPARTAMENTO_LABELS } from '@/app/utils/departamento';
 
 const MAX_FISCAL_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -56,7 +57,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastrarEmpresaProps) {
-  const { empresas, criarEmpresa, atualizarEmpresa, mostrarAlerta, departamentos, usuarios, servicos: servicosCadastrados, tags: tagsCadastradas, criarServico, canManage, removerRet: removerRetContext } = useSistema();
+  const { empresas, criarEmpresa, atualizarEmpresa, mostrarAlerta, departamentos, usuarios, servicos: servicosCadastrados, tags: tagsCadastradas, criarServico, canManage, currentUser, removerRet: removerRetContext } = useSistema();
 
   const [empresaCadastrada, setEmpresaCadastrada] = useState(empresa ? empresa.cadastrada !== false : false);
 
@@ -117,6 +118,13 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
   }, [formData.servicos, servicosCadastrados]);
 
   const sortedDepartamentos = useMemo(() => sortByPtBr(departamentos, (d) => d.nome), [departamentos]);
+
+  // Setores cuja particularidade este usuário pode editar (comum: só o(s) seu(s);
+  // admin/gerente: todos). As dos outros setores ficam preservadas ao salvar.
+  const slugsParticularidade = useMemo(
+    () => getSlugsParticularidadeVisiveis(currentUser, departamentos, canManage),
+    [currentUser, departamentos, canManage],
+  );
   const activeUsers = useMemo(
     () => sortByPtBr(usuarios.filter((u) => u.ativo), (u) => u.nome),
     [usuarios]
@@ -815,17 +823,30 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
           {/* Particularidades da Empresa — logo após Dados Principais
               pra facilitar achar (antes ficava bem mais embaixo) */}
           <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
-            <h4 className="font-semibold text-amber-800 mb-2">Particularidades da Empresa</h4>
+            <h4 className="font-semibold text-amber-800 mb-2">Particularidades por setor</h4>
             <p className="text-xs text-amber-700/80 mb-3">
-              Anotações livres sobre essa empresa (regime especial, tratamento contábil/fiscal específico, combinados com o cliente, etc.).
+              Anotações livres do seu setor (regime especial, tratamento específico, combinados com o cliente, etc.).
+              Cada setor vê e edita só a sua; o que os outros setores escreverem fica preservado.
             </p>
-            <textarea
-              value={String(formData.particularidades || '')}
-              onChange={(e) => handleChange('particularidades', e.target.value)}
-              rows={6}
-              placeholder="Descreva aqui as particularidades dessa empresa..."
-              className="w-full px-4 py-3 border border-amber-300 rounded-xl focus:ring-2 focus:ring-amber-500 bg-white text-gray-900 resize-y"
-            />
+            <div className="space-y-3">
+              {slugsParticularidade.map((slug) => (
+                <div key={slug}>
+                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-amber-700 mb-1">
+                    {DEPARTAMENTO_LABELS[slug]}
+                  </label>
+                  <textarea
+                    value={String(formData.particularidadesPorDep?.[slug] || '')}
+                    onChange={(e) => handleChange('particularidadesPorDep', { ...(formData.particularidadesPorDep ?? {}), [slug]: e.target.value })}
+                    rows={4}
+                    placeholder={`Particularidades do ${DEPARTAMENTO_LABELS[slug]}...`}
+                    className="w-full px-4 py-3 border border-amber-300 rounded-xl focus:ring-2 focus:ring-amber-500 bg-white text-gray-900 resize-y"
+                  />
+                </div>
+              ))}
+              {slugsParticularidade.length === 0 && (
+                <p className="text-xs text-amber-700/70 italic">Seu usuário não está vinculado a um setor, então não há particularidade para editar aqui.</p>
+              )}
+            </div>
           </div>
 
           {/* Forma de Envio — logo abaixo de Particularidades */}

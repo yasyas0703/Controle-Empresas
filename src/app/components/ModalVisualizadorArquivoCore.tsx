@@ -146,7 +146,8 @@ export default function ModalVisualizadorArquivo({
       renderHighlightTarget: (props: RenderHighlightTargetProps) => (
         <div
           style={{
-            background: '#1f2937',
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border)',
             display: 'flex',
             position: 'absolute',
             left: `${props.selectionRegion.left}%`,
@@ -193,7 +194,7 @@ export default function ModalVisualizadorArquivo({
           <button
             onClick={() => props.cancel()}
             title="Cancelar"
-            style={{ background: '#374151', color: 'white', border: 'none', borderRadius: 4, padding: '4px 6px', cursor: 'pointer', fontSize: 12 }}
+            style={{ background: 'var(--surface-3)', color: 'var(--text-1)', border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', cursor: 'pointer', fontSize: 12 }}
           >
             ×
           </button>

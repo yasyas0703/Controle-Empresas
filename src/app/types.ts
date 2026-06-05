@@ -309,7 +309,10 @@ export interface Empresa {
   regime_federal?: string;
   regime_estadual?: string;
   regime_municipal?: string;
-  particularidades?: string;
+  particularidades?: string;  // legado: texto único antigo (migrado p/ o fiscal). Mantido p/ retrocompat.
+  // Particularidade por setor. Cada setor edita a sua; usuário comum vê só a do
+  // seu setor, admin/gerente todas. Ao salvar, as dos outros setores são preservadas.
+  particularidadesPorDep?: { fiscal?: string; pessoal?: string; contabil?: string; cadastro?: string };
   tributacao?: Tributacao | null;
   cliente_desde?: string | null;   // YYYY-MM-DD
   desligada_em?: string | null;    // YYYY-MM-DD — quando preenchido, a empresa está desligada

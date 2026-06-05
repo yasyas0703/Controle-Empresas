@@ -797,10 +797,10 @@ function CelulaConferencia({
 
   if (status === 'feito') {
     cor = 'bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600';
-    if (inicial) conteudo = <span className="text-[10px] font-black tracking-tight leading-none">{inicial}</span>;
+    if (inicial) conteudo = <span className="text-[10px] font-bold tracking-tight leading-none">{inicial}</span>;
   } else if (status === 'recebido_pendente') {
     cor = 'bg-orange-400 hover:bg-orange-500 text-white border-orange-500';
-    if (inicial) conteudo = <span className="text-[10px] font-black tracking-tight leading-none">{inicial}</span>;
+    if (inicial) conteudo = <span className="text-[10px] font-bold tracking-tight leading-none">{inicial}</span>;
   } else if (status === 'sem_movimento') {
     cor = 'bg-slate-50 hover:bg-slate-100 text-slate-500 border-slate-300 border-dashed';
     conteudo = <span className="text-[8px] font-bold tracking-tight">S/M</span>;

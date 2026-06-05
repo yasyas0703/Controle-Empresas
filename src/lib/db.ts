@@ -97,6 +97,7 @@ type EmpresaRow = {
   regime_estadual: string | null;
   regime_municipal: string | null;
   particularidades: string | null;
+  particularidades_por_dep: Record<string, string> | null;
   tributacao: string | null;
   cliente_desde: string | null;
   desligada_em: string | null;
@@ -820,6 +821,14 @@ export async function fetchEmpresas(): Promise<Empresa[]> {
     regime_estadual: e.regime_estadual ?? undefined,
     regime_municipal: e.regime_municipal ?? undefined,
     particularidades: e.particularidades ?? undefined,
+    particularidadesPorDep: (() => {
+      const porDep = (e.particularidades_por_dep as Empresa['particularidadesPorDep']) ?? undefined;
+      if (porDep && Object.keys(porDep).length > 0) return porDep;
+      // Fallback pré-migration: o texto único antigo era preenchido só pelo fiscal,
+      // então mostramos como sendo a particularidade do setor Fiscal.
+      const legado = (e.particularidades ?? '').trim();
+      return legado ? { fiscal: e.particularidades ?? undefined } : undefined;
+    })(),
     tributacao: (e.tributacao as Tributacao | null) ?? null,
     cliente_desde: e.cliente_desde ?? null,
     desligada_em: e.desligada_em ?? null,
@@ -886,6 +895,7 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
       regime_estadual: payload.regime_estadual || null,
       regime_municipal: payload.regime_municipal || null,
       particularidades: payload.particularidades || null,
+      particularidades_por_dep: payload.particularidadesPorDep ?? {},
       tributacao:
         payload.tributacao
         ?? regimeFederalToTributacao(payload.regime_federal)
@@ -904,9 +914,9 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
       vencimentos_fiscais: normalizarVencimentosFiscais(payload.vencimentosFiscais),
     };
     let { data, error } = await supabase.from('empresas').insert(baseRow).select('id').single();
-    if (error && hasMissingColumn(error, ['forma_envio', 'vencimentos_fiscais', 'tributacao', 'cliente_desde', 'desligada_em'])) {
+    if (error && hasMissingColumn(error, ['forma_envio', 'vencimentos_fiscais', 'tributacao', 'cliente_desde', 'desligada_em', 'particularidades_por_dep'])) {
       console.warn('[DB] Coluna ausente no Supabase (insert). Rode a migration. Erro original:', error.message);
-      const fallback = stripColumns(baseRow, ['forma_envio', 'vencimentos_fiscais', 'tributacao', 'cliente_desde', 'desligada_em']);
+      const fallback = stripColumns(baseRow, ['forma_envio', 'vencimentos_fiscais', 'tributacao', 'cliente_desde', 'desligada_em', 'particularidades_por_dep']);
       const retry = await supabase.from('empresas').insert(fallback).select('id').single();
       data = retry.data;
       error = retry.error;
@@ -935,6 +945,7 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
     if (payload.regime_estadual !== undefined) row.regime_estadual = payload.regime_estadual || null;
     if (payload.regime_municipal !== undefined) row.regime_municipal = payload.regime_municipal || null;
     if (payload.particularidades !== undefined) row.particularidades = payload.particularidades || null;
+    if (payload.particularidadesPorDep !== undefined) row.particularidades_por_dep = payload.particularidadesPorDep ?? {};
     if (payload.tributacao !== undefined) row.tributacao = payload.tributacao || null;
     aplicarSincRegimeTributacao(row, { regime_federal: payload.regime_federal, tributacao: payload.tributacao });
     if (payload.cliente_desde !== undefined) row.cliente_desde = payload.cliente_desde || null;
@@ -951,9 +962,9 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
     if (payload.vencimentosFiscais !== undefined) row.vencimentos_fiscais = normalizarVencimentosFiscais(payload.vencimentosFiscais);
 
     let { error: updErr } = await supabase.from('empresas').update(row).eq('id', empresaId);
-    if (updErr && hasMissingColumn(updErr, ['forma_envio', 'vencimentos_fiscais', 'tributacao'])) {
+    if (updErr && hasMissingColumn(updErr, ['forma_envio', 'vencimentos_fiscais', 'tributacao', 'particularidades_por_dep'])) {
       console.warn('[DB] Coluna ausente no Supabase (upsert). Rode a migration. Erro original:', updErr.message);
-      const fallback = stripColumns(row, ['forma_envio', 'vencimentos_fiscais', 'tributacao', 'cliente_desde', 'desligada_em']);
+      const fallback = stripColumns(row, ['forma_envio', 'vencimentos_fiscais', 'tributacao', 'cliente_desde', 'desligada_em', 'particularidades_por_dep']);
       const retry = await supabase.from('empresas').update(fallback).eq('id', empresaId);
       updErr = retry.error;
       if (!updErr && ('vencimentos_fiscais' in row || 'forma_envio' in row)) {
@@ -1080,6 +1091,7 @@ export async function updateEmpresa(id: UUID, patch: Partial<Empresa>) {
   if (patch.regime_estadual !== undefined) row.regime_estadual = patch.regime_estadual || null;
   if (patch.regime_municipal !== undefined) row.regime_municipal = patch.regime_municipal || null;
   if (patch.particularidades !== undefined) row.particularidades = patch.particularidades || null;
+  if (patch.particularidadesPorDep !== undefined) row.particularidades_por_dep = patch.particularidadesPorDep ?? {};
   if (patch.tributacao !== undefined) row.tributacao = patch.tributacao || null;
   aplicarSincRegimeTributacao(row, { regime_federal: patch.regime_federal, tributacao: patch.tributacao });
   if (patch.cliente_desde !== undefined) row.cliente_desde = patch.cliente_desde || null;
@@ -1096,9 +1108,9 @@ export async function updateEmpresa(id: UUID, patch: Partial<Empresa>) {
   if (patch.vencimentosFiscais !== undefined) row.vencimentos_fiscais = normalizarVencimentosFiscais(patch.vencimentosFiscais);
 
   let { error } = await supabase.from('empresas').update(row).eq('id', id);
-  if (error && hasMissingColumn(error, ['forma_envio', 'vencimentos_fiscais', 'tributacao', 'cliente_desde', 'desligada_em'])) {
+  if (error && hasMissingColumn(error, ['forma_envio', 'vencimentos_fiscais', 'tributacao', 'cliente_desde', 'desligada_em', 'particularidades_por_dep'])) {
     console.warn('[DB] Coluna ausente no Supabase. Rode a migration do schema. Erro original:', error.message);
-    const fallback = stripColumns(row, ['forma_envio', 'vencimentos_fiscais', 'tributacao', 'cliente_desde', 'desligada_em']);
+    const fallback = stripColumns(row, ['forma_envio', 'vencimentos_fiscais', 'tributacao', 'cliente_desde', 'desligada_em', 'particularidades_por_dep']);
     const retry = await supabase.from('empresas').update(fallback).eq('id', id);
     error = retry.error;
     if (!error && ('vencimentos_fiscais' in row || 'forma_envio' in row)) {

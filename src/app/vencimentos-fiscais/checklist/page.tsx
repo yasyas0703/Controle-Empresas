@@ -13,7 +13,8 @@ import { VENCIMENTOS_FISCAIS_NOMES, VENCIMENTOS_FISCAIS_SN_NOMES, OBRIGACOES_FIS
 import * as db from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { sortByPtBr } from '@/lib/sort';
-import { obrigacaoAplicaParaEmpresa, obrigacaoSnAplicaParaEmpresa } from '@/app/utils/regrasVencimentosFiscais';
+import { obrigacaoAplicaParaEmpresa, obrigacaoSnAplicaParaEmpresa, vencimentoDoMes, vencimentoDoMesSn } from '@/app/utils/regrasVencimentosFiscais';
+import { daysUntil, toISODate } from '@/app/utils/date';
 import { extrairTextoPdf } from '@/app/utils/extrairTextoPdf';
 import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
 import PainelConectarGmail from '@/app/components/PainelConectarGmail';
@@ -102,6 +103,38 @@ function buildKey(empresaId: UUID, obrigacao: string): ChecklistKey {
   return `${empresaId}|${obrigacao}`;
 }
 
+// ── Semáforo do checklist (apenas meses >= 2026-06) ──────────────────────────
+// Cores derivadas no render a partir de campos que já existem (status,
+// concluido_em, observacao) + o vencimento da guia no mês. Sem coluna nova.
+type SemaforoCor = 'vermelho' | 'roxo' | 'verde' | 'laranja' | 'amarelo';
+
+// `vencimentoIso` (YYYY-MM-DD) já vem resolvido pelo caller (ele sabe a aba);
+// null = obrigação sem regra de prazo (ex.: LIVROS FISCAIS) → nunca roxo/laranja.
+function corSemaforo(item: ChecklistFiscalItem | undefined, vencimentoIso: string | null): SemaforoCor {
+  const status = item?.status ?? null;
+  if (status === 'sem_obrigacao') return 'amarelo'; // dispensado / não tem (com justificativa)
+  if (status === 'feito') {
+    if (!vencimentoIso) return 'verde';
+    // concluidoEm é timestamp completo — converte pra data local antes de comparar.
+    const entrega = item?.concluidoEm ? toISODate(new Date(item.concluidoEm)) : '';
+    return entrega && entrega > vencimentoIso ? 'laranja' : 'verde'; // entregou depois do prazo
+  }
+  // ninguém fez ainda
+  if (vencimentoIso) {
+    const dias = daysUntil(vencimentoIso);
+    if (dias !== null && dias <= 3) return 'roxo'; // ≤3 dias OU já vencido (alerta persiste)
+  }
+  return 'vermelho';
+}
+
+const SEMAFORO_STYLE: Record<SemaforoCor, { cell: string; texto: string; legenda: string }> = {
+  vermelho: { cell: 'bg-red-50 border-red-300 hover:border-red-400',          texto: 'text-red-700',     legenda: 'Pendente' },
+  roxo:     { cell: 'bg-violet-50 border-violet-300 hover:border-violet-400',  texto: 'text-violet-700',  legenda: 'Vence em ≤3 dias' },
+  verde:    { cell: 'bg-emerald-50 border-emerald-300 hover:border-emerald-500', texto: 'text-emerald-700', legenda: 'No prazo' },
+  laranja:  { cell: 'bg-orange-50 border-orange-300 hover:border-orange-400',  texto: 'text-orange-700',  legenda: 'Fora do prazo' },
+  amarelo:  { cell: 'bg-amber-50 border-amber-300 hover:border-amber-400',     texto: 'text-amber-700',   legenda: 'Dispensado' },
+};
+
 function userInitials(nome: string): string {
   const parts = nome.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '?';
@@ -147,6 +180,9 @@ export default function ChecklistFiscalPage() {
   const [obsTarget, setObsTarget] = useState<{ empresa: Empresa; obrigacao: string } | null>(null);
   const [obsText, setObsText] = useState('');
   const [savingObs, setSavingObs] = useState(false);
+  // 'observacao' = nota livre (comportamento antigo); 'dispensa' = marcar amarelo
+  // com justificativa obrigatória (semáforo, junho+).
+  const [obsModo, setObsModo] = useState<'observacao' | 'dispensa'>('observacao');
 
   const [histTarget, setHistTarget] = useState<{ empresa: Empresa; obrigacao: string } | null>(null);
   const [histItems, setHistItems] = useState<ChecklistFiscalItem[]>([]);
@@ -293,6 +329,10 @@ export default function ChecklistFiscalPage() {
   // "Hoje" aqui = mes padrao do checklist (que eh o mes ANTERIOR ao atual).
   // Mantido nome 'isHoje' pra nao quebrar referencias abaixo.
   const isHoje = mes === defaultMonth();
+
+  // Semáforo de 5 cores só vale de junho/2026 em diante. Maio e anteriores
+  // renderizam exatamente como antes (comparação lexicográfica de 'YYYY-MM').
+  const semaforo = mes >= '2026-06';
 
   // mostrarAlerta vem do contexto e não é estável (recriado a cada render).
   // Sem ref, `carregar` é recriado a cada render e o useEffect entra em loop
@@ -491,20 +531,70 @@ export default function ChecklistFiscalPage() {
   const abrirObservacao = (empresa: Empresa, obrigacao: string) => {
     const atual = items.get(buildKey(empresa.id, obrigacao));
     setObsText(atual?.observacao ?? '');
+    setObsModo('observacao');
+    setObsTarget({ empresa, obrigacao });
+  };
+
+  // Dispensar (amarelo): mesmo modal, mas a justificativa é obrigatória e o
+  // salvar grava status='sem_obrigacao' + observacao num upsert só.
+  const abrirDispensa = (empresa: Empresa, obrigacao: string) => {
+    const atual = items.get(buildKey(empresa.id, obrigacao));
+    setObsText(atual?.observacao ?? '');
+    setObsModo('dispensa');
     setObsTarget({ empresa, obrigacao });
   };
 
   const salvarObservacao = async () => {
     if (!obsTarget) return;
+    const texto = obsText.trim();
+    if (obsModo === 'dispensa' && !texto) return; // justificativa obrigatória
     setSavingObs(true);
     try {
-      await db.updateChecklistObservacao(obsTarget.empresa.id, mes, obsTarget.obrigacao, obsText);
-      mostrarAlerta('Observação salva', 'A observação foi registrada no checklist.', 'sucesso');
+      if (obsModo === 'dispensa') {
+        const { empresa, obrigacao } = obsTarget;
+        const key = buildKey(empresa.id, obrigacao);
+        const atual = items.get(key);
+        await db.upsertChecklistFiscal({
+          empresaId: empresa.id,
+          mes,
+          obrigacao,
+          status: 'sem_obrigacao',
+          concluidoPorId: currentUserId,
+          concluidoPorNome: currentUser?.nome,
+          observacao: texto,
+        });
+        // Optimistic update local (realtime também atualiza)
+        setItems((prev) => {
+          const next = new Map(prev);
+          next.set(key, {
+            id: atual?.id ?? 'tmp',
+            empresaId: empresa.id,
+            mes,
+            obrigacao,
+            concluido: false,
+            status: 'sem_obrigacao',
+            concluidoPorId: currentUserId ?? null,
+            concluidoPorNome: currentUser?.nome,
+            concluidoEm: new Date().toISOString(),
+            observacao: texto,
+            arquivoUrl: atual?.arquivoUrl,
+            arquivoNome: atual?.arquivoNome,
+            arquivoHistorico: atual?.arquivoHistorico,
+            criadoEm: atual?.criadoEm ?? new Date().toISOString(),
+            atualizadoEm: new Date().toISOString(),
+          });
+          return next;
+        });
+        mostrarAlerta('Dispensado', 'Obrigação dispensada com justificativa.', 'sucesso');
+      } else {
+        await db.updateChecklistObservacao(obsTarget.empresa.id, mes, obsTarget.obrigacao, obsText);
+        mostrarAlerta('Observação salva', 'A observação foi registrada no checklist.', 'sucesso');
+      }
       setObsTarget(null);
       setObsText('');
     } catch (err) {
       console.error(err);
-      mostrarAlerta('Erro', 'Não foi possível salvar a observação.', 'erro');
+      mostrarAlerta('Erro', obsModo === 'dispensa' ? 'Não foi possível dispensar. Tente novamente.' : 'Não foi possível salvar a observação.', 'erro');
     } finally {
       setSavingObs(false);
     }
@@ -940,14 +1030,18 @@ export default function ChecklistFiscalPage() {
       .filter((e) => e.cadastrada !== false)
       .map((empresa) => {
         const respId = getResponsavelFiscal(empresa);
-        const cells: { obrigacao: string; item: ChecklistFiscalItem | undefined; aplica: boolean }[] =
+        const cells: { obrigacao: string; item: ChecklistFiscalItem | undefined; aplica: boolean; cor: SemaforoCor | null }[] =
           obrigacoesAba.map((obrigacao) => {
             const aplica = aplicaObrigacao(obrigacao, empresa);
-            return {
-              obrigacao,
-              aplica,
-              item: aplica ? items.get(buildKey(empresa.id, obrigacao)) : undefined,
-            };
+            const item = aplica ? items.get(buildKey(empresa.id, obrigacao)) : undefined;
+            let cor: SemaforoCor | null = null;
+            if (semaforo && aplica) {
+              const vencIso = aba === 'sn'
+                ? vencimentoDoMesSn(obrigacao, empresa.estado, mes, empresa.cidade)
+                : vencimentoDoMes(obrigacao, empresa.estado, mes, empresa.cidade);
+              cor = corSemaforo(item, vencIso);
+            }
+            return { obrigacao, aplica, item, cor };
           });
         // "sem_obrigacao" (X) conta como feito: a usuária marcou X porque
         // não tinha guia naquele mês, então não há nada a fazer.
@@ -1014,7 +1108,7 @@ export default function ChecklistFiscalPage() {
       if (a.progresso !== b.progresso) return b.progresso - a.progresso;
       return a.empresa.codigo.localeCompare(b.empresa.codigo);
     });
-  }, [empresas, items, search, filtroUsuario, apenasMinhas, currentUserId, canManage, filtroProgresso, filtroObrigacao, filtroEstado, getResponsavelFiscal, obrigacoesAba, aplicaObrigacao, usuarioPertenceAba]);
+  }, [empresas, items, search, filtroUsuario, apenasMinhas, currentUserId, canManage, filtroProgresso, filtroObrigacao, filtroEstado, getResponsavelFiscal, obrigacoesAba, aplicaObrigacao, usuarioPertenceAba, semaforo, aba, mes]);
 
   // Pagina linhas visiveis (50 em 50). Stats calculam em cima do total — nao
   // do visivel — pra contadores nao ficarem inconsistentes ao paginar.
@@ -1580,7 +1674,7 @@ export default function ChecklistFiscalPage() {
                           </div>
                         </div>
                       </td>
-                      {l.cells.map(({ obrigacao, item, aplica }) => {
+                      {l.cells.map(({ obrigacao, item, aplica, cor }) => {
                         const canEdit = canManage || (!!currentUserId && l.respId === currentUserId);
                         const habKey = buildKey(l.empresa.id, obrigacao);
                         const isTogglingHab = togglingHabilitacao.has(habKey);
@@ -1622,15 +1716,25 @@ export default function ChecklistFiscalPage() {
                           toggle(l.empresa, obrigacao, atual === alvo ? null : alvo);
                         };
 
+                        // Modo semáforo: o botão de dispensar abre o modal de
+                        // justificativa (obrigatória). Se já dispensado, desmarca.
+                        const handleDispensar = () => {
+                          if (!canEdit || saving) return;
+                          if (semObr) toggle(l.empresa, obrigacao, null);
+                          else abrirDispensa(l.empresa, obrigacao);
+                        };
+
                         return (
                           <td key={obrigacao} className="border-b border-gray-100 p-1 w-[90px] min-w-[90px] max-w-[90px]">
                             <div
                               className={`group relative rounded-lg border-2 p-1.5 transition ${
-                                feito
-                                  ? 'bg-emerald-50 border-emerald-300 hover:border-emerald-500'
-                                  : semObr
-                                    ? 'bg-rose-50 border-rose-300 hover:border-rose-500'
-                                    : 'bg-gray-50 border-gray-200 hover:border-emerald-300'
+                                semaforo && cor
+                                  ? SEMAFORO_STYLE[cor].cell
+                                  : feito
+                                    ? 'bg-emerald-50 border-emerald-300 hover:border-emerald-500'
+                                    : semObr
+                                      ? 'bg-rose-50 border-rose-300 hover:border-rose-500'
+                                      : 'bg-gray-50 border-gray-200 hover:border-emerald-300'
                               } ${saving ? 'opacity-60' : ''}`}
                             >
                               {canEdit && (
@@ -1651,14 +1755,16 @@ export default function ChecklistFiscalPage() {
                                   disabled={!canEdit || saving}
                                   className={`flex items-center justify-center h-7 rounded-md transition-colors ${
                                     feito
-                                      ? 'bg-emerald-400 hover:bg-emerald-500 text-white'
+                                      ? (semaforo && cor === 'laranja'
+                                          ? 'bg-orange-400 hover:bg-orange-500 text-white'
+                                          : 'bg-emerald-400 hover:bg-emerald-500 text-white')
                                       : canEdit
                                         ? 'bg-white border border-gray-300 hover:border-emerald-400 hover:bg-emerald-50 text-gray-400 hover:text-emerald-600'
                                         : 'bg-gray-100 text-gray-300 cursor-not-allowed'
                                   }`}
                                   title={
                                     !canEdit ? 'Sem permissão (responsável fiscal ou gerente)' :
-                                    feito ? `Feito por ${item?.concluidoPorNome ?? '-'} em ${item?.concluidoEm ? new Date(item.concluidoEm).toLocaleString('pt-BR') : '-'}\nClique para desmarcar` :
+                                    feito ? `${semaforo && cor === 'laranja' ? 'Entregue FORA do prazo' : 'Feito no prazo'} por ${item?.concluidoPorNome ?? '-'} em ${item?.concluidoEm ? new Date(item.concluidoEm).toLocaleString('pt-BR') : '-'}\nClique para desmarcar` :
                                     'Marcar como feito'
                                   }
                                 >
@@ -1666,26 +1772,30 @@ export default function ChecklistFiscalPage() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleClickStatus('sem_obrigacao')}
+                                  onClick={() => (semaforo ? handleDispensar() : handleClickStatus('sem_obrigacao'))}
                                   disabled={!canEdit || saving}
                                   className={`flex items-center justify-center h-7 rounded-md transition-colors ${
                                     semObr
-                                      ? 'bg-rose-400 hover:bg-rose-500 text-white'
+                                      ? (semaforo
+                                          ? 'bg-amber-400 hover:bg-amber-500 text-white'
+                                          : 'bg-rose-400 hover:bg-rose-500 text-white')
                                       : canEdit
-                                        ? 'bg-white border border-gray-300 hover:border-rose-400 hover:bg-rose-50 text-gray-400 hover:text-rose-600'
+                                        ? (semaforo
+                                            ? 'bg-white border border-gray-300 hover:border-amber-400 hover:bg-amber-50 text-gray-400 hover:text-amber-600'
+                                            : 'bg-white border border-gray-300 hover:border-rose-400 hover:bg-rose-50 text-gray-400 hover:text-rose-600')
                                         : 'bg-gray-100 text-gray-300 cursor-not-allowed'
                                   }`}
                                   title={
                                     !canEdit ? 'Sem permissão (responsável fiscal ou gerente)' :
-                                    semObr ? `Sem obrigação neste mês\nMarcado por ${item?.concluidoPorNome ?? '-'}\nClique para desmarcar` :
-                                    'Marcar como SEM obrigação neste mês'
+                                    semObr ? `${semaforo ? 'Dispensado' : 'Sem obrigação neste mês'}${item?.observacao ? `: ${item.observacao}` : ''}\nMarcado por ${item?.concluidoPorNome ?? '-'}\nClique para desmarcar` :
+                                    (semaforo ? 'Dispensar (exige justificativa)' : 'Marcar como SEM obrigação neste mês')
                                   }
                                 >
                                   <XCircle size={16} strokeWidth={2.5} />
                                 </button>
                               </div>
                               {(feito || semObr) && item?.concluidoPorNome && (
-                                <div className={`mt-1 text-[9px] font-bold text-center truncate ${feito ? 'text-emerald-700' : 'text-rose-700'}`} title={item.concluidoPorNome}>
+                                <div className={`mt-1 text-[9px] font-bold text-center truncate ${semaforo && cor ? SEMAFORO_STYLE[cor].texto : feito ? 'text-emerald-700' : 'text-rose-700'}`} title={item.concluidoPorNome}>
                                   {item.concluidoPorNome.split(' ')[0]}
                                 </div>
                               )}
@@ -1739,6 +1849,17 @@ export default function ChecklistFiscalPage() {
             </button>
           </div>
         )}
+        {!loading && linhas.length > 0 && semaforo && (
+          <div className="px-3 py-2 bg-gray-50 border-t border-gray-100 text-[11px] text-gray-600 flex items-center gap-x-3 gap-y-1 flex-wrap">
+            <span className="font-semibold text-gray-500 uppercase tracking-wide text-[10px]">Legenda</span>
+            {(['vermelho', 'roxo', 'verde', 'laranja', 'amarelo'] as const).map((c) => (
+              <span key={c} className="inline-flex items-center gap-1.5">
+                <span className={`h-2.5 w-2.5 rounded-sm border ${SEMAFORO_STYLE[c].cell}`} />
+                <span>{SEMAFORO_STYLE[c].legenda}</span>
+              </span>
+            ))}
+          </div>
+        )}
         {!loading && linhas.length > 0 && (
           <div className="px-3 py-2 bg-gray-50 border-t border-gray-100 text-[11px] text-gray-500 flex items-center justify-between flex-wrap gap-x-3 gap-y-1.5 min-w-0">
             <div className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0">
@@ -1779,7 +1900,7 @@ export default function ChecklistFiscalPage() {
           <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
             <div className="bg-gradient-to-r from-violet-600 to-purple-600 px-5 py-4 flex items-center justify-between">
               <div className="text-white min-w-0">
-                <div className="text-[10px] font-bold uppercase tracking-wider opacity-90">Observação • {monthLabel(mes)}</div>
+                <div className="text-[10px] font-bold uppercase tracking-wider opacity-90">{obsModo === 'dispensa' ? 'Dispensar — justificativa obrigatória' : 'Observação'} • {monthLabel(mes)}</div>
                 <div className="text-sm font-bold truncate">{obsTarget.empresa.codigo} — {obsTarget.obrigacao}</div>
               </div>
               <button
@@ -1794,7 +1915,7 @@ export default function ChecklistFiscalPage() {
                 value={obsText}
                 onChange={(e) => setObsText(e.target.value)}
                 rows={5}
-                placeholder="Ex: Cliente pediu prazo até dia 25..."
+                placeholder={obsModo === 'dispensa' ? 'Ex: empresa sem movimento neste mês; sem guia a recolher.' : 'Ex: Cliente pediu prazo até dia 25...'}
                 className="w-full rounded-xl bg-gray-50 border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-violet-400 focus:bg-white transition"
                 autoFocus
               />
@@ -1808,10 +1929,10 @@ export default function ChecklistFiscalPage() {
                 </button>
                 <button
                   onClick={salvarObservacao}
-                  disabled={savingObs}
+                  disabled={savingObs || (obsModo === 'dispensa' && !obsText.trim())}
                   className="rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-white px-4 py-2 text-sm font-bold hover:from-violet-700 hover:to-purple-700 shadow transition disabled:opacity-50"
                 >
-                  {savingObs ? 'Salvando...' : 'Salvar observação'}
+                  {savingObs ? 'Salvando...' : obsModo === 'dispensa' ? 'Confirmar dispensa' : 'Salvar observação'}
                 </button>
               </div>
             </div>

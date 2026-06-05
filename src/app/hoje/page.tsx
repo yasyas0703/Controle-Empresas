@@ -624,27 +624,27 @@ function ItemRow({ item, usuarios }: { item: ItemHoje; usuarios: { id: UUID; nom
 function UrgenciaBadge({ dias }: { dias: number }) {
   if (dias < 0) {
     return (
-      <span className="rounded-full bg-red-100 text-red-700 px-2 py-1 text-[10px] font-black whitespace-nowrap dark:bg-red-900/40 dark:text-red-300">
+      <span className="rounded-full bg-red-100 text-red-700 px-2 py-1 text-[10px] font-bold whitespace-nowrap dark:bg-red-900/40 dark:text-red-300">
         {Math.abs(dias)}d atrasado
       </span>
     );
   }
   if (dias === 0) {
     return (
-      <span className="rounded-full bg-orange-100 text-orange-700 px-2 py-1 text-[10px] font-black whitespace-nowrap dark:bg-orange-900/40 dark:text-orange-300">
+      <span className="rounded-full bg-orange-100 text-orange-700 px-2 py-1 text-[10px] font-bold whitespace-nowrap dark:bg-orange-900/40 dark:text-orange-300">
         HOJE
       </span>
     );
   }
   if (dias === 1) {
     return (
-      <span className="rounded-full bg-amber-100 text-amber-700 px-2 py-1 text-[10px] font-black whitespace-nowrap dark:bg-amber-900/40 dark:text-amber-300">
+      <span className="rounded-full bg-amber-100 text-amber-700 px-2 py-1 text-[10px] font-bold whitespace-nowrap dark:bg-amber-900/40 dark:text-amber-300">
         AMANHÃ
       </span>
     );
   }
   return (
-    <span className="rounded-full bg-cyan-100 text-cyan-700 px-2 py-1 text-[10px] font-black whitespace-nowrap dark:bg-cyan-900/40 dark:text-cyan-300">
+    <span className="rounded-full bg-cyan-100 text-cyan-700 px-2 py-1 text-[10px] font-bold whitespace-nowrap dark:bg-cyan-900/40 dark:text-cyan-300">
       em {dias}d
     </span>
   );

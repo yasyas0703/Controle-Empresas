@@ -596,8 +596,8 @@ export default function VencimentosPage() {
                         {responsaveis.map((r) => {
                           const c = DEPT_COLORS[r.depIdx % 8];
                           return (
-                            <span key={r.dep} className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold border ${c.bg} ${c.text} ${c.border}`}>
-                              <span className="font-bold">{r.dep}:</span> {r.user}
+                            <span key={r.dep} className={`inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-semibold bg-[var(--surface-3)] border border-[var(--border-subtle)] border-l-[3px] ${c.bar} text-[var(--text-2)]`}>
+                              <span className={`font-bold ${c.text}`}>{r.dep}:</span> {r.user}
                             </span>
                           );
                         })}
@@ -605,7 +605,7 @@ export default function VencimentosPage() {
                     )}
                   </div>
                   <div className={`shrink-0 text-right ${corDias}`}>
-                    <div className="font-black text-xl tabular-nums leading-none">
+                    <div className="font-bold text-xl tabular-nums leading-none">
                       {dias < 0 ? `${Math.abs(dias)}d` : dias === 0 ? 'HOJE' : `${dias}d`}
                     </div>
                     <div className="text-[10px] font-semibold opacity-80 mt-0.5">

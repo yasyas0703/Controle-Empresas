@@ -74,3 +74,24 @@ export function podeVerDepartamento(
   if (usuario.role === 'admin') return true;
   return getDepartamentoSlugsDoUsuario(usuario, departamentos).includes(slug);
 }
+
+// Rótulos legíveis por setor — usados onde particularidade/visibilidade
+// aparece rotulada por departamento.
+export const DEPARTAMENTO_LABELS: Record<DepartamentoSlug, string> = {
+  fiscal: 'Fiscal',
+  pessoal: 'Pessoal',
+  contabil: 'Contábil',
+  cadastro: 'Cadastro',
+};
+
+// Setores cujas particularidades o usuário pode ver/editar.
+// veTudo (admin/gerente/privilegiado) => todos os setores;
+// caso contrário, só os do usuário (principal + extras).
+export function getSlugsParticularidadeVisiveis(
+  usuario: Usuario | null | undefined,
+  departamentos: Departamento[],
+  veTudo: boolean,
+): DepartamentoSlug[] {
+  if (veTudo) return [...DEPARTAMENTO_SLUGS];
+  return getDepartamentoSlugsDoUsuario(usuario, departamentos);
+}

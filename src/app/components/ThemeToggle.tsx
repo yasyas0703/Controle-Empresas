@@ -18,8 +18,8 @@ export default function ThemeToggle({ variant = "sidebar" }: ThemeToggleProps) {
 
   const baseClass =
     variant === "mobile"
-      ? "p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-[#2a2f3a] transition-colors"
-      : "flex items-center justify-center rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-[#2a2f3a] transition";
+      ? "p-2 rounded-lg hover:bg-[var(--surface-3)] transition-colors"
+      : "flex items-center justify-center rounded-lg p-2 hover:bg-[var(--surface-3)] transition";
 
   return (
     <button
