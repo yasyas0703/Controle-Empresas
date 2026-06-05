@@ -111,38 +111,6 @@ function montarDestino(empresa: Empresa, competencia: string, nomeArquivo: strin
   };
 }
 
-/**
- * Verifica se já houve algum envio (em qualquer mês) dessa combinação empresa
- * + obrigação. Usado pelo modo conservador "1ª vez precisa aprovação".
- */
-async function jaTeveEnvioSucesso(
-  admin: SupabaseClient,
-  empresaId: string,
-  obrigacao: string,
-): Promise<boolean> {
-  const { data: checklists } = await admin
-    .from('checklist_fiscal')
-    .select('envios_historico')
-    .eq('empresa_id', empresaId)
-    .eq('obrigacao', obrigacao);
-
-  if (checklists && checklists.length > 0) {
-    for (const c of checklists as Array<{ envios_historico?: Array<{ sucesso?: boolean }> | null }>) {
-      const envios = c.envios_historico ?? [];
-      if (envios.some((e) => e?.sucesso === true)) return true;
-    }
-  }
-
-  const { count } = await admin
-    .from('guias_auto_processadas')
-    .select('id', { count: 'exact', head: true })
-    .eq('empresa_id', empresaId)
-    .eq('obrigacao', obrigacao)
-    .eq('status', 'enviado');
-
-  return (count ?? 0) > 0;
-}
-
 async function registrarProblema(
   admin: SupabaseClient,
   payload: {
@@ -612,40 +580,11 @@ export async function POST(req: Request) {
     });
   }
 
-  // 13. Modo conservador: 1ª vez dessa empresa+obrigação?
-  const jaEnviouAntes = await jaTeveEnvioSucesso(admin, empresa.id, obrigacao);
-  if (!jaEnviouAntes) {
-    const upPend = await subirPendente(admin, fileBuffer, nomeCanonico);
-    const pathPendente = 'path' in upPend ? upPend.path : null;
-    await registrarProblema(admin, {
-      caminhoServidor, nomeArquivo, hashArquivo,
-      empresaId: empresa.id, empresaNomePasta: null,
-      tipoProblema: 'primeira_vez_precisa_aprovacao',
-      detalhes: {
-        motivo: `Primeira vez enviando "${obrigacao}" pra esta empresa via sistema automático. Aprove no painel — próximos envios sairão automáticos.`,
-        empresa: empresa.razao_social || empresa.apelido,
-        competencia,
-      },
-      competenciaParseada: competencia, obrigacaoParseada: obrigacao,
-    });
-    await registrarProcessado(admin, {
-      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
-      nomeArquivo, status: 'pendente_aprovacao_primeira_vez',
-      detalhes: {
-        motivo: 'primeira_vez',
-        validacao: validacao.resultado.perfilUsado,
-        arquivo_pendente_path: pathPendente,
-        codigos_esperados_snapshot: config.codigos ?? [],
-        perfil_validacao_snapshot: validacao.resultado.perfilUsado,
-      },
-    });
-    return NextResponse.json({
-      status: 'pendente_aprovacao_primeira_vez',
-      detalhes: { motivo: '1ª vez — admin precisa aprovar no painel', empresa: empresa.razao_social || empresa.apelido, obrigacao, competencia },
-    });
-  }
+  // (Trava de "1ª vez precisa aprovação" REMOVIDA a pedido — guia reconhecida
+  // (CNPJ/IE forte + PDF validado + competência na janela) envia direto, mesmo
+  // na primeira vez da empresa+obrigação. As demais travas continuam ativas.)
 
-  // 14. Guard duplicado: já foi enviada essa empresa+mes+obrigação?
+  // 13. Guard duplicado: já foi enviada essa empresa+mes+obrigação?
   const duplicado = await jaEnviadaNoChecklist(admin, empresa.id, competencia, obrigacao);
   if (duplicado) {
     await registrarProcessado(admin, {
