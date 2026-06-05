@@ -316,7 +316,11 @@ const PERFIS: Record<string, PerfilValidacao> = {
   'ISS - SERVIÇOS TOMADOS': {
     nome: 'ISS Serviços Tomados',
     anchorsObrigatorios: [],
-    denominacaoRegex: /(iss|issqn)/i,
+    // Exige marca POSITIVA de "tomado/retido" — espelha as palavrasProibidas do
+    // perfil de Prestação. Sem isto, /(iss|issqn)/ casava com QUALQUER guia de
+    // ISS (inclusive Prestado), colidindo com o perfil de Prestação e marcando
+    // tudo como obrigacao_ambigua. Agora guia de Prestado reprova aqui.
+    denominacaoRegex: /(tomad|retido\s*na\s*fonte|issqn\s*tomador)/i,
     palavrasProibidas: [],
     verificaMunicipioDaEmpresa: true,
   },
