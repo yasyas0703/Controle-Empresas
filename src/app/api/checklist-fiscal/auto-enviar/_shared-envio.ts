@@ -191,6 +191,29 @@ export async function deletarPendente(
   );
 }
 
+/**
+ * Sobe o PDF pro bucket interno (`documentos`) e devolve o path — pra ser usado
+ * como anexo na célula do Checklist (`checklist_fiscal.arquivo_url`). Usado pelas
+ * obrigações internas (nao_envia_cliente), que não passam pelo `enviarGuia`.
+ * Best-effort: devolve null se falhar (não trava o "marcar feito").
+ */
+export async function subirDocumentoInterno(
+  admin: SupabaseClient,
+  empresaId: string,
+  buffer: Buffer,
+  nomeArquivo: string,
+): Promise<string | null> {
+  const path = `empresas/${empresaId}/auto/${randomUUID()}-${storageKeySafe(nomeArquivo)}`;
+  const { error } = await admin.storage
+    .from(BUCKET_DOCUMENTOS)
+    .upload(path, buffer, { contentType: 'application/pdf', upsert: false });
+  if (error) {
+    console.error('[subirDocumentoInterno] falha:', error.message);
+    return null;
+  }
+  return path;
+}
+
 // ─── Envio core (Gmail + portal + checklist) ────────────────────────────────
 
 export interface ResultadoEnvio {
@@ -312,13 +335,14 @@ export async function enviarGuia(
   const nowIso = new Date().toISOString();
   await admin.from('usuario_gmail_tokens').update({ last_used_at: nowIso }).eq('usuario_id', params.ghostUserId);
 
-  // 5. Marca checklist
+  // 5. Marca checklist (e anexa o PDF na célula — fica salvo no Checklist/Envio)
   const checklistId = await marcarChecklistComoFeito(admin, {
     empresaId: params.empresa.id,
     mes: params.competencia,
     obrigacao: params.obrigacao,
     ghostUserId: params.ghostUserId,
     arquivoNome: params.nomeArquivo,
+    arquivoUrl: docPath,
     fonte: 'auto-enviado',
     destinatarios: emails,
     gmailMessageId,
@@ -407,6 +431,8 @@ export async function marcarChecklistComoFeito(
     obrigacao: string;
     ghostUserId: string;
     arquivoNome: string;
+    /** Path no bucket `documentos` pra anexar na célula do Checklist (arquivo_url). */
+    arquivoUrl?: string;
     fonte: 'auto-enviado' | 'auto-interna' | 'aprovado-admin';
     destinatarios?: string[];
     gmailMessageId?: string;
@@ -451,6 +477,8 @@ export async function marcarChecklistComoFeito(
     concluido_por_id: enviadoPorId,
     concluido_por_nome: enviadoPorNome,
     atualizado_em: nowIso,
+    // Anexa o PDF na célula (Checklist + aba Envio) pra ficar sempre salvo.
+    ...(payload.arquivoUrl ? { arquivo_url: payload.arquivoUrl, arquivo_nome: payload.arquivoNome } : {}),
   };
 
   if (existente) {

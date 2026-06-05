@@ -25,7 +25,7 @@ import {
 } from '../_shared';
 import { extrairNomeArquivoDoCaminho } from '@/lib/parseNomeGuia';
 import {
-  enviarGuia, marcarChecklistComoFeito, jaEnviadaNoChecklist, subirPendente,
+  enviarGuia, marcarChecklistComoFeito, jaEnviadaNoChecklist, subirPendente, subirDocumentoInterno,
 } from './_shared-envio';
 import {
   identificarEmpresa, identificarObrigacao, competenciaDoPdf, type ConfigObrigacao,
@@ -592,11 +592,13 @@ export async function POST(req: Request) {
     });
   }
 
-  // 12. Obrigação INTERNA (nao_envia_cliente=true): não envia email, só marca check.
+  // 12. Obrigação INTERNA (nao_envia_cliente=true): não envia email, só marca
+  // check — mas salva o PDF anexado na célula do Checklist mesmo assim.
   if (config.naoEnviaCliente) {
+    const docPathInterno = await subirDocumentoInterno(admin, empresa.id, fileBuffer, nomeCanonico);
     await marcarChecklistComoFeito(admin, {
       empresaId: empresa.id, mes: competencia, obrigacao, ghostUserId,
-      arquivoNome: nomeCanonico, fonte: 'auto-interna',
+      arquivoNome: nomeCanonico, arquivoUrl: docPathInterno ?? undefined, fonte: 'auto-interna',
     });
     await registrarProcessado(admin, {
       caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
