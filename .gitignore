@@ -12,6 +12,8 @@ dist/
 # env / secrets
 .env*
 !.env.example
+# doc de remediação que continha chave real — fora do versionamento
+FASE-0-ROTACAO-SECRETS.md
 
 # debug
 npm-debug.log*
