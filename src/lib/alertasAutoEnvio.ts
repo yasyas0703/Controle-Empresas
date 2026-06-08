@@ -96,10 +96,14 @@ export async function resolverDestinatariosFiscais(
 
   const porId = new Map<string, UsuarioRow>();
 
-  // Gerentes/admins do Fiscal
+  // Admins recebem TODOS os alertas de guia travada (gerenciam o sistema /
+  // operam o auto-envio). Gerentes só se forem do Fiscal/Fiscal-SN.
+  // (Antes só ia pra quem era do Fiscal — admin SEM departamento, como quem
+  // opera o auto-envio, ficava de fora e não era avisado de nada.)
   for (const u of usuarios) {
     if (!u.ativo) continue;
-    if (u.role !== 'gerente' && u.role !== 'admin') continue;
+    if (u.role === 'admin') { porId.set(u.id, u); continue; }
+    if (u.role !== 'gerente') continue;
     const deptosU = new Set(
       [u.departamento_id, ...(u.departamentos_extras_ids ?? [])].filter((v): v is string => !!v),
     );
