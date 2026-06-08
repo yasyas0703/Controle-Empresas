@@ -368,10 +368,14 @@ async function processarArquivo(caminho) {
   const hash = createHash('sha256').update(buffer).digest('hex');
 
   // 2. Já processado localmente? (idempotência rápida)
-  // EXCEÇÃO: se a última tentativa foi falha de REDE ('erro_rede'), a requisição
-  // nunca chegou no servidor, então re-tentamos.
+  // Só pula o que teve desfecho TERMINAL (já enviou / já estava resolvido). Guias
+  // que foram pra PENDÊNCIA (não reconhecida, config inativa, etc.) DEVEM ser
+  // reprocessáveis: se a usuária corrige a causa e joga o arquivo de novo na
+  // entrada, tem que tentar de novo. (erro_rede também reprocessa — a requisição
+  // nunca chegou no servidor.)
+  const SKIP_STATUSES = new Set(['enviado', 'interno_marcado_feito', 'ja_processado', 'duplicado_periodo']);
   const stEntry = state.processados[caminho];
-  if (stEntry && stEntry.hash === hash && stEntry.status !== 'erro_rede') {
+  if (stEntry && stEntry.hash === hash && SKIP_STATUSES.has(stEntry.status)) {
     return;
   }
 
