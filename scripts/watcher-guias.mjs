@@ -47,7 +47,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Raiz onde ficam as pastas das empresas (destino dos arquivos arquivados).
-const T_ROOT = 'T:\\Fiscal\\EMPRESA';
+// Configurável por env FISCAL_ROOT — ESSENCIAL pra rodar no servidor: um
+// Serviço/Tarefa do Windows "sem login" NÃO enxerga drive mapeado (T: é por
+// sessão de usuário). No servidor, aponte pro caminho UNC:
+//   FISCAL_ROOT=\\NOME-DO-SERVIDOR\Compartilhamento\Fiscal\EMPRESA
+// No PC da usuária (com T: mapeado) o default abaixo continua valendo.
+const T_ROOT = process.env.FISCAL_ROOT || 'T:\\Fiscal\\EMPRESA';
 // Nome da pasta única de entrada (também é o que ignoramos ao resolver empresa).
 const NOME_PASTA_ENTRADA = '1-GUIAS A ENVIAR';
 const PASTA_ENTRADA = resolve(T_ROOT, NOME_PASTA_ENTRADA);
@@ -84,23 +89,28 @@ const EMPRESA_FILTRO = (() => {
 })();
 let processedCount = 0;
 
-// ─── Carrega env do .env.local ─────────────────────────────────────────────
+// ─── Carrega env: .env.local (dev) + process.env (servidor) ────────────────
+// No PC da usuária lê do .env.local. No servidor (Tarefa do Windows / serviço)
+// normalmente NÃO há .env.local — as variáveis vêm do ambiente do sistema.
+// process.env tem prioridade; .env.local é fallback de desenvolvimento.
 function loadEnv() {
-  const envPath = resolve(__dirname, '..', '.env.local');
-  if (!existsSync(envPath)) {
-    console.error(`❌ Não achei .env.local em ${envPath}`);
-    process.exit(1);
-  }
-  const text = readFileSync(envPath, 'utf8');
   const env = {};
-  for (const line of text.split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/i);
-    if (!m) continue;
-    let v = m[2];
-    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
-      v = v.slice(1, -1);
+  const envPath = resolve(__dirname, '..', '.env.local');
+  if (existsSync(envPath)) {
+    const text = readFileSync(envPath, 'utf8');
+    for (const line of text.split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/i);
+      if (!m) continue;
+      let v = m[2];
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+        v = v.slice(1, -1);
+      }
+      env[m[1]] = v;
     }
-    env[m[1]] = v;
+  }
+  // process.env vence (.env.local é só conveniência de dev).
+  for (const k of ['AUTO_ENVIO_TOKEN', 'NEXT_PUBLIC_APP_URL', 'FISCAL_ROOT']) {
+    if (process.env[k]) env[k] = process.env[k];
   }
   return env;
 }
