@@ -75,6 +75,12 @@ function acharDeptosFiscais(deptos: DeptoRow[]): string[] {
   return [fiscal?.id, fiscalSn?.id].filter((v): v is string => !!v);
 }
 
+// ⚠️ MODO TESTE (PROVISÓRIO — remover quando a usuária terminar de testar):
+// enquanto o auto-envio está em teste, TODOS os alertas (sino + email) vão SÓ
+// pra esta usuária, pra não spammar a equipe. Coloque `null` pra voltar ao
+// normal (admins + gerentes do Fiscal + responsável da empresa).
+const ALERTA_TESTE_SOMENTE_USER_ID: string | null = 'c68da688-cefc-4d1e-ae7c-9a753833968f';
+
 /**
  * Quem deve receber o alerta de uma guia travada:
  *   - responsável fiscal da empresa (quando há empresaId e responsável setado);
@@ -86,6 +92,16 @@ export async function resolverDestinatariosFiscais(
   admin: SupabaseClient,
   empresaId: string | null,
 ): Promise<UsuarioRow[]> {
+  // MODO TESTE: manda só pra usuária de teste (ver constante no topo).
+  if (ALERTA_TESTE_SOMENTE_USER_ID) {
+    const { data } = await admin
+      .from('usuarios')
+      .select('id, nome, email, role, departamento_id, departamentos_extras_ids, ativo')
+      .eq('id', ALERTA_TESTE_SOMENTE_USER_ID)
+      .maybeSingle();
+    return data ? [data as UsuarioRow] : [];
+  }
+
   const [{ data: deptosData }, { data: usuariosData }] = await Promise.all([
     admin.from('departamentos').select('id, nome'),
     admin.from('usuarios').select('id, nome, email, role, departamento_id, departamentos_extras_ids, ativo'),
