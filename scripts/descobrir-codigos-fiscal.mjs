@@ -133,7 +133,7 @@ function extrairTodosCodigosDarf(texto) {
 const SEP = '[\\s_.-]+'; // separador entre data e nome do tributo
 const REGRAS_NOME = [
   { obrigacao: 'ICMS TDD', padroes: [/icms[\s_.-]*(a[\s_.-]*recolher[\s_.-]*-?[\s_.-]*)?t[td]d\b/i, /icms[\s_.-]+tdd/i, /icms[\s_.-]+ttd/i] },
-  { obrigacao: 'ICMS-ST/DIFAL', padroes: [/icms[\s_.-]+st(?!\s*entrad)/i, /icms-st/i, /substituicao[\s_.-]+tributaria/i] },
+  { obrigacao: 'ICMS-ST', padroes: [/icms[\s_.-]+st(?!\s*entrad)/i, /icms-st/i, /substituicao[\s_.-]+tributaria/i] },
   { obrigacao: 'ICMS ANTECIPADO', padroes: [/icms[\s_.-]+ant(ecip)?/i] },
   { obrigacao: 'ST ANTECIPADO', padroes: [/icms[\s_.-]+st[\s_.-]+entrada/i, /\bst[\s_.-]+antecip/i] },
   { obrigacao: 'ICMS NORMAL', padroes: [

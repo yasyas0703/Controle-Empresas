@@ -275,8 +275,8 @@ const PERFIS: Record<string, PerfilValidacao> = {
     denominacaoRegex: /icms\s*comercio\s*td/i,
     palavrasProibidas: ['simples nacional', 'icms\\s*comercio\\s*-\\s*outros', 'icms\\s*st\\s*entradas', 'icms\\s*diferenca\\s*de\\s*aliquota', 'icms\\s*rec\\s*\\.\\s*antecipado'],
   },
-  'ICMS-ST/DIFAL': {
-    nome: 'ICMS-ST / DIFAL',
+  'ICMS-ST': {
+    nome: 'ICMS-ST',
     anchorsObrigatorios: [],
     // SÓ Substituição Tributária (ST). DIFAL é obrigação SEPARADA (DIFERENCIAL
     // DE ALIQUOTA) — por isso "diferencial/difal" aqui é PALAVRA PROIBIDA: guia
@@ -286,8 +286,8 @@ const PERFIS: Record<string, PerfilValidacao> = {
     denominacaoRegex: /(icms\s*[-–]?\s*substituicao\s*tributaria|substituicao\s*tributaria\s*-\s*rpa|\bicms\s*st\b|gnre|guia\s*nacional\s*de\s*recolhimento)/i,
     palavrasProibidas: ['simples nacional', 'icms\\s*st\\s*entradas', 'diferencial\\s*de\\s*aliquota', 'icms\\s*diferenca\\s*de\\s*aliquota', 'difal'],
   },
-  'GIA-ST/DIFAL': {
-    nome: 'GIA-ST / DIFAL',
+  'GIA-ST': {
+    nome: 'GIA-ST',
     anchorsObrigatorios: [],
     // GIA-ST é uma DECLARAÇÃO (Guia de Informação e Apuração do ICMS-ST),
     // transmitida eletronicamente. Não deve reivindicar "guia nacional de
@@ -417,9 +417,11 @@ const ALIASES: Record<string, string> = {
   'DARF SERVICOS TOMADOS': 'DARF-SERVIÇOS TOMADOS',
   'DARF SERVIÇOS TOMADOS': 'DARF-SERVIÇOS TOMADOS',
   'DAS': 'EMISSÃO GUIA DAS',
-  'ICMS ST': 'ICMS-ST/DIFAL',
-  'GIA': 'GIA-ST/DIFAL',
-  'GIA-ST': 'GIA-ST/DIFAL',
+  'ICMS ST': 'ICMS-ST',
+  'GIA': 'GIA-ST',
+  // Retrocompat: nomes antigos (antes de separar ST do DIFAL) -> novos.
+  'ICMS-ST/DIFAL': 'ICMS-ST',
+  'GIA-ST/DIFAL': 'GIA-ST',
   'DIFAL': 'DIFERENCIAL DE ALIQUOTA',
   'DIFERENCIAL DE ALÍQUOTA': 'DIFERENCIAL DE ALIQUOTA',
   'ISS PRESTADOR': 'ISS - PRESTAÇÃO DE SERVIÇOS',

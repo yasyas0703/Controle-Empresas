@@ -34,7 +34,7 @@ const INTERNAS = new Set([
 
 // Todas as obrigações que existem no sistema (pra marcar não-detectadas como inativas)
 const TODAS_REGIME_NORMAL = [
-  'ICMS NORMAL', 'ICMS TDD', 'SPED ICMS/IPI', 'IPI', 'GIA-ST/DIFAL', 'ICMS-ST/DIFAL',
+  'ICMS NORMAL', 'ICMS TDD', 'SPED ICMS/IPI', 'IPI', 'GIA-ST', 'ICMS-ST',
   'ISS - PRESTAÇÃO DE SERVIÇOS', 'ISS - SERVIÇOS TOMADOS', 'REINF', 'DARF-SERVIÇOS TOMADOS',
   'PIS', 'COFINS', 'SPED CONTRIBUIÇÕES', 'CSLL', 'IRPJ', 'DIFERENCIAL DE ALIQUOTA',
   'DAPI', 'DIME',
@@ -76,8 +76,8 @@ function parseCsv(text) {
 // Mapa nome detectado → nome canônico em VENCIMENTOS_FISCAIS_NOMES
 const ALIASES = {
   'DARF': 'DARF-SERVIÇOS TOMADOS',
-  'GIA': 'GIA-ST/DIFAL',
-  'DIFAL': 'ICMS-ST/DIFAL',
+  'GIA': 'GIA-ST',
+  'DIFAL': 'ICMS-ST',
 };
 
 function canonicalizar(obrig) {

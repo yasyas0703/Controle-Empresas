@@ -59,8 +59,8 @@ function parseCsv(text) {
 
 const ALIASES = {
   'DARF': 'DARF-SERVIÇOS TOMADOS',
-  'GIA': 'GIA-ST/DIFAL',
-  'DIFAL': 'ICMS-ST/DIFAL',
+  'GIA': 'GIA-ST',
+  'DIFAL': 'ICMS-ST',
 };
 function canonicalizar(o) { return ALIASES[o] || o; }
 
