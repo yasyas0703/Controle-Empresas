@@ -185,6 +185,22 @@ function compPorRotulo(texto: string): string | null {
   }
   return null;
 }
+function compPorChaveDfe(texto: string): string | null {
+  // Chave de acesso de NFe/CTe/NFCe (44 dígitos): cUF(2) + AAMM(4) + CNPJ(14) +
+  // modelo(2) + ... O AAMM é o ano/mês de EMISSÃO da nota — boa proxy de
+  // competência quando a guia não traz período de referência (ex: GNRE de
+  // ICMS-ST por operação, que cita a Chave da DFe nas info. complementares).
+  // O modelo (pos. 20-21) confirma que é chave fiscal de verdade, não o código
+  // de barras da própria guia.
+  for (const m of texto.matchAll(/\d{44}/g)) {
+    const chave = m[0];
+    if (!['55', '57', '65'].includes(chave.slice(20, 22))) continue; // NFe / CTe / NFCe
+    const y = 2000 + Number(chave.slice(2, 4));
+    const mes = Number(chave.slice(4, 6));
+    if (compValida(y, mes)) return compYm(y, mes);
+  }
+  return null;
+}
 function compPorVencimento(texto: string): string | null {
   const limite = Date.now() + 200 * 86400000; // descarta vencimento absurdamente no futuro
   let best: { y: number; m: number; ts: number } | null = null;
@@ -205,5 +221,5 @@ function compPorVencimento(texto: string): string | null {
 
 /** Lê a competência (YYYY-MM) de dentro do PDF (estratégia em camadas, ver acima). */
 export function competenciaDoPdf(texto: string): string | null {
-  return compPorIntervalo(texto) ?? compPorRotulo(texto) ?? compPorVencimento(texto) ?? extrairDados(texto).competencia;
+  return compPorIntervalo(texto) ?? compPorRotulo(texto) ?? compPorChaveDfe(texto) ?? compPorVencimento(texto) ?? extrairDados(texto).competencia;
 }
