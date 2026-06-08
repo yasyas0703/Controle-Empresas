@@ -175,9 +175,15 @@ function compPorIntervalo(texto: string): string | null {
 }
 function compPorRotulo(texto: string): string | null {
   const pats = [
+    // Rótulo ANTES do valor (formato comum).
     /per[ií]odo\s*de\s*apura[çc][aã]o[^\d]{0,20}(\d{1,2})[\/\-.](\d{4})/i,
     /compet[eê]ncia[^\d]{0,20}(\d{1,2})[\/\-.](\d{4})/i,
     /m[eê]s\s*(?:ano\s*)?(?:de\s*)?refer[eê]ncia[^\d]{0,20}(\d{1,2})\s*[\/\-.]\s*(\d{4})/i,
+    // Valor ANTES do rótulo — comum no texto extraído de DAE-MG ("05 / 2026 Mês
+    // Ano de Referência") e DARE-SP ("04/2026 07 - Referência"). O lookbehind
+    // (?<![\d\/.\-]) evita capturar MM/AAAA de DENTRO de uma data completa
+    // DD/MM/AAAA (ex: o vencimento "08/06/2026" não vira competência 06/2026).
+    /(?<![\d\/.\-])(\d{1,2})\s*[\/\-.]\s*(\d{4})\s*(?:\d{1,2}\s*[-–]\s*)?(?:m[eê]s\s*(?:ano\s*)?(?:de\s*)?)?refer[eê]ncia/i,
   ];
   for (const re of pats) {
     const m = texto.match(re);
