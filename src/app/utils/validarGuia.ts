@@ -284,7 +284,12 @@ const PERFIS: Record<string, PerfilValidacao> = {
   'GIA-ST/DIFAL': {
     nome: 'GIA-ST / DIFAL',
     anchorsObrigatorios: [],
-    denominacaoRegex: /(gia-?st|comprovante\s*de\s*transmissao|guia\s*informativa|guia\s*nacional\s*de\s*recolhimento|icms\s*diferenca\s*de\s*aliquota)/i,
+    // GIA-ST é uma DECLARAÇÃO (Guia de Informação e Apuração do ICMS-ST),
+    // transmitida eletronicamente. Não deve reivindicar "guia nacional de
+    // recolhimento" (isso é GNRE, guia de PAGAMENTO) nem "icms diferenca de
+    // aliquota" (tipo de tributo) — essas frases colidiam com ICMS-ST/DIFAL e
+    // DIFERENCIAL DE ALIQUOTA e geravam obrigacao_ambigua.
+    denominacaoRegex: /(gia-?st|comprovante\s*de\s*transmissao|guia\s*informativa)/i,
   },
   'DIFERENCIAL DE ALIQUOTA': {
     nome: 'Diferencial de Alíquota',
@@ -336,12 +341,19 @@ const PERFIS: Record<string, PerfilValidacao> = {
   'RECIBO DAS': {
     nome: 'Recibo PGDAS-D',
     anchorsObrigatorios: ['pgdas-d'],
-    denominacaoRegex: /(recibo\s*de\s*entrega\s*da\s*apuracao|simples\s*nacional)/i,
+    // O recibo é o comprovante de ENTREGA da declaração. A âncora 'pgdas-d'
+    // garante que só casa com documento do PGDAS-D (não vaza pra SPED etc.).
+    denominacaoRegex: /recibo\s*de\s*entrega/i,
   },
   'DECLARAÇÃO DAS': {
     nome: 'Declaração DAS (PGDAS-D)',
     anchorsObrigatorios: ['pgdas-d'],
-    denominacaoRegex: /(recibo\s*de\s*entrega\s*da\s*apuracao|simples\s*nacional)/i,
+    // A declaração/extrato da apuração — é PDF DIFERENTE do recibo (confirmado
+    // com a usuária 2026-06-08). Marca positiva de "declaracao/extrato" + proíbe
+    // "recibo de entrega" pra não colidir com o perfil RECIBO DAS. A âncora
+    // 'pgdas-d' mantém o escopo no Simples Nacional.
+    denominacaoRegex: /(declaracao|extrato\s*d[ao]?\s*apuracao|extrato\s*do\s*simples)/i,
+    palavrasProibidas: ['recibo\\s*de\\s*entrega'],
   },
   'SINTEGRA': {
     nome: 'SINTEGRA',
