@@ -278,11 +278,13 @@ const PERFIS: Record<string, PerfilValidacao> = {
   'ICMS-ST/DIFAL': {
     nome: 'ICMS-ST / DIFAL',
     anchorsObrigatorios: [],
-    // Pega ICMS-ST geral (indústria/saída/outros) — ex: DAE-MG "icms st
-    // industria-outros", que antes não casava com nada. "st entradas" fica de
-    // fora (é do ST ANTECIPADO) via palavrasProibidas.
-    denominacaoRegex: /(icms\s*[-–]?\s*substituicao\s*tributaria|substituicao\s*tributaria\s*-\s*rpa|\bicms\s*st\b|gnre|guia\s*nacional\s*de\s*recolhimento|icms\s*diferenca\s*de\s*aliquota)/i,
-    palavrasProibidas: ['simples nacional', 'icms\\s*st\\s*entradas'],
+    // SÓ Substituição Tributária (ST). DIFAL é obrigação SEPARADA (DIFERENCIAL
+    // DE ALIQUOTA) — por isso "diferencial/difal" aqui é PALAVRA PROIBIDA: guia
+    // de DIFAL não cai em ST. Pega ICMS-ST geral (indústria/saída/outros, ex.
+    // DAE-MG "icms st industria-outros") + GNRE/guia nacional SEM marca de DIFAL.
+    // "st entradas" fica de fora (é do ST ANTECIPADO).
+    denominacaoRegex: /(icms\s*[-–]?\s*substituicao\s*tributaria|substituicao\s*tributaria\s*-\s*rpa|\bicms\s*st\b|gnre|guia\s*nacional\s*de\s*recolhimento)/i,
+    palavrasProibidas: ['simples nacional', 'icms\\s*st\\s*entradas', 'diferencial\\s*de\\s*aliquota', 'icms\\s*diferenca\\s*de\\s*aliquota', 'difal'],
   },
   'GIA-ST/DIFAL': {
     nome: 'GIA-ST / DIFAL',
