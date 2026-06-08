@@ -87,8 +87,11 @@ function regimeEfetivo(
   return null;
 }
 
-function mesAtualKey(): string {
+// Mês padrão = competência (mês ANTERIOR), igual ao Checklist Mensal: em junho,
+// o pessoal está fechando/enviando a competência de maio.
+function mesPadrao(): string {
   const d = new Date();
+  d.setMonth(d.getMonth() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
@@ -183,7 +186,7 @@ function SidebarEmpresaRow({
 export default function EnvioGuiasPage() {
   const { empresas, departamentos, currentUser, canManage, isPrivileged, authReady, mostrarAlerta } = useSistema();
 
-  const [mes, setMes] = useState<string>(mesAtualKey());
+  const [mes, setMes] = useState<string>(mesPadrao());
   const [search, setSearch] = useState('');
   const [filtroObrigacao, setFiltroObrigacao] = useState<string>(''); // '' = todas
   const [filtroStatus, setFiltroStatus] = useState<'todos' | 'pendentes' | 'enviadas'>('todos');
