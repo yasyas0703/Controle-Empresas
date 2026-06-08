@@ -328,7 +328,10 @@ const PERFIS: Record<string, PerfilValidacao> = {
     // obrigacao_ambigua em massa. \b(iss|issqn)\b só pega ISS/ISSQN como palavra.
     // "imposto sobre servic(o)" cobre municípios que escrevem por extenso.
     denominacaoRegex: /\b(iss|issqn)\b|imposto\s+sobre\s+servic/i,
-    palavrasProibidas: ['tomados', 'retido\\s*na\\s*fonte', 'issqn\\s*tomador'],
+    // "simples nacional" proibido: o DAS/PGDAS lista o ISS como um dos tributos
+    // do Simples + o município, e o ISS casava por engano (133 guias do Simples
+    // viravam ambíguas [ISS, DAS]). Guia avulsa de ISS municipal nunca diz isso.
+    palavrasProibidas: ['tomados', 'retido\\s*na\\s*fonte', 'issqn\\s*tomador', 'simples\\s*nacional'],
     verificaMunicipioDaEmpresa: true,
   },
   'ISS - SERVIÇOS TOMADOS': {
@@ -339,7 +342,8 @@ const PERFIS: Record<string, PerfilValidacao> = {
     // ISS (inclusive Prestado), colidindo com o perfil de Prestação e marcando
     // tudo como obrigacao_ambigua. Agora guia de Prestado reprova aqui.
     denominacaoRegex: /(tomad|retido\s*na\s*fonte|issqn\s*tomador)/i,
-    palavrasProibidas: [],
+    // Mesmo motivo do Prestação: não casar com documento do Simples Nacional.
+    palavrasProibidas: ['simples\\s*nacional'],
     verificaMunicipioDaEmpresa: true,
   },
 
