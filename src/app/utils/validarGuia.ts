@@ -278,8 +278,11 @@ const PERFIS: Record<string, PerfilValidacao> = {
   'ICMS-ST/DIFAL': {
     nome: 'ICMS-ST / DIFAL',
     anchorsObrigatorios: [],
-    denominacaoRegex: /(icms\s*-\s*substituicao\s*tributaria|icms\s*–\s*substituicao\s*tributaria|icms\s*st\s*entradas|icms\s*diferenca\s*de\s*aliquota|substituicao\s*tributaria\s*-\s*rpa|gnre|guia\s*nacional\s*de\s*recolhimento)/i,
-    palavrasProibidas: ['simples nacional'],
+    // Pega ICMS-ST geral (indústria/saída/outros) — ex: DAE-MG "icms st
+    // industria-outros", que antes não casava com nada. "st entradas" fica de
+    // fora (é do ST ANTECIPADO) via palavrasProibidas.
+    denominacaoRegex: /(icms\s*[-–]?\s*substituicao\s*tributaria|substituicao\s*tributaria\s*-\s*rpa|\bicms\s*st\b|gnre|guia\s*nacional\s*de\s*recolhimento|icms\s*diferenca\s*de\s*aliquota)/i,
+    palavrasProibidas: ['simples nacional', 'icms\\s*st\\s*entradas'],
   },
   'GIA-ST/DIFAL': {
     nome: 'GIA-ST / DIFAL',
@@ -306,7 +309,10 @@ const PERFIS: Record<string, PerfilValidacao> = {
   'DIME': {
     nome: 'DIME (Santa Catarina)',
     anchorsObrigatorios: [],
-    denominacaoRegex: /(dime|declaracao\s*do\s*ic\s*ms\s*mensal|santa\s*catarina)/i,
+    // \bdime\b com fronteira: /dime/ casava com "aTENDIMEnto" (substring),
+    // virando candidato fantasma em guias municipais. "santa catarina" removido
+    // (genérico demais — aparece em endereços). estadoEsperado SC ainda orienta.
+    denominacaoRegex: /\bdime\b|declaracao\s*do\s*ic\s*ms\s*mensal/i,
     estadoEsperado: 'SC',
   },
 
@@ -314,7 +320,12 @@ const PERFIS: Record<string, PerfilValidacao> = {
   'ISS - PRESTAÇÃO DE SERVIÇOS': {
     nome: 'ISS Prestação de Serviços',
     anchorsObrigatorios: [],
-    denominacaoRegex: /(iss|issqn)/i,
+    // FRONTEIRA DE PALAVRA é crítica: /(iss|issqn)/ casava com "emISSao",
+    // "comISSao", "transmISSao" — que aparecem em QUASE TODA guia (DARE, DAE,
+    // DARF...). Isso fazia o ISS colidir com a obrigação real e gerar
+    // obrigacao_ambigua em massa. \b(iss|issqn)\b só pega ISS/ISSQN como palavra.
+    // "imposto sobre servic(o)" cobre municípios que escrevem por extenso.
+    denominacaoRegex: /\b(iss|issqn)\b|imposto\s+sobre\s+servic/i,
     palavrasProibidas: ['tomados', 'retido\\s*na\\s*fonte', 'issqn\\s*tomador'],
     verificaMunicipioDaEmpresa: true,
   },
