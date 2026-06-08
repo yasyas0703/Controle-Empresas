@@ -665,8 +665,15 @@ export async function POST(req: Request) {
   }
 
   // 15. Envia (Gmail + portal + checklist) — anexo com nome canônico.
+  // baseUrl do host da requisição → pixel de tracking de abertura ("Visualizado").
+  const baseUrl = (() => {
+    const proto = req.headers.get('x-forwarded-proto') ?? 'https';
+    const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host');
+    if (host) return `${proto}://${host}`;
+    return process.env.NEXT_PUBLIC_APP_URL?.trim()?.replace(/\/+$/, '') ?? null;
+  })();
   const envio = await enviarGuia(admin, {
-    empresa, obrigacao, competencia, nomeArquivo: nomeCanonico, fileBuffer, ghostUserId,
+    empresa, obrigacao, competencia, nomeArquivo: nomeCanonico, fileBuffer, ghostUserId, baseUrl,
   });
 
   if (!envio.ok) {

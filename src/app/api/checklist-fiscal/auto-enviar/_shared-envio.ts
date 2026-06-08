@@ -254,6 +254,9 @@ export async function enviarGuia(
      *  (ex: ao aprovar, queremos registrar o admin que aprovou). */
     enviadoPorIdOverride?: string;
     enviadoPorNomeOverride?: string;
+    /** Base URL (host da requisição) pra montar o pixel de tracking de abertura.
+     *  Sem isto, o email vai sem rastreamento de "Visualizado". */
+    baseUrl?: string | null;
   },
 ): Promise<ResultadoEnvio | ErroEnvio> {
   // 1. Carrega token Gmail do ghost user
@@ -311,7 +314,37 @@ export async function enviarGuia(
     `\nQualquer dúvida, estamos à disposição.\n\n` +
     `Atenciosamente.`;
   const escapeHtml = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
-  const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(bodyText)}</div>`;
+
+  // Pixel de tracking de abertura (igual ao envio manual). Precisa do checklistId
+  // e de um envioId: geramos o envioId aqui e garantimos a linha do checklist
+  // (só pra ter o id — sem marcar feito ainda). O MESMO envioId é gravado no
+  // envios_historico via marcarChecklistComoFeito, pra o /track-open casar e
+  // marcar "Visualizado".
+  const envioId = randomUUID();
+  let checklistIdPixel: string | null = null;
+  {
+    const { data: jaExiste } = await admin
+      .from('checklist_fiscal')
+      .select('id')
+      .eq('empresa_id', params.empresa.id)
+      .eq('mes', params.competencia)
+      .eq('obrigacao', params.obrigacao)
+      .maybeSingle();
+    if ((jaExiste as { id?: string } | null)?.id) {
+      checklistIdPixel = (jaExiste as { id: string }).id;
+    } else {
+      const { data: criado } = await admin
+        .from('checklist_fiscal')
+        .insert({ empresa_id: params.empresa.id, mes: params.competencia, obrigacao: params.obrigacao })
+        .select('id')
+        .maybeSingle();
+      checklistIdPixel = (criado as { id?: string } | null)?.id ?? null;
+    }
+  }
+  const pixelTag = (params.baseUrl && checklistIdPixel)
+    ? `<img src="${params.baseUrl.replace(/\/+$/, '')}/api/checklist-fiscal/track-open/${checklistIdPixel}/${envioId}.gif" width="1" height="1" alt="" style="display:none;border:0;outline:none;text-decoration:none;" />`
+    : '';
+  const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(bodyText)}</div>${pixelTag}`;
 
   const oauth2 = getOAuthClient();
   oauth2.setCredentials({ refresh_token: refreshToken });
@@ -348,6 +381,7 @@ export async function enviarGuia(
     gmailMessageId,
     enviadoPorIdOverride: params.enviadoPorIdOverride,
     enviadoPorNomeOverride: params.enviadoPorNomeOverride,
+    envioId,
   });
 
   // 6. Portal (best-effort)
@@ -438,6 +472,9 @@ export async function marcarChecklistComoFeito(
     gmailMessageId?: string;
     enviadoPorIdOverride?: string;
     enviadoPorNomeOverride?: string;
+    /** Id do evento de envio — passar o MESMO usado no pixel de tracking, pra
+     *  o /track-open conseguir achar e marcar como aberto. */
+    envioId?: string;
   },
 ): Promise<string | null> {
   const nowIso = new Date().toISOString();
@@ -458,7 +495,7 @@ export async function marcarChecklistComoFeito(
     .maybeSingle();
 
   const novoEvento = {
-    id: randomUUID(),
+    id: payload.envioId ?? randomUUID(),
     sucesso: payload.fonte !== 'auto-interna' ? true : true,  // ambos contam como sucesso
     enviado_em: nowIso,
     enviado_por_id: enviadoPorId,

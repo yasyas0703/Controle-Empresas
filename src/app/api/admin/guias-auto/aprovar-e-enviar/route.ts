@@ -157,6 +157,12 @@ export async function POST(req: Request) {
   const callerNome = (userRow as { nome?: string } | null)?.nome ?? 'Admin';
 
   // 7. Envia
+  const baseUrl = (() => {
+    const proto = req.headers.get('x-forwarded-proto') ?? 'https';
+    const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host');
+    if (host) return `${proto}://${host}`;
+    return process.env.NEXT_PUBLIC_APP_URL?.trim()?.replace(/\/+$/, '') ?? null;
+  })();
   const envio = await enviarGuia(admin, {
     empresa,
     obrigacao: pend.obrigacao,
@@ -166,6 +172,7 @@ export async function POST(req: Request) {
     ghostUserId,
     enviadoPorIdOverride: authz.callerId,
     enviadoPorNomeOverride: `${callerNome} (aprovou pendência)`,
+    baseUrl,
   });
 
   if (!envio.ok) {
