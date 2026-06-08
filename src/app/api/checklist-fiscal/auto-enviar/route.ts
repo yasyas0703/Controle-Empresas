@@ -30,6 +30,10 @@ import {
 import {
   identificarEmpresa, identificarObrigacao, competenciaDoPdf, type ConfigObrigacao,
 } from './_identificar';
+import {
+  resolverDestinatariosFiscais, criarNotificacaoSistema,
+  rotuloTipoProblema, severidadeDoProblema,
+} from '@/lib/alertasAutoEnvio';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
 
@@ -125,7 +129,18 @@ async function registrarProblema(
     obrigacaoParseada: string | null;
   },
 ): Promise<void> {
-  await admin
+  // Dedup do alerta: se já existe linha (mesmo arquivo) ainda aberta, é
+  // reprocessamento (retry de rede, re-scan) — não notifica de novo. Só
+  // dispara o sino quando o problema é NOVO.
+  const { data: existente } = await admin
+    .from('guias_auto_problemas')
+    .select('id, resolvido_em')
+    .eq('caminho_servidor', payload.caminhoServidor)
+    .eq('hash_arquivo', payload.hashArquivo)
+    .maybeSingle();
+  const ehNovo = !existente || existente.resolvido_em != null;
+
+  const { error: upErr } = await admin
     .from('guias_auto_problemas')
     .upsert(
       {
@@ -144,11 +159,65 @@ async function registrarProblema(
         resolucao: null,
       },
       { onConflict: 'caminho_servidor,hash_arquivo' },
-    )
-    .then(
-      () => undefined,
-      (err) => console.error('[auto-enviar] falha ao registrar problema:', err),
     );
+  if (upErr) {
+    console.error('[auto-enviar] falha ao registrar problema:', upErr.message);
+    return;
+  }
+
+  if (ehNovo) {
+    // Alerta imediato no sino — best-effort, nunca derruba o processamento.
+    await alertarGuiaTravada(admin, payload).catch((err) =>
+      console.error('[auto-enviar] falha ao alertar guia travada:', err),
+    );
+  }
+}
+
+/**
+ * Cria a notificação no sino quando uma guia trava. Resolve destinatários
+ * (responsável fiscal da empresa + gerentes/admins do Fiscal) e monta uma
+ * mensagem legível. O email (resumo) é responsabilidade do cron.
+ */
+async function alertarGuiaTravada(
+  admin: SupabaseClient,
+  payload: {
+    nomeArquivo: string;
+    empresaId: string | null;
+    tipoProblema: string;
+    obrigacaoParseada: string | null;
+    competenciaParseada: string | null;
+  },
+): Promise<void> {
+  let empresaNome: string | null = null;
+  if (payload.empresaId) {
+    const { data } = await admin
+      .from('empresas')
+      .select('apelido, razao_social, codigo')
+      .eq('id', payload.empresaId)
+      .maybeSingle();
+    empresaNome = data?.apelido || data?.razao_social || data?.codigo || null;
+  }
+
+  const destinatarios = await resolverDestinatariosFiscais(admin, payload.empresaId);
+  if (destinatarios.length === 0) return;
+
+  const rotulo = rotuloTipoProblema(payload.tipoProblema);
+  const tipo = severidadeDoProblema(payload.tipoProblema);
+  const partes = [
+    empresaNome ? `Empresa: ${empresaNome}.` : 'Empresa não identificada.',
+    payload.obrigacaoParseada ? `Obrigação: ${payload.obrigacaoParseada}.` : null,
+    payload.competenciaParseada ? `Competência: ${payload.competenciaParseada}.` : null,
+    `Arquivo: ${payload.nomeArquivo}.`,
+    'Resolva em Vencimentos Fiscais › Auto-problemas.',
+  ].filter(Boolean);
+
+  await criarNotificacaoSistema(admin, {
+    titulo: `Guia não enviada automaticamente: ${rotulo}`,
+    mensagem: partes.join(' '),
+    tipo,
+    empresaId: payload.empresaId,
+    destinatarios: destinatarios.map((u) => u.id),
+  });
 }
 
 async function registrarProcessado(

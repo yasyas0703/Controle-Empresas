@@ -113,6 +113,7 @@ if (!TOKEN) {
 }
 const BASE_URL = urlArg || env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 const API_URL = `${BASE_URL.replace(/\/+$/, '')}/api/checklist-fiscal/auto-enviar`;
+const HEARTBEAT_URL = `${API_URL}/heartbeat`;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // State local (idempotência rápida — não substitui a do servidor)
@@ -489,6 +490,31 @@ async function enviarParaApi(caminho, buffer, hash) {
   }
 }
 
+// Heartbeat: avisa o servidor que o watcher está vivo (dead-man switch). Se
+// parar de bater, o cron alerta "watcher parado". Best-effort — nunca derruba
+// o processo. Em dry-run não toca no servidor.
+async function baterPonto() {
+  if (DRY_RUN) return;
+  const ac = new AbortController();
+  const tid = setTimeout(() => ac.abort('timeout'), 15_000);
+  try {
+    await fetch(HEARTBEAT_URL, {
+      method: 'POST',
+      headers: { 'X-Machine-Token': TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        host: process.env.COMPUTERNAME || null,
+        modo: ONCE ? 'once' : 'watch',
+        pendentes: fila.length,
+      }),
+      signal: ac.signal,
+    });
+  } catch {
+    // silencioso — heartbeat é best-effort
+  } finally {
+    clearTimeout(tid);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Bootstrap
 // ═══════════════════════════════════════════════════════════════════════════
@@ -531,6 +557,10 @@ function iniciar() {
 
   log.info(`Watcher iniciado. Observando ${PASTA_ENTRADA}.`);
   logFile('info', 'startup', { entrada: PASTA_ENTRADA, apiUrl: API_URL });
+
+  // Bate ponto agora e, no modo watch contínuo, a cada 5 min.
+  baterPonto();
+  if (!ONCE) setInterval(baterPonto, 5 * 60_000);
 
   const watcher = chokidar.watch(PASTA_ENTRADA, {
     persistent: true,

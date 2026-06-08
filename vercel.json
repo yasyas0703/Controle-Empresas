@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/alertar-vencimentos",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/alertar-pendencias-auto",
+      "schedule": "0 12 * * *"
     }
   ]
 }

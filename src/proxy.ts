@@ -40,6 +40,8 @@ function isPublicPath(pathname: string): boolean {
   // Endpoint chamado pelo daemon local que olha a pasta T:/Fiscal. Autentica
   // via header X-Machine-Token (env AUTO_ENVIO_TOKEN) — não usa cookie staff.
   if (pathname === '/api/checklist-fiscal/auto-enviar') return true;
+  // Heartbeat do mesmo daemon (dead-man switch) — também autentica por X-Machine-Token.
+  if (pathname === '/api/checklist-fiscal/auto-enviar/heartbeat') return true;
 
   return false;
 }

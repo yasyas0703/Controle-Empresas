@@ -60,42 +60,96 @@ interface Resposta {
   contagens: { problemasPendentes: number; pendenciasAprovacao: number };
 }
 
+// Mapa alinhado aos tipo_problema que o /auto-enviar emite HOJE (identificação
+// por CONTEÚDO do PDF, não mais por nome de arquivo). Chaves antigas mantidas no
+// fim por compatibilidade com linhas velhas no banco.
 const TIPO_PROBLEMA_LABEL: Record<string, { label: string; comoResolver: string }> = {
-  empresa_nao_encontrada: {
-    label: 'Empresa não cadastrada',
-    comoResolver: 'Cadastre a empresa em /empresas com o apelido EXATO do nome da pasta no T:\\, ou renomeie a pasta.',
+  // ── Extração ──
+  pdf_ilegivel: {
+    label: 'PDF ilegível (imagem/escaneado)',
+    comoResolver: 'O PDF não tem texto (provável imagem/escaneado). Baixe a guia direto do portal em PDF de texto, ou suba manualmente em Envio de Guias.',
   },
-  obrigacao_desconhecida: {
-    label: 'Obrigação não reconhecida',
-    comoResolver: 'Nome do arquivo não bateu com nenhuma obrigação conhecida. Renomeie seguindo o padrão (ex: "2026-04 ICMS.pdf").',
+  // ── Empresa ──
+  empresa_nao_identificada: {
+    label: 'Empresa não identificada no PDF',
+    comoResolver: 'O PDF não traz CNPJ, Inscrição Estadual nem razão social de empresa cadastrada. Confirme se é guia desta empresa; se for, envie manualmente em Envio de Guias.',
   },
-  nome_fora_padrao: {
-    label: 'Nome do arquivo fora do padrão',
-    comoResolver: 'Esperado: "AAAA-MM OBRIGAÇÃO.pdf". Renomeie e salve de novo no T:\\.',
+  empresa_ambigua: {
+    label: 'Mais de uma empresa no PDF',
+    comoResolver: 'O PDF tem CNPJ/IE de mais de uma empresa cadastrada. Confirme de qual é e envie manualmente em Envio de Guias.',
+  },
+  empresa_match_fraco: {
+    label: 'Empresa só pelo nome (sem CNPJ/IE)',
+    comoResolver: 'Bateu o nome mas não o CNPJ/IE — por segurança não enviei sozinho. Confirme a empresa e envie em Envio de Guias.',
+  },
+  // ── Obrigação ──
+  obrigacao_nao_identificada: {
+    label: 'Tipo de guia não reconhecido',
+    comoResolver: 'O conteúdo do PDF não bateu com nenhum tipo de guia conhecido. Verifique se é uma guia suportada; se for, envie manualmente.',
+  },
+  obrigacao_ambigua: {
+    label: 'Tipo de guia ambíguo',
+    comoResolver: 'Mais de um tipo de guia bate com o conteúdo e o código de receita não desempatou. Confirme o tipo e cadastre o código de receita da obrigação pra essa empresa em "Configurar Obrigações".',
   },
   obrigacao_nao_configurada: {
     label: 'Obrigação não configurada',
-    comoResolver: 'Vá em /vencimentos-fiscais/envio → "Configurar Obrigações" da empresa, e cadastre.',
+    comoResolver: 'Vá em Envio → "Configurar Obrigações" da empresa e cadastre essa obrigação.',
   },
   obrigacao_inativa: {
     label: 'Obrigação marcada como inativa',
     comoResolver: 'Se deveria estar ativa, vá em "Configurar Obrigações" e ative.',
   },
-  validacao_falhou: {
-    label: 'PDF não confere com a empresa/obrigação',
-    comoResolver: 'O CNPJ/código de receita no PDF não bate com o cadastro. Confira se o PDF está na pasta certa.',
+  // ── Competência ──
+  competencia_nao_identificada: {
+    label: 'Competência (mês) não identificada',
+    comoResolver: 'Não achei o mês de referência no PDF. Verifique se a guia tem período de apuração legível; se sim, envie manualmente informando a competência.',
+  },
+  competencia_futura: {
+    label: 'Competência no futuro',
+    comoResolver: 'A competência lida está num mês futuro — provável erro de leitura ou PDF do mês errado. Confira a guia.',
   },
   competencia_antiga: {
     label: 'Competência > 60 dias',
-    comoResolver: 'PDF retroativo não envia sozinho. Se realmente quiser enviar, use /vencimentos-fiscais/envio (UI manual).',
+    comoResolver: 'PDF retroativo não envia sozinho. Se for legítimo, aprove na aba "Aprovações pendentes" ou use Envio de Guias.',
   },
-  gmail_nao_conectado: {
-    label: 'Gmail do envio automático desconectado',
-    comoResolver: 'Reconecte a conta Gmail do usuário automático (ghost) em /obrigacoes ou similar.',
+  // ── Validação / envio ──
+  validacao_falhou: {
+    label: 'PDF não confere com a empresa/obrigação',
+    comoResolver: 'O CNPJ/denominação/código no PDF não bate com o cadastro. Confira a guia e o cadastro da obrigação.',
   },
   sem_emails: {
     label: 'Empresa sem emails cadastrados',
     comoResolver: 'Cadastre pelo menos 1 email do cliente em /empresas → aba "Emails".',
+  },
+  gmail_nao_conectado: {
+    label: 'Gmail do envio automático desconectado',
+    comoResolver: 'Reconecte a conta Gmail do usuário automático (ghost) nas configurações de Gmail.',
+  },
+  gmail_send_failed: {
+    label: 'Falha ao enviar pelo Gmail',
+    comoResolver: 'O Gmail recusou o envio (quota, anexo ou destinatário). Veja os detalhes e tente de novo; se persistir, reconecte o Gmail.',
+  },
+  storage_upload_failed: {
+    label: 'Falha ao subir o arquivo',
+    comoResolver: 'O arquivo não subiu pro storage. Geralmente é transitório — tente de novo.',
+  },
+  erro: {
+    label: 'Erro inesperado no processamento',
+    comoResolver: 'Veja os detalhes técnicos abaixo. Se persistir, acione o suporte.',
+  },
+
+  // ── Compatibilidade com linhas antigas (pipeline por nome de arquivo) ──
+  empresa_nao_encontrada: {
+    label: 'Empresa não cadastrada',
+    comoResolver: 'Cadastre a empresa em /empresas, ou confirme e envie manualmente em Envio de Guias.',
+  },
+  obrigacao_desconhecida: {
+    label: 'Obrigação não reconhecida',
+    comoResolver: 'O tipo de guia não foi reconhecido. Confirme e envie manualmente em Envio de Guias.',
+  },
+  nome_fora_padrao: {
+    label: 'Nome do arquivo fora do padrão (legado)',
+    comoResolver: 'A identificação hoje é pelo conteúdo, não pelo nome. Reprocesse ou envie manualmente.',
   },
   erro_envio: {
     label: 'Erro técnico no envio',
@@ -103,7 +157,7 @@ const TIPO_PROBLEMA_LABEL: Record<string, { label: string; comoResolver: string 
   },
   primeira_vez_precisa_aprovacao: {
     label: '1ª vez — precisa aprovação',
-    comoResolver: 'Envio inaugural dessa empresa+obrigação. Aprove via /vencimentos-fiscais/envio (manual) — próximos sairão automáticos.',
+    comoResolver: 'Envio inaugural dessa empresa+obrigação. Aprove na aba "Aprovações pendentes".',
   },
 };
 
