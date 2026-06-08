@@ -25,12 +25,17 @@ export const runtime = 'nodejs';
 const BUCKET = 'documentos';
 
 function resolveBaseUrl(req: Request): string | null {
-  const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (fromEnv) return fromEnv.replace(/\/+$/, '');
+  // Host da requisição PRIMEIRO: o pixel precisa apontar pro domínio em que o
+  // app está rodando agora. Se priorizarmos NEXT_PUBLIC_APP_URL e ela ficar
+  // num domínio antigo (ex: rename do projeto no Vercel), o pixel embute uma
+  // URL morta (404) e o tracking de abertura para de funcionar silenciosamente.
+  // A env vira só fallback pra chamadas sem host (server-to-server).
   const proto = req.headers.get('x-forwarded-proto') ?? 'https';
   const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host');
-  if (!host) return null;
-  return `${proto}://${host}`;
+  if (host) return `${proto}://${host}`;
+  const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/\/+$/, '');
+  return null;
 }
 
 interface SendPayload {
