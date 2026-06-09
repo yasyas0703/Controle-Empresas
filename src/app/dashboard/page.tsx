@@ -89,7 +89,9 @@ const AUTO_PROBLEMA_LABEL: Record<string, string> = {
 // ⚠️ MODO TESTE (PROVISÓRIO — remover quando terminar de testar): o card de
 // guias travadas aparece SÓ pra esta usuária por enquanto. Coloque null pra
 // voltar ao normal (todos os admins/gerentes veem).
-const CARD_AUTO_SOMENTE_USER_ID: string | null = '0dd329df-3ce7-403b-9bee-2768c33686a3'; // admin@ (Testes)
+// Aponta pra YASMIN (quem opera/assiste o teste), não pro ghost admin@ (que
+// só ENVIA) — senão o card fica invisível pra quem está testando.
+const CARD_AUTO_SOMENTE_USER_ID: string | null = 'c68da688-cefc-4d1e-ae7c-9a753833968f'; // Yasmin
 
 const DASHBOARD_TAG_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700';
 const DASHBOARD_HISTORY_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700';

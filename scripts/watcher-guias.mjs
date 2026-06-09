@@ -279,8 +279,40 @@ function moverParaPendentes(caminho) {
   }
 }
 
+// Erros do Windows quando o arquivo está ABERTO/travado (visualizador de PDF,
+// antivírus, handle do chokidar ainda segurando). Não é falha de envio — o
+// arquivo só não pode ser MOVIDO enquanto está aberto.
+function ehErroDeLock(err) {
+  return !!err && (err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'EACCES');
+}
+
+function dormir(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+// Renomeia com algumas re-tentativas curtas — resolve locks transitórios
+// (antivírus passando, handle solto pelo chokidar) sem esperar a próxima
+// varredura. Lock persistente (PDF aberto pela usuária) cai de volta no caller.
+async function renomearComRetry(de, para, esperas = [300, 1000, 2500]) {
+  for (let i = 0; ; i++) {
+    try {
+      renameSync(de, para);
+      return { ok: true };
+    } catch (err) {
+      if (ehErroDeLock(err) && i < esperas.length) {
+        await dormir(esperas[i]);
+        continue;
+      }
+      return { ok: false, locked: ehErroDeLock(err), err };
+    }
+  }
+}
+
 // Arquiva o PDF enviado na pasta definitiva da empresa.
-function arquivarNaEmpresa(caminho, destino) {
+// Retorna true se conseguiu TIRAR o arquivo da entrada; false se ficou preso
+// (PDF aberto) — nesse caso o caller guarda o destino e a varredura periódica
+// re-tenta SÓ a movimentação depois, SEM reenviar.
+async function arquivarNaEmpresa(caminho, destino) {
   const pasta = acharPastaEmpresa(destino?.candidatosPasta || []);
   if (!pasta) {
     log.warn(`Enviado, mas não achei a pasta da empresa no T: (${(destino?.candidatosPasta || []).join(' / ')}). Vai pra _PENDENTES pra arquivar na mão.`);
@@ -295,24 +327,57 @@ function arquivarNaEmpresa(caminho, destino) {
   }
   const nome = destino.nomeArquivo || basename(caminho);
   const alvo = caminhoSemColisao(destDir, nome);
-  try {
-    renameSync(caminho, alvo);
+  const r = await renomearComRetry(caminho, alvo);
+  if (r.ok) {
     log.ok(`Arquivado: ${basename(alvo)} → ${destDir}`);
     return true;
-  } catch (err) {
-    log.err(`Falha ao arquivar ${basename(caminho)} em ${destDir}: ${err.message}`);
+  }
+  if (r.locked) {
+    // NÃO é erro de envio: o email já saiu e o checklist já foi marcado. Só não
+    // dá pra mover o PDF porque ele está ABERTO. Loga calmo e deixa na entrada —
+    // a varredura periódica arquiva sozinha assim que o arquivo for fechado.
+    log.warn(`Enviado e marcado no checklist — só não arquivei "${basename(caminho)}" ainda porque o PDF está ABERTO (resource busy). Feche o arquivo que eu arquivo sozinho em alguns segundos.`);
     return false;
   }
+  // Erro real (permissão, caminho inválido): tira da entrada pra não ficar preso.
+  log.err(`Falha ao arquivar ${basename(caminho)} em ${destDir}: ${r.err?.message}. Vai pra _PENDENTES.`);
+  return moverParaPendentes(caminho);
 }
 
 // Decide pra onde o arquivo vai conforme o status retornado pela API.
-function moverConformeResultado(caminho, resultado) {
+// Retorna true se o arquivo saiu da entrada (arquivado ou movido pra pendentes);
+// false se ficou preso (re-tentar só a movimentação depois).
+async function moverConformeResultado(caminho, resultado) {
   const enviou = resultado.status === 'enviado' || resultado.status === 'interno_marcado_feito';
   if (enviou && resultado.destino) {
-    arquivarNaEmpresa(caminho, resultado.destino);
-  } else {
-    // pendente_*, erro, duplicado_periodo, ja_processado → sai da entrada
-    moverParaPendentes(caminho);
+    return await arquivarNaEmpresa(caminho, resultado.destino);
+  }
+  // pendente_*, erro, duplicado_periodo, ja_processado → sai da entrada
+  return moverParaPendentes(caminho);
+}
+
+// Varredura periódica de "arquivamentos presos": arquivos que JÁ foram enviados
+// (checklist marcado, email enviado) mas ficaram na entrada porque o PDF estava
+// aberto na hora (EBUSY). O chokidar não re-emite evento pra um arquivo que
+// continua parado, então precisamos olhar ativamente. Re-enfileira só esses —
+// processarArquivo vê o state terminal e re-tenta SÓ a movimentação, nunca
+// reenvia.
+function reprocessarArquivamentosPresos() {
+  let entradas;
+  try {
+    entradas = readdirSync(PASTA_ENTRADA, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const d of entradas) {
+    if (!d.isFile()) continue;
+    const caminho = join(PASTA_ENTRADA, d.name);
+    if (!pathInteressa(caminho)) continue;
+    const st = state.processados[caminho];
+    if (st && st.arquivado === false && st.destino
+        && (st.status === 'enviado' || st.status === 'interno_marcado_feito')) {
+      enfileirar(caminho);
+    }
   }
 }
 
@@ -376,6 +441,17 @@ async function processarArquivo(caminho) {
   const SKIP_STATUSES = new Set(['enviado', 'interno_marcado_feito', 'ja_processado', 'duplicado_periodo']);
   const stEntry = state.processados[caminho];
   if (stEntry && stEntry.hash === hash && SKIP_STATUSES.has(stEntry.status)) {
+    // Já teve desfecho terminal — NUNCA reenvia. Mas se foi enviado e o
+    // arquivamento ficou pendente (PDF estava aberto → EBUSY), re-tenta SÓ mover
+    // o arquivo agora que ele talvez já tenha sido fechado.
+    if (stEntry.arquivado === false && stEntry.destino) {
+      const ok = await arquivarNaEmpresa(caminho, stEntry.destino);
+      if (ok) {
+        stEntry.arquivado = true;
+        stEntry.destino = null;
+        salvarStateDebounced();
+      }
+    }
     return;
   }
 
@@ -450,13 +526,17 @@ async function processarArquivo(caminho) {
   }
 
   // Move conforme o resultado (enviado → pasta da empresa; resto → _PENDENTES).
-  moverConformeResultado(caminho, resultado);
+  // Se o arquivamento falhar por lock (PDF aberto), guarda o destino pra a
+  // varredura periódica re-tentar SÓ a movimentação depois — sem reenviar.
+  const arquivado = await moverConformeResultado(caminho, resultado);
 
   state.processados[caminho] = {
     hash,
     status: resultado.status,
     ultimaTentativa: ts(),
     tentativas: 1,
+    arquivado,
+    destino: arquivado ? null : (resultado.destino ?? null),
   };
   salvarStateDebounced();
 }
@@ -575,6 +655,9 @@ function iniciar() {
   // Bate ponto agora e, no modo watch contínuo, a cada 5 min.
   baterPonto();
   if (!ONCE) setInterval(baterPonto, 5 * 60_000);
+
+  // Varre arquivamentos presos (PDF aberto na hora do envio) a cada 45s.
+  if (!ONCE) setInterval(reprocessarArquivamentosPresos, 45_000);
 
   const watcher = chokidar.watch(PASTA_ENTRADA, {
     persistent: true,
