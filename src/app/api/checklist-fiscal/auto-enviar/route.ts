@@ -408,7 +408,9 @@ export async function POST(req: Request) {
   }
 
   // 6. Identifica a EMPRESA pelo conteúdo (CNPJ/IE = forte; só razão social = fraco).
-  const { data: empresasRows } = await admin.from('empresas').select('*');
+  // Ignora empresas DESLIGADAS (ex-clientes / lixo de cadastro) — não devem ser
+  // alvo de auto-envio nem poluir a identificação.
+  const { data: empresasRows } = await admin.from('empresas').select('*').is('desligada_em', null);
   const todasEmpresas = (empresasRows ?? []) as Empresa[];
   const identEmpresa = identificarEmpresa(textoPdf, todasEmpresas);
 

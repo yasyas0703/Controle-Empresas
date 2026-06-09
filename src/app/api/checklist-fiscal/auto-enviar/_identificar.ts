@@ -85,16 +85,40 @@ export function identificarEmpresa(texto: string, empresas: Empresa[]): Resultad
     return ie.length >= 8 && (digitosPdf.includes(ie) || digitosPdf.includes(ie.replace(/^0+/, '')));
   };
 
+  // CNPJ(s) do PRÓPRIO ESCRITÓRIO (contador) — aparecem como transmissor nas
+  // guias dos CLIENTES (ex: DESTDA/PGDAS transmitido pela TRIAR traz o CNPJ da
+  // TRIAR). Quando a empresa real TAMBÉM casa, o escritório não deve competir
+  // (senão dá empresa_ambigua). Se o escritório for o ÚNICO match, aí sim é guia
+  // dele. Override por env ESCRITORIO_CNPJ_RAIZES (raízes de 8 dígitos, vírgula).
+  const escritorioRaizes = (process.env.ESCRITORIO_CNPJ_RAIZES ?? '17308128')
+    .split(',').map((s) => s.replace(/\D/g, '')).filter((s) => s.length === 8);
+  const ehEscritorio = (emp: Empresa) => {
+    const raiz = cnpjDigitos(emp).slice(0, 8);
+    return raiz.length === 8 && escritorioRaizes.includes(raiz);
+  };
+
   const decidir = (lista: typeof ranqueados, tipo: TipoMatchEmpresa): ResultadoIdentEmpresa | null => {
     if (lista.length === 1) return { empresa: lista[0].empresa, tipoMatch: tipo, forte: true, ambiguo: false, candidatos };
     if (lista.length > 1) return { empresa: null, tipoMatch: null, forte: false, ambiguo: true, candidatos };
     return null;
   };
 
+  // Decisão por CNPJ: tira o ESCRITÓRIO da disputa se houver outra empresa
+  // concorrendo (o contador aparece como transmissor nas guias dos clientes).
+  // Se depois disso sobrar exatamente 1 → envia; se sobrar 2+ → ambíguo
+  // (pendência) — NÃO chuta entre concorrentes (ex: cadastro duplicado).
+  const decidirCnpj = (lista: typeof ranqueados): ResultadoIdentEmpresa | null => {
+    if (lista.length === 0) return null;
+    const naoEscritorio = lista.filter((c) => !ehEscritorio(c.empresa));
+    const l = naoEscritorio.length > 0 ? naoEscritorio : lista;
+    if (l.length === 1) return { empresa: l[0].empresa, tipoMatch: 'cnpj', forte: true, ambiguo: false, candidatos };
+    return { empresa: null, tipoMatch: null, forte: false, ambiguo: true, candidatos };
+  };
+
   // Ordem de confiança: CNPJ completo > raiz do CNPJ > Inscricao Estadual.
   return (
-    decidir(ranqueados.filter((c) => temCnpjFull(c.empresa)), 'cnpj')
-    ?? decidir(ranqueados.filter((c) => temCnpjBase(c.empresa)), 'cnpj')
+    decidirCnpj(ranqueados.filter((c) => temCnpjFull(c.empresa)))
+    ?? decidirCnpj(ranqueados.filter((c) => temCnpjBase(c.empresa)))
     ?? decidir(ranqueados.filter((c) => temIe(c.empresa)), 'ie')
     // Nenhum identificador forte — melhor candidato é só por nome (fraco).
     ?? { empresa: ranqueados[0].empresa, tipoMatch: 'nome', forte: false, ambiguo: false, candidatos }
