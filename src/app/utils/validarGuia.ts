@@ -291,17 +291,20 @@ const PERFIS: Record<string, PerfilValidacao> = {
   'ICMS NORMAL': {
     nome: 'ICMS Normal (DAE-MG ou DARE-SP)',
     anchorsObrigatorios: [],
-    // Cobre as variantes SETORIAIS do DAE-MG: comércio-outros (0120), combustível/
-    // lubrificantes (0105, postos), transportes (0115), serviço/comunicação. Sem
-    // isso, posto/transportadora de MG caía em obrigacao_nao_identificada.
-    denominacaoRegex: /(icms\s*comercio\s*-\s*outros|icms\s*comb(?:ust)?|icms\s*transporte|icms\s*servico|icms\s*[–-]\s*regime\s*periodico\s*de\s*apuracao|operacoes\s*proprias-\s*rpa)/i,
-    palavrasProibidas: ['simples nacional', 'icms\\s*comercio\\s*td', 'icms\\s*st\\s*entradas', 'icms\\s*st\\s*industria', 'icms\\s*[-–]?\\s*substituicao\\s*tributaria', 'icms\\s*diferenca\\s*de\\s*aliquota', 'icms\\s*rec\\s*\\.\\s*antecipado', ...MARCAS_NAO_GUIA_ICMS],
+    // Cobre as variantes SETORIAIS do DAE-MG ("- outros" = regime normal): comércio
+    // (0120), indústria (0121), medicamentos (0112), combustível/lubrificantes (0105,
+    // postos), transportes (0115), serviço/comunicação. "td" e "st" são proibidos
+    // (são ICMS TDD e ICMS-ST). Sem isso, posto/indústria/farmácia de MG caía em
+    // obrigacao_nao_identificada.
+    denominacaoRegex: /(icms\s*comercio\s*-\s*outros|icms\s*industria\s*-\s*outros|icms\s*medicamentos|icms\s*comb(?:ust)?|icms\s*transporte|icms\s*servico|icms\s*[–-]\s*regime\s*periodico\s*de\s*apuracao|operacoes\s*proprias-\s*rpa)/i,
+    palavrasProibidas: ['simples nacional', 'icms\\s*comercio\\s*td', 'icms\\s*industria\\s*td', 'icms\\s*st\\s*entradas', 'icms\\s*st\\s*industria', 'icms\\s*[-–]?\\s*substituicao\\s*tributaria', 'icms\\s*diferenca\\s*de\\s*aliquota', 'icms\\s*rec\\s*\\.\\s*antecipado', ...MARCAS_NAO_GUIA_ICMS],
   },
   'ICMS TDD': {
     nome: 'ICMS TDD (DAE-MG)',
     anchorsObrigatorios: [],
-    denominacaoRegex: /icms\s*comercio\s*td/i,
-    palavrasProibidas: ['simples nacional', 'icms\\s*comercio\\s*-\\s*outros', 'icms\\s*st\\s*entradas', 'icms\\s*diferenca\\s*de\\s*aliquota', 'icms\\s*rec\\s*\\.\\s*antecipado'],
+    // TDD comércio (0218) e indústria (0219).
+    denominacaoRegex: /icms\s*(comercio|industria)\s*td/i,
+    palavrasProibidas: ['simples nacional', 'icms\\s*comercio\\s*-\\s*outros', 'icms\\s*industria\\s*-\\s*outros', 'icms\\s*st\\s*entradas', 'icms\\s*diferenca\\s*de\\s*aliquota', 'icms\\s*rec\\s*\\.\\s*antecipado'],
   },
   'ICMS-ST': {
     nome: 'ICMS-ST',
