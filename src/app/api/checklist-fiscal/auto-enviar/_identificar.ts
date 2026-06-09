@@ -97,21 +97,47 @@ export function identificarEmpresa(texto: string, empresas: Empresa[]): Resultad
     return raiz.length === 8 && escritorioRaizes.includes(raiz);
   };
 
-  const decidir = (lista: typeof ranqueados, tipo: TipoMatchEmpresa): ResultadoIdentEmpresa | null => {
-    if (lista.length === 1) return { empresa: lista[0].empresa, tipoMatch: tipo, forte: true, ambiguo: false, candidatos };
-    if (lista.length > 1) return { empresa: null, tipoMatch: null, forte: false, ambiguo: true, candidatos };
-    return null;
+  // Tira o ESCRITÓRIO (contador) da disputa quando há outra empresa concorrendo —
+  // ele aparece como transmissor/contabilista nas guias dos clientes. Se SÓ o
+  // escritório casa, aí sim é guia dele.
+  const semEscritorio = (lista: typeof ranqueados): typeof ranqueados => {
+    const ne = lista.filter((c) => !ehEscritorio(c.empresa));
+    return ne.length > 0 ? ne : lista;
   };
 
-  // Decisão por CNPJ: tira o ESCRITÓRIO da disputa se houver outra empresa
-  // concorrendo (o contador aparece como transmissor nas guias dos clientes).
-  // Se depois disso sobrar exatamente 1 → envia; se sobrar 2+ → ambíguo
-  // (pendência) — NÃO chuta entre concorrentes (ex: cadastro duplicado).
+  // Decisão por CNPJ. Se sobrar 1 → envia. Se sobrar 2+ (FILIAIS do mesmo grupo:
+  // o DESTDA/declaração traz o CNPJ da matriz + o do estabelecimento, então mais
+  // de uma filial casa pela raiz/CNPJ), desempata pela INSCRIÇÃO ESTADUAL, que é
+  // ÚNICA por estabelecimento: se exatamente UMA candidata tem a SUA IE no
+  // documento, é a declarante. Cadastros realmente idênticos (mesma IE) continuam
+  // ambíguos → pendência (não chuta entre iguais).
   const decidirCnpj = (lista: typeof ranqueados): ResultadoIdentEmpresa | null => {
     if (lista.length === 0) return null;
-    const naoEscritorio = lista.filter((c) => !ehEscritorio(c.empresa));
-    const l = naoEscritorio.length > 0 ? naoEscritorio : lista;
+    const l = semEscritorio(lista);
     if (l.length === 1) return { empresa: l[0].empresa, tipoMatch: 'cnpj', forte: true, ambiguo: false, candidatos };
+    const comIe = l.filter((c) => temIe(c.empresa));
+    if (comIe.length === 1) return { empresa: comIe[0].empresa, tipoMatch: 'cnpj', forte: true, ambiguo: false, candidatos };
+    // Sem IE pra desempatar, mas TODAS as candidatas são da MESMA empresa (mesma
+    // raiz de 8 dígitos = filiais do mesmo grupo): caso da declaração FEDERAL do
+    // Simples (PGDAS/DECLARAÇÃO/RECIBO), que é da empresa toda e não traz IE.
+    // Roteia pra MATRIZ (ordem /0001). É o mesmo cliente — nunca empresa errada.
+    const raizes = new Set(l.map((c) => cnpjDigitos(c.empresa).slice(0, 8)));
+    const matrizes = l.filter((c) => cnpjDigitos(c.empresa).slice(8, 12) === '0001');
+    // Só roteia pra matriz se houver UMA raiz (mesma empresa) e UMA matriz. Dois
+    // cadastros com o MESMO CNPJ /0001 (duplicado real) continuam ambíguos — não
+    // chuta entre idênticos.
+    if (raizes.size === 1 && matrizes.length === 1) {
+      return { empresa: matrizes[0].empresa, tipoMatch: 'cnpj', forte: true, ambiguo: false, candidatos };
+    }
+    return { empresa: null, tipoMatch: null, forte: false, ambiguo: true, candidatos };
+  };
+
+  // Decisão por IE: também exclui o escritório (antes só o caminho por CNPJ
+  // excluía — o contador podia vencer por IE quando era o único match de IE).
+  const decidirIe = (lista: typeof ranqueados): ResultadoIdentEmpresa | null => {
+    if (lista.length === 0) return null;
+    const l = semEscritorio(lista);
+    if (l.length === 1) return { empresa: l[0].empresa, tipoMatch: 'ie', forte: true, ambiguo: false, candidatos };
     return { empresa: null, tipoMatch: null, forte: false, ambiguo: true, candidatos };
   };
 
@@ -119,7 +145,7 @@ export function identificarEmpresa(texto: string, empresas: Empresa[]): Resultad
   return (
     decidirCnpj(ranqueados.filter((c) => temCnpjFull(c.empresa)))
     ?? decidirCnpj(ranqueados.filter((c) => temCnpjBase(c.empresa)))
-    ?? decidir(ranqueados.filter((c) => temIe(c.empresa)), 'ie')
+    ?? decidirIe(ranqueados.filter((c) => temIe(c.empresa)))
     // Nenhum identificador forte — melhor candidato é só por nome (fraco).
     ?? { empresa: ranqueados[0].empresa, tipoMatch: 'nome', forte: false, ambiguo: false, candidatos }
   );

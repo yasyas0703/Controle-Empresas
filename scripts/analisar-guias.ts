@@ -181,7 +181,7 @@ for (const f of pdfs) {
   if (!ie.empresa) {
     const r = ie.ambiguo ? 'empresa_ambigua' : 'empresa_nao_identificada';
     bump(r);
-    linhas.push({ arquivo: rel, empresa: '', tipoMatch: '', obrigacao: '', resultado: r, detalhe: (ie.candidatos ?? []).map((c) => c.nome).join('; ') });
+    linhas.push({ arquivo: rel, empresa: '', tipoMatch: '', obrigacao: '', resultado: r, detalhe: (ie.candidatos ?? []).map((c) => `${c.nome}<${c.tipo}>`).join(' ; ') });
     continue;
   }
   if (!ie.forte) {
