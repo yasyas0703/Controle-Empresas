@@ -291,8 +291,11 @@ const PERFIS: Record<string, PerfilValidacao> = {
   'ICMS NORMAL': {
     nome: 'ICMS Normal (DAE-MG ou DARE-SP)',
     anchorsObrigatorios: [],
-    denominacaoRegex: /(icms\s*comercio\s*-\s*outros|icms\s*[–-]\s*regime\s*periodico\s*de\s*apuracao|operacoes\s*proprias-\s*rpa)/i,
-    palavrasProibidas: ['simples nacional', 'icms\\s*comercio\\s*td', 'icms\\s*st\\s*entradas', 'icms\\s*diferenca\\s*de\\s*aliquota', 'icms\\s*rec\\s*\\.\\s*antecipado'],
+    // Cobre as variantes SETORIAIS do DAE-MG: comércio-outros (0120), combustível/
+    // lubrificantes (0105, postos), transportes (0115), serviço/comunicação. Sem
+    // isso, posto/transportadora de MG caía em obrigacao_nao_identificada.
+    denominacaoRegex: /(icms\s*comercio\s*-\s*outros|icms\s*comb(?:ust)?|icms\s*transporte|icms\s*servico|icms\s*[–-]\s*regime\s*periodico\s*de\s*apuracao|operacoes\s*proprias-\s*rpa)/i,
+    palavrasProibidas: ['simples nacional', 'icms\\s*comercio\\s*td', 'icms\\s*st\\s*entradas', 'icms\\s*st\\s*industria', 'icms\\s*[-–]?\\s*substituicao\\s*tributaria', 'icms\\s*diferenca\\s*de\\s*aliquota', 'icms\\s*rec\\s*\\.\\s*antecipado', ...MARCAS_NAO_GUIA_ICMS],
   },
   'ICMS TDD': {
     nome: 'ICMS TDD (DAE-MG)',
@@ -413,8 +416,10 @@ const PERFIS: Record<string, PerfilValidacao> = {
   'ICMS ANTECIPADO': {
     nome: 'ICMS Antecipado',
     anchorsObrigatorios: [],
-    denominacaoRegex: /(icms\s*rec\s*\.?\s*antecipado|icms\s*antecipado)/i,
-    palavrasProibidas: ['icms\\s*st\\s*entradas', 'icms\\s*diferenca\\s*de\\s*aliquota', ...MARCAS_NAO_GUIA_ICMS],
+    // Inclui a forma da DARE-SP/GNRE ("icms - recolhimento antecipado (outra uf)"),
+    // que escreve por extenso e não casava /icms antecipado/.
+    denominacaoRegex: /(icms\s*rec\s*\.?\s*antecipado|icms\s*antecipado|icms\s*[-–]?\s*recolhimento\s*antecipado|recolhimento\s*antecipado\s*\(outra\s*uf\))/i,
+    palavrasProibidas: ['icms\\s*st\\s*entradas', 'icms\\s*diferenca\\s*de\\s*aliquota', 'demonstrativo\\s*do\\s*icms\\s*antecipado', ...MARCAS_NAO_GUIA_ICMS],
   },
   'ST ANTECIPADO': {
     nome: 'ST Antecipado',
