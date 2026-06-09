@@ -86,6 +86,11 @@ const AUTO_PROBLEMA_LABEL: Record<string, string> = {
   erro: 'Erro inesperado',
 };
 
+// ⚠️ MODO TESTE (PROVISÓRIO — remover quando terminar de testar): o card de
+// guias travadas aparece SÓ pra esta usuária por enquanto. Coloque null pra
+// voltar ao normal (todos os admins/gerentes veem).
+const CARD_AUTO_SOMENTE_USER_ID: string | null = 'c68da688-cefc-4d1e-ae7c-9a753833968f';
+
 const DASHBOARD_TAG_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700';
 const DASHBOARD_HISTORY_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700';
 
@@ -152,8 +157,12 @@ export default function DashboardPage() {
   // Guias que travaram no envio automático — card de visibilidade no Dashboard.
   // Só admin/gerente (mesma regra do painel Auto-problemas). Reusa a API do painel.
   const [autoProblemas, setAutoProblemas] = useState<AutoProblemaItem[]>([]);
+  // Modo teste: só a usuária de teste vê/carrega o card por enquanto.
+  const podeVerCardAuto = CARD_AUTO_SOMENTE_USER_ID
+    ? currentUserId === CARD_AUTO_SOMENTE_USER_ID
+    : canManage;
   const carregarAutoProblemas = useCallback(async () => {
-    if (!canManage) return;
+    if (!podeVerCardAuto) return;
     try {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
       if (!token) return;
@@ -166,7 +175,7 @@ export default function DashboardPage() {
     } catch {
       /* silencioso — o card só some se não carregar */
     }
-  }, [canManage]);
+  }, [podeVerCardAuto]);
   useEffect(() => {
     carregarAutoProblemas();
     const interval = setInterval(carregarAutoProblemas, 60_000);
@@ -474,7 +483,7 @@ export default function DashboardPage() {
       </div>
 
       {/* GUIAS NÃO ENVIADAS (envio automático) — card de pendências */}
-      {canManage && autoProblemas.length > 0 && (
+      {podeVerCardAuto && autoProblemas.length > 0 && (
         <div className="rounded-2xl border-l-4 border-amber-500 bg-amber-50 p-5">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-3">
