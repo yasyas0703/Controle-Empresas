@@ -1,0 +1,125 @@
+{
+  "processados": {
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 ICMS -ST.pdf": {
+      "hash": "5362b2bd34eac8b43ac84dd8cd36c738008dc89596079cf81077c9bc22ad78ab",
+      "status": "enviado",
+      "ultimaTentativa": "2026-06-08T15:36:59.948Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 ST SAIDA MG.pdf": {
+      "hash": "1628c081e7d9327c7acee1f90cc3f81e35b1b80e062b2d0d87a0f91a03787890",
+      "status": "pendente_correcao",
+      "ultimaTentativa": "2026-06-08T15:50:28.593Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 ICMS ST MG.pdf": {
+      "hash": "ad975fb1b9a9c0809ebb5514d7f4f1cf112ec527b24e2eeaefbeb662615aa2ad",
+      "status": "enviado",
+      "ultimaTentativa": "2026-06-08T17:53:02.498Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 DIFERENCIAL DE ALIQUOTA.pdf": {
+      "hash": "e4cfa7782cd17c18a9a7c53b5b50ae4db2a2955d7e24353d81eb063a49095515",
+      "status": "enviado",
+      "ultimaTentativa": "2026-06-08T19:14:35.064Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 ICMS A RECOLHER (1).pdf": {
+      "hash": "cb4ea0524b642910a20354c25e8e9a1a98c5ec0400724f91c591dd6f8ee1309c",
+      "status": "ja_processado",
+      "ultimaTentativa": "2026-06-08T18:09:00.096Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 ICMS A RECOLHER.pdf": {
+      "hash": "c9da6c9b870f9d000ea80b81a10316ce60d18d459e82a5fe88ac25e925a3829f",
+      "status": "pendente_correcao",
+      "ultimaTentativa": "2026-06-09T14:26:28.459Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 ISSQN Prestado.pdf": {
+      "hash": "b672cfe0a80fccd3ea96dc28c16048795d7281ef64034b81859444b65a1de99a",
+      "status": "enviado",
+      "ultimaTentativa": "2026-06-08T18:53:06.331Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 ST SAIDA.pdf": {
+      "hash": "cef432f083273c1e740d17ad9c789e6b17bfc2cc2947778cc1ad532d66c78d3e",
+      "status": "enviado",
+      "ultimaTentativa": "2026-06-08T18:56:05.027Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 ICMS A RECOLHERpdf.pdf": {
+      "hash": "eccb3ccd25b72d37dc3363a081f234878e548a694336dca4857244a22d0f1ef1",
+      "status": "enviado",
+      "ultimaTentativa": "2026-06-09T11:22:30.368Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 ISS PRESTADOR.pdf": {
+      "hash": "ad4e06a33a663e5841b89f8844d47ae22cf1618095f8681e527a01a86563338b",
+      "status": "enviado",
+      "ultimaTentativa": "2026-06-09T11:26:28.237Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 ICMS SP.pdf": {
+      "hash": "80d5e9de3901be926d01aac3091ffe7b836fb0e541f9e462dd0c92c9a13509b6",
+      "status": "enviado",
+      "ultimaTentativa": "2026-06-09T11:40:33.655Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\ACFrOgDmz7jAEdBTkutz0hXy48U8pFJb8CDt--uQS0LRYJu3HJ8HfJwOIJiOzDqqnSzrYjuqSTT59BMuD5CFyVwKVigjthQz_MdTu25uDjKf-DBGJwvdoFea-Hod8x73fH1rcAPEhMhRwzzuh46A.pdf": {
+      "hash": "ddd149728e8e9813b04d08c319a9610e49c8a95366d2e0e0106203aecc8414fd",
+      "status": "enviado",
+      "ultimaTentativa": "2026-06-09T11:50:01.367Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\ACFrOgDsC6wFecZloLfNJmPVpdzp3-hRowt-gHK9CrnnNySX7wL9mWmhxSHgxP4hTZYmX8wM0D6X7moMzZ0zmIvIFg2vHkX7DlgtdvIeDUQ5g-aBkkFhcTf0lS8CR8ku8Mi_F2hK96RXsXie_Hpv.pdf": {
+      "hash": "634ef72422f955b6a5af6c328bfa78fcc991836adfdaf6343aef5ebfc42e83b2",
+      "status": "enviado",
+      "ultimaTentativa": "2026-06-09T11:50:59.387Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\ACFrOgAZabiXx5GXvJ8yxACHclpyP1dIp84aPlI8caDf2hiRFsS_ywfUWpm-OrxUJNKUvBUZH_usRDNt6EM0N5xyLLsaiB3tznjb3_7qbz1GnnTGPuTtt4JZJPEp0SVoCiEweHrF8rFbde_LHXzs.pdf": {
+      "hash": "2ed82ab5642a429004e738b3c388b05d704236b15afc35ff4a67d744b1899a8d",
+      "status": "enviado",
+      "ultimaTentativa": "2026-06-09T12:42:32.552Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 DAS.pdf": {
+      "hash": "b84df1dac116d0777db5a479d6569eecca4fe8aae1f7aab9b6f79f73469d61e6",
+      "status": "enviado",
+      "ultimaTentativa": "2026-06-09T12:46:31.955Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 RECIBO.pdf": {
+      "hash": "f3242794e25ec2d0ff09c366adec118719f27d38118076a60d6fd2d28b27fcf7",
+      "status": "enviado",
+      "ultimaTentativa": "2026-06-09T12:47:59.991Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 DECLARACAO.pdf": {
+      "hash": "d8d2fdb0af51c0053b2f7f9733541b9a514cf7b7d9018bd2ae663a7febf00bcb",
+      "status": "enviado",
+      "ultimaTentativa": "2026-06-09T12:48:28.627Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 DESTDA RECIBO.pdf": {
+      "hash": "940dd94106e1074370f3144a6344e5f7abf2ab6926e322ac798a80194217d4e7",
+      "status": "pendente_correcao",
+      "ultimaTentativa": "2026-06-09T12:49:25.895Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 ICMS TTD.pdf": {
+      "hash": "d17954606f9555f537895369e042b97b73efec1d3e7ff45e6ecf645bdb74685a",
+      "status": "enviado",
+      "ultimaTentativa": "2026-06-09T13:24:02.724Z",
+      "tentativas": 1
+    },
+    "T:\\Fiscal\\EMPRESA\\1-GUIAS A ENVIAR\\2026-05 ICMS A RECOLHER - TTD.pdf": {
+      "hash": "47727dbc440a27724529e5fc286711810604285fe5689b3ea48a4c48a09970ff",
+      "status": "enviado",
+      "ultimaTentativa": "2026-06-09T14:29:31.261Z",
+      "tentativas": 1
+    }
+  },
+  "ultimaSalvada": "2026-06-09T14:29:31.764Z"
+}
