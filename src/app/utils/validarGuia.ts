@@ -353,7 +353,9 @@ const PERFIS: Record<string, PerfilValidacao> = {
     anchorsObrigatorios: ['documento de arrecadacao', 'simples nacional'],
     denominacaoRegex: /simples\s*nacional/i,
     codigosReceitaConhecidos: ['1001', '1002', '1004', '1005', '1006', '1007', '1008'],
-    palavrasProibidas: ['receitas federais', 'darf'],
+    // É a GUIA de PAGAMENTO. Proíbe marcas da DECLARAÇÃO e do RECIBO (que também
+    // citam "documento de arrecadacao do simples nacional") pra não pegar eles.
+    palavrasProibidas: ['receitas federais', 'darf', 'declaratorio', 'discriminativo\\s*de\\s*receitas', 'recibo\\s*de\\s*entrega'],
   },
   'RECIBO DAS': {
     nome: 'Recibo PGDAS-D',
@@ -364,12 +366,13 @@ const PERFIS: Record<string, PerfilValidacao> = {
   },
   'DECLARAÇÃO DAS': {
     nome: 'Declaração DAS (PGDAS-D)',
-    anchorsObrigatorios: ['pgdas-d'],
-    // A declaração/extrato da apuração — é PDF DIFERENTE do recibo (confirmado
-    // com a usuária 2026-06-08). Marca positiva de "declaracao/extrato" + proíbe
-    // "recibo de entrega" pra não colidir com o perfil RECIBO DAS. A âncora
-    // 'pgdas-d' mantém o escopo no Simples Nacional.
-    denominacaoRegex: /(declaracao|extrato\s*d[ao]?\s*apuracao|extrato\s*do\s*simples)/i,
+    anchorsObrigatorios: [],
+    // A DECLARAÇÃO (extrato do PGDAS-D) tem marcas ÚNICAS: "declaratório",
+    // "discriminativo de receitas", "programa gerador do documento...". Antes a
+    // âncora era 'pgdas-d', mas a declaração real escreve "programa gerador..."
+    // por extenso (não tem "pgdas-d" literal) → não casava nada. Proíbe "recibo
+    // de entrega" pra não pegar o RECIBO. (Marcadores confirmados em guias reais.)
+    denominacaoRegex: /(declaratorio|discriminativo\s*de\s*receitas|programa\s*gerador\s*do\s*documento)/i,
     palavrasProibidas: ['recibo\\s*de\\s*entrega'],
   },
   'SINTEGRA': {
