@@ -1242,7 +1242,7 @@ export default function ChecklistFiscalPage() {
           <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
             <div className="inline-flex items-center gap-1 rounded-xl bg-gray-100 p-1">
               <button onClick={() => setAba('fiscal')} className="rounded-lg px-4 py-1.5 text-xs sm:text-sm font-bold text-gray-600 hover:bg-white">Regime Normal</button>
-              <button className="rounded-lg px-4 py-1.5 text-xs sm:text-sm font-bold bg-gradient-to-r from-purple-500 via-fuchsia-500 to-pink-500 text-white shadow">SN</button>
+              <button className="rounded-lg px-4 py-1.5 text-xs sm:text-sm font-bold bg-cyan-600 text-white shadow">SN</button>
             </div>
           </div>
         )}
@@ -1251,7 +1251,7 @@ export default function ChecklistFiscalPage() {
           <div className="text-lg font-bold text-gray-700 mb-1">Departamento &quot;Fiscal - SN&quot; não encontrado</div>
           <div className="text-sm text-gray-500 max-w-md mx-auto">
             Cadastre um departamento com o nome <span className="font-semibold text-gray-700">Fiscal - SN</span> em
-            {' '}<a href="/departamentos" className="text-emerald-700 underline font-semibold">Departamentos</a> e vincule a ele os usuários do Simples Nacional para usar esta aba.
+            {' '}<a href="/departamentos" className="text-cyan-700 underline font-semibold">Departamentos</a> e vincule a ele os usuários do Simples Nacional para usar esta aba.
           </div>
         </div>
       </div>
@@ -1276,7 +1276,7 @@ export default function ChecklistFiscalPage() {
       <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 flex items-center justify-center shadow-md shrink-0">
+            <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-2xl bg-cyan-600 flex items-center justify-center shadow-md shrink-0">
               <ListChecks className="text-white" size={22} />
             </div>
             <div className="min-w-0">
@@ -1291,7 +1291,7 @@ export default function ChecklistFiscalPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={exportCSV}
-              className="inline-flex items-center gap-2 rounded-xl border-2 border-emerald-200 text-emerald-700 px-3 py-2 font-bold hover:bg-emerald-50 transition shrink-0"
+              className="inline-flex items-center gap-2 rounded-xl border-2 border-cyan-200 text-cyan-700 px-3 py-2 font-bold hover:bg-cyan-50 transition shrink-0"
             >
               <Download size={16} />
               <span className="hidden sm:inline">Exportar</span> CSV
@@ -1307,7 +1307,7 @@ export default function ChecklistFiscalPage() {
               onClick={() => setAba('fiscal')}
               className={`rounded-lg px-4 py-1.5 text-xs sm:text-sm font-bold transition ${
                 aba === 'fiscal'
-                  ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white shadow'
+                  ? 'bg-cyan-600 text-white shadow'
                   : 'text-gray-600 hover:bg-white'
               }`}
             >
@@ -1318,7 +1318,7 @@ export default function ChecklistFiscalPage() {
               onClick={() => setAba('sn')}
               className={`rounded-lg px-4 py-1.5 text-xs sm:text-sm font-bold transition ${
                 aba === 'sn'
-                  ? 'bg-gradient-to-r from-purple-500 via-fuchsia-500 to-pink-500 text-white shadow'
+                  ? 'bg-cyan-600 text-white shadow'
                   : 'text-gray-600 hover:bg-white'
               }`}
               title={fiscalSnDept ? 'Checklist do Simples Nacional' : 'Crie um departamento "Fiscal - SN" para usar esta aba'}
@@ -1330,39 +1330,39 @@ export default function ChecklistFiscalPage() {
       </div>
 
       {/* Seletor de mês */}
-      <div className="rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-cyan-50 border-2 border-emerald-100 p-3 sm:p-4 shadow-sm">
+      <div className="rounded-2xl bg-cyan-50 border-2 border-cyan-100 p-3 sm:p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2 min-w-0">
             <button
               onClick={() => setMes((m) => shiftMonth(m, -1))}
-              className="p-2 rounded-xl bg-white shadow-sm hover:shadow-md hover:bg-emerald-50 transition"
+              className="p-2 rounded-xl bg-white shadow-sm hover:shadow-md hover:bg-cyan-50 transition"
               title="Mês anterior (ou seta esquerda)"
             >
-              <ChevronLeft size={18} className="text-emerald-700" />
+              <ChevronLeft size={18} className="text-cyan-700" />
             </button>
             <div className="flex items-center gap-2 bg-white rounded-xl px-3 sm:px-4 py-2 shadow-sm min-w-0">
-              <Calendar size={18} className="text-emerald-600 shrink-0" />
+              <Calendar size={18} className="text-cyan-600 shrink-0" />
               <div className="min-w-0">
-                <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Mês ativo</div>
+                <div className="text-[10px] font-bold text-cyan-600 uppercase tracking-wider">Mês ativo</div>
                 <div className="text-sm sm:text-base font-bold text-gray-900 capitalize truncate">{monthLabel(mes)}</div>
               </div>
               {isHoje && (
-                <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5 text-[10px] font-bold">
+                <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-cyan-100 text-cyan-700 px-2 py-0.5 text-[10px] font-bold">
                   <Sparkles size={10} /> AGORA
                 </span>
               )}
             </div>
             <button
               onClick={() => setMes((m) => shiftMonth(m, +1))}
-              className="p-2 rounded-xl bg-white shadow-sm hover:shadow-md hover:bg-emerald-50 transition"
+              className="p-2 rounded-xl bg-white shadow-sm hover:shadow-md hover:bg-cyan-50 transition"
               title="Próximo mês (ou seta direita)"
             >
-              <ChevronRight size={18} className="text-emerald-700" />
+              <ChevronRight size={18} className="text-cyan-700" />
             </button>
             {!isHoje && (
               <button
                 onClick={() => setMes(defaultMonth())}
-                className="hidden sm:inline-flex items-center gap-1 text-xs text-emerald-700 font-bold hover:text-emerald-800 px-2"
+                className="hidden sm:inline-flex items-center gap-1 text-xs text-cyan-700 font-bold hover:text-cyan-800 px-2"
                 title="Voltar para o mês anterior (padrão do checklist)"
               >
                 Voltar ao mês anterior
@@ -1377,8 +1377,8 @@ export default function ChecklistFiscalPage() {
                 onClick={() => setMes(m)}
                 className={`rounded-lg px-2 py-1 text-[11px] font-bold transition ${
                   mes === m
-                    ? 'bg-emerald-600 text-white shadow'
-                    : 'bg-white text-gray-700 hover:bg-emerald-50 shadow-sm'
+                    ? 'bg-cyan-600 text-white shadow'
+                    : 'bg-white text-gray-700 hover:bg-cyan-50 shadow-sm'
                 }`}
               >
                 {m === defaultMonth()
@@ -1396,12 +1396,12 @@ export default function ChecklistFiscalPage() {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="rounded-2xl bg-white p-3 sm:p-4 shadow-sm border border-gray-100">
           <div className="flex items-center gap-2 mb-1">
-            <TrendingUp size={14} className="text-emerald-500" />
+            <TrendingUp size={14} className="text-cyan-500" />
             <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-gray-500">Progresso geral</span>
           </div>
-          <div className="text-xl sm:text-2xl font-black text-emerald-700">{Math.round(stats.progressoGeral)}%</div>
+          <div className="text-xl sm:text-2xl font-black text-cyan-700">{Math.round(stats.progressoGeral)}%</div>
           <div className="mt-1.5 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-emerald-400 to-teal-500 transition-all" style={{ width: `${stats.progressoGeral}%` }} />
+            <div className="h-full bg-cyan-500 transition-all" style={{ width: `${stats.progressoGeral}%` }} />
           </div>
           <div className="text-[10px] text-gray-400 mt-1">{stats.feitasCells} de {stats.totalCells} itens</div>
         </div>
@@ -1449,7 +1449,7 @@ export default function ChecklistFiscalPage() {
           {hasFilters && (
             <button
               onClick={() => { setSearch(''); setFiltroUsuario(''); setFiltroProgresso('todos'); setApenasMinhas(false); setFiltroObrigacao(''); setFiltroEstado(''); }}
-              className="inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-bold"
+              className="inline-flex items-center gap-1 text-xs text-cyan-600 hover:text-cyan-700 font-bold"
             >
               <XCircle size={14} />
               Limpar
@@ -1464,14 +1464,14 @@ export default function ChecklistFiscalPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar empresa..."
-              className="w-full rounded-xl bg-gray-50 pl-10 pr-4 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-emerald-400 focus:bg-white transition"
+              className="w-full rounded-xl bg-gray-50 pl-10 pr-4 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
             />
           </div>
           {canManage && (
             <select
               value={filtroUsuario}
               onChange={(e) => setFiltroUsuario(e.target.value)}
-              className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-emerald-400"
+              className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400"
             >
               <option value="">Todos responsáveis fiscais</option>
               {fiscalUsers.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
@@ -1480,7 +1480,7 @@ export default function ChecklistFiscalPage() {
           <select
             value={filtroProgresso}
             onChange={(e) => setFiltroProgresso(e.target.value as typeof filtroProgresso)}
-            className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-emerald-400"
+            className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400"
           >
             <option value="todos">Todas as empresas</option>
             <option value="pendentes">Só não iniciadas</option>
@@ -1490,7 +1490,7 @@ export default function ChecklistFiscalPage() {
           <select
             value={filtroObrigacao}
             onChange={(e) => setFiltroObrigacao(e.target.value)}
-            className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-emerald-400"
+            className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400"
             title="Filtrar por imposto/obrigação específica"
           >
             <option value="">Todos os impostos</option>
@@ -1501,7 +1501,7 @@ export default function ChecklistFiscalPage() {
           <select
             value={filtroEstado}
             onChange={(e) => setFiltroEstado(e.target.value)}
-            className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-emerald-400"
+            className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400"
             title="Filtrar por estado (UF) da empresa"
             disabled={estadosDisponiveis.length === 0}
           >
@@ -1515,8 +1515,8 @@ export default function ChecklistFiscalPage() {
               onClick={() => setApenasMinhas((v) => !v)}
               className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold border-2 transition ${
                 apenasMinhas
-                  ? 'bg-emerald-50 border-emerald-400 text-emerald-700'
-                  : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-emerald-300'
+                  ? 'bg-cyan-50 border-cyan-400 text-cyan-700'
+                  : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-cyan-300'
               }`}
               disabled={!currentUserId}
               title={!currentUserId ? 'Faça login para filtrar suas empresas' : undefined}
@@ -1545,12 +1545,12 @@ export default function ChecklistFiscalPage() {
                   key={u.id}
                   onClick={() => setFiltroUsuario((prev) => (prev === u.id ? '' : u.id))}
                   className={`rounded-xl p-2 text-left border-2 transition ${
-                    isSelected ? 'border-emerald-500 bg-emerald-50 shadow' : 'border-gray-100 bg-gray-50 hover:border-emerald-300'
+                    isSelected ? 'border-cyan-500 bg-cyan-50 shadow' : 'border-gray-100 bg-gray-50 hover:border-cyan-300'
                   }`}
                   title={`${u.nome} - ${s?.feitas ?? 0}/${s?.total ?? 0} obrigações`}
                 >
                   <div className="flex items-center gap-2 mb-1">
-                    <div className="h-7 w-7 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white text-[10px] font-black shrink-0">
+                    <div className="h-7 w-7 rounded-full bg-cyan-500 flex items-center justify-center text-white text-[10px] font-black shrink-0">
                       {userInitials(u.nome)}
                     </div>
                     <div className="min-w-0 flex-1">
@@ -1559,7 +1559,7 @@ export default function ChecklistFiscalPage() {
                     </div>
                   </div>
                   <div className="h-1.5 bg-white rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-emerald-400 to-teal-500" style={{ width: `${pct}%` }} />
+                    <div className="h-full bg-cyan-500" style={{ width: `${pct}%` }} />
                   </div>
                 </button>
               );
@@ -1898,7 +1898,7 @@ export default function ChecklistFiscalPage() {
         >
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
-            <div className="bg-gradient-to-r from-violet-600 to-purple-600 px-5 py-4 flex items-center justify-between">
+            <div className="bg-violet-600 px-5 py-4 flex items-center justify-between">
               <div className="text-white min-w-0">
                 <div className="text-[10px] font-bold uppercase tracking-wider opacity-90">{obsModo === 'dispensa' ? 'Dispensar — justificativa obrigatória' : 'Observação'} • {monthLabel(mes)}</div>
                 <div className="text-sm font-bold truncate">{obsTarget.empresa.codigo} — {obsTarget.obrigacao}</div>
@@ -1930,7 +1930,7 @@ export default function ChecklistFiscalPage() {
                 <button
                   onClick={salvarObservacao}
                   disabled={savingObs || (obsModo === 'dispensa' && !obsText.trim())}
-                  className="rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-white px-4 py-2 text-sm font-bold hover:from-violet-700 hover:to-purple-700 shadow transition disabled:opacity-50"
+                  className="rounded-xl bg-violet-600 text-white px-4 py-2 text-sm font-bold hover:bg-violet-700 shadow transition disabled:opacity-50"
                 >
                   {savingObs ? 'Salvando...' : obsModo === 'dispensa' ? 'Confirmar dispensa' : 'Salvar observação'}
                 </button>
@@ -1967,7 +1967,7 @@ export default function ChecklistFiscalPage() {
           >
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
             <div className={`relative w-full ${arqPreview ? 'max-w-4xl' : 'max-w-md'} rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all`}>
-              <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-4 flex items-center justify-between shrink-0">
+              <div className="bg-amber-500 px-5 py-4 flex items-center justify-between shrink-0">
                 <div className="text-white min-w-0">
                   <div className="text-[10px] font-bold uppercase tracking-wider opacity-90">Anexo • {monthLabel(mes)}</div>
                   <div className="text-sm font-bold truncate">{arqTarget.empresa.codigo} — {arqTarget.obrigacao}</div>
@@ -2368,7 +2368,7 @@ export default function ChecklistFiscalPage() {
         >
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <div className="relative w-full max-w-2xl max-h-[80vh] rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col">
-            <div className="bg-gradient-to-r from-cyan-600 to-teal-600 px-5 py-4 flex items-center justify-between">
+            <div className="bg-cyan-600 px-5 py-4 flex items-center justify-between">
               <div className="text-white min-w-0">
                 <div className="text-[10px] font-bold uppercase tracking-wider opacity-90">Histórico da obrigação</div>
                 <div className="text-sm font-bold truncate">{histTarget.empresa.codigo} — {histTarget.obrigacao}</div>
