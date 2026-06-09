@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { AlertTriangle, Calendar, CalendarClock, FileText, Building2, Clock, Search, MapPin, Briefcase, Eye, Pencil, PowerOff, Trash2, CheckSquare, Square, FileDown, X, Tag, History, FileSpreadsheet, ChevronDown, StickyNote } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
+import { supabase } from '@/lib/supabase';
 import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
 import { detectTipoEstabelecimento, detectTipoInscricao, formatarDocumento, getTipoInscricaoDisplay } from '@/app/utils/validation';
 import type { Empresa, UUID, Limiares, HistoricoVencimentoItem } from '@/app/types';
@@ -55,6 +56,35 @@ function compareDashboardRiskItems(a: DashboardRiskItem, b: DashboardRiskItem): 
   if (empresaDiff !== 0) return empresaDiff;
   return comparePtBr(a.nome, b.nome);
 }
+
+// Guia que travou no envio automático (espelha o painel Auto-problemas no Dashboard).
+type AutoProblemaItem = {
+  id: string;
+  nome_arquivo: string;
+  empresa_nome: string | null;
+  empresa_codigo: string | null;
+  tipo_problema: string;
+  obrigacao_parseada: string | null;
+  competencia_parseada: string | null;
+};
+const AUTO_PROBLEMA_LABEL: Record<string, string> = {
+  pdf_ilegivel: 'PDF ilegível (imagem)',
+  empresa_nao_identificada: 'Empresa não identificada',
+  empresa_ambigua: 'Empresa ambígua no PDF',
+  empresa_match_fraco: 'Empresa só pelo nome',
+  obrigacao_nao_identificada: 'Tipo de guia não reconhecido',
+  obrigacao_ambigua: 'Tipo de guia ambíguo',
+  competencia_nao_identificada: 'Competência não identificada',
+  competencia_futura: 'Competência no futuro',
+  competencia_antiga: 'Competência muito antiga',
+  obrigacao_nao_configurada: 'Obrigação não configurada',
+  obrigacao_inativa: 'Obrigação inativa',
+  validacao_falhou: 'PDF não passou na validação',
+  sem_emails: 'Empresa sem email',
+  gmail_nao_conectado: 'Gmail desconectado',
+  gmail_send_failed: 'Falha no Gmail',
+  erro: 'Erro inesperado',
+};
 
 const DASHBOARD_TAG_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700';
 const DASHBOARD_HISTORY_BADGE_CLASS = 'inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700';
@@ -118,6 +148,30 @@ export default function DashboardPage() {
     historicoVencimento?: HistoricoVencimentoItem[];
   } | null>(null);
   const [savingHistorico, setSavingHistorico] = useState(false);
+
+  // Guias que travaram no envio automático — card de visibilidade no Dashboard.
+  // Só admin/gerente (mesma regra do painel Auto-problemas). Reusa a API do painel.
+  const [autoProblemas, setAutoProblemas] = useState<AutoProblemaItem[]>([]);
+  const carregarAutoProblemas = useCallback(async () => {
+    if (!canManage) return;
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      if (!token) return;
+      const res = await fetch('/api/admin/guias-auto/listar?tipo=todos&limit=100', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const json = await res.json();
+      setAutoProblemas(Array.isArray(json?.problemas) ? json.problemas : []);
+    } catch {
+      /* silencioso — o card só some se não carregar */
+    }
+  }, [canManage]);
+  useEffect(() => {
+    carregarAutoProblemas();
+    const interval = setInterval(carregarAutoProblemas, 60_000);
+    return () => clearInterval(interval);
+  }, [carregarAutoProblemas]);
 
   const abrirHistoricoItem = useCallback((empresaId: string, itemId: string, tipo: 'Documento' | 'RET' | 'Fiscal') => {
     const emp = empresas.find((e) => e.id === empresaId);
@@ -418,6 +472,54 @@ export default function DashboardPage() {
         <StatCard icon={<AlertTriangle size={18} />} label="Vencidos" value={totals.vencidos} pulse={totals.vencidos > 0} />
         <StatCard icon={<Clock size={18} />} label={`Em Risco (≤${limiares.proximo}d)`} value={totals.emRisco} accent="warn" />
       </div>
+
+      {/* GUIAS NÃO ENVIADAS (envio automático) — card de pendências */}
+      {canManage && autoProblemas.length > 0 && (
+        <div className="rounded-2xl border-l-4 border-amber-500 bg-amber-50 p-5">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-md bg-white border border-amber-200 flex items-center justify-center shrink-0">
+                <AlertTriangle className="text-amber-600" size={20} />
+              </div>
+              <div>
+                <div className="text-lg font-bold text-amber-900">
+                  {autoProblemas.length} guia(s) NÃO enviada(s) automaticamente
+                </div>
+                <div className="text-sm text-amber-800">Travaram no envio automático e precisam de atenção.</div>
+              </div>
+            </div>
+            <a
+              href="/vencimentos-fiscais/auto-problemas"
+              className="shrink-0 rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-700"
+            >
+              Resolver →
+            </a>
+          </div>
+          <div className="space-y-2">
+            {autoProblemas.slice(0, 8).map((p) => (
+              <div key={p.id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 bg-white border border-amber-200 rounded-xl px-3 sm:px-4 py-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-semibold text-slate-800 shrink-0">{p.empresa_codigo ?? '—'}</span>
+                  <span className="text-slate-400 hidden sm:inline">—</span>
+                  <span className="font-semibold text-slate-800 truncate">{p.empresa_nome ?? '(empresa não identificada)'}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+                  <span className="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-[11px] font-bold whitespace-nowrap">
+                    {AUTO_PROBLEMA_LABEL[p.tipo_problema] ?? p.tipo_problema}
+                  </span>
+                  {p.obrigacao_parseada && <span className="text-xs text-slate-600 whitespace-nowrap">{p.obrigacao_parseada}</span>}
+                  <span className="text-[11px] text-slate-400 truncate max-w-[220px]">{p.nome_arquivo}</span>
+                </div>
+              </div>
+            ))}
+            {autoProblemas.length > 8 && (
+              <div className="text-sm text-amber-800 font-semibold pl-2">
+                +{autoProblemas.length - 8} mais — ver todas no painel
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* VENCIDOS — Banner vermelho forte */}
       {vencidos.length > 0 && (
