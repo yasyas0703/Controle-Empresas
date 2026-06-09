@@ -57,6 +57,15 @@ interface PerfilValidacao {
   verificaMunicipioDaEmpresa?: boolean;
   /** Se preenchido, espera que essa sigla apareça (ex: 'MG' pra DAE-MG). Apenas aviso, não bloqueio. */
   estadoEsperado?: string;
+  /**
+   * Alguns documentos (livros fiscais gerados por sistemas antigos) extraem com o
+   * texto espaçado letra-a-letra ("r e g i s t r o d e a p u r a c a o"), o que
+   * impede o match por palavra. Com esta flag, a denominação é testada também numa
+   * versão SEM espaços — como as regex usam \s* (zero ou mais), continuam casando.
+   * NÃO ligar em perfis que dependem de \b (ISS, DIME): sem espaços a fronteira de
+   * palavra deixa de existir e o anti-confusão quebra.
+   */
+  matchSemEspacos?: boolean;
 }
 
 const COMBINING = /[̀-ͯ]/g;
@@ -402,12 +411,17 @@ const PERFIS: Record<string, PerfilValidacao> = {
   'LIVROS FISCAIS': {
     nome: 'Livros Fiscais',
     anchorsObrigatorios: [],
-    denominacaoRegex: /(registro\s*de\s*apuracao\s*do\s*icms|registro\s*de\s*apuracao\s*do\s*ipi|livro\s*fiscal)/i,
+    // Cobre os livros reais: apuração ICMS/IPI ("registro de apuracao"), entradas e
+    // saídas ("livro registro de entradas/saidas") e o genérico "livro fiscal".
+    // matchSemEspacos: os livros saem com texto espaçado letra-a-letra.
+    denominacaoRegex: /(registro\s*de\s*apuracao|registro\s*de\s*(entradas?|saidas?|notas\s*fiscais)|livro\s*registro|livro\s*fiscal)/i,
+    matchSemEspacos: true,
   },
   'DEMONSTR. APURAÇÃO': {
     nome: 'Demonstrativo de Apuração',
     anchorsObrigatorios: [],
     denominacaoRegex: /(demonstrativo\s*do\s*credito\s*presumido|apuracao\s*geral|demonstrativo\s*de\s*apuracao)/i,
+    matchSemEspacos: true,
   },
 };
 
@@ -550,7 +564,11 @@ export function validarGuia(
   // denominação foram escritas assumindo essa forma. Aplicar no texto cru
   // faria "Operações Próprias" não bater em /operacoes proprias/.
   if (perfil.denominacaoRegex) {
-    const m = textoNorm.match(perfil.denominacaoRegex);
+    let m = textoNorm.match(perfil.denominacaoRegex);
+    // Fallback p/ texto espaçado letra-a-letra (ver matchSemEspacos no tipo).
+    if (!m && perfil.matchSemEspacos) {
+      m = textoNorm.replace(/\s+/g, '').match(perfil.denominacaoRegex);
+    }
     if (m) {
       detectado.denominacaoEncontrada = m[0];
     } else {
