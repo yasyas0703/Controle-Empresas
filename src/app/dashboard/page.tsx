@@ -1138,7 +1138,7 @@ export default function DashboardPage() {
                 const resps = sortResponsaveisByNome(
                   Object.entries(e.responsaveis || {})
                     .filter(([, uid]) => uid)
-                    .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid), depIdx: getDepIndex(dId) }))
+                    .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid), email: getUserEmail(uid), depIdx: getDepIndex(dId) }))
                     .filter((r) => r.dep && r.user)
                 );
                 if (resps.length === 0) return null;
@@ -1152,6 +1152,7 @@ export default function DashboardPage() {
                           <div key={r.dep} className={`rounded-lg px-2.5 py-1.5 bg-[var(--surface-3)] border border-[var(--border-subtle)] border-l-[3px] ${c.bar}`}>
                             <div className={`text-[10px] font-bold ${c.text} uppercase tracking-wide`}>{r.dep}</div>
                             <div className="text-xs font-semibold text-gray-800 truncate">{r.user}</div>
+                            {r.email && <div className="text-[10px] text-gray-500 truncate" title={r.email}>{r.email}</div>}
                           </div>
                         );
                       })}

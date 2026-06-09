@@ -34,5 +34,13 @@ export function useEntityLoaders() {
     [usuarios],
   );
 
-  return { getDepName, getDepIndex, getUserName };
+  const getUserEmail = useCallback(
+    (uId: string | null): string => {
+      if (!uId) return '';
+      return usuarios.find((u) => u.id === uId)?.email ?? '';
+    },
+    [usuarios],
+  );
+
+  return { getDepName, getDepIndex, getUserName, getUserEmail };
 }
