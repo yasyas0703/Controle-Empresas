@@ -203,6 +203,22 @@ function encontrarCodigoReceita(texto: string, codigos: string[]): string | null
   return null;
 }
 
+// Marcas de documentos que NÃO são guia de PAGAMENTO (recibos de SPED/EFD,
+// declaração DAPI, livros de apuração). Esses documentos citam "ICMS ST /
+// antecipado / DIFAL" como LINHA da apuração e casavam por engano nos perfis de
+// guia ICMS abaixo, gerando obrigacao_ambigua em massa (verificação maio/2026:
+// ~57 ambíguas eram SPED/DAPI/livro). Uma guia de pagamento (DAE/GNRE) nunca
+// contém essas marcas, então proibi-las é seguro e faz cada documento classificar
+// no seu tipo (LIVROS FISCAIS, DAPI, SPED) em vez de empatar com a guia.
+const MARCAS_NAO_GUIA_ICMS = [
+  'sistema\\s*publico\\s*de\\s*escrituracao\\s*digital',
+  'escrituracao\\s*fiscal\\s*digital',
+  '\\bdapi\\b',
+  'declaracao\\s*de\\s*apuracao',
+  'registro\\s*de\\s*apuracao',
+  'livro\\s*registro',
+];
+
 /**
  * Tabela de perfis por nome de obrigação. Os nomes vêm de
  * VENCIMENTOS_FISCAIS_NOMES e VENCIMENTOS_FISCAIS_SN_NOMES em types.ts.
@@ -293,7 +309,7 @@ const PERFIS: Record<string, PerfilValidacao> = {
     // DAE-MG "icms st industria-outros") + GNRE/guia nacional SEM marca de DIFAL.
     // "st entradas" fica de fora (é do ST ANTECIPADO).
     denominacaoRegex: /(icms\s*[-–]?\s*substituicao\s*tributaria|substituicao\s*tributaria\s*-\s*rpa|\bicms\s*st\b|gnre|guia\s*nacional\s*de\s*recolhimento)/i,
-    palavrasProibidas: ['simples nacional', 'icms\\s*st\\s*entradas', 'diferencial\\s*de\\s*aliquota', 'icms\\s*diferenca\\s*de\\s*aliquota', 'difal'],
+    palavrasProibidas: ['simples nacional', 'icms\\s*st\\s*entradas', 'diferencial\\s*de\\s*aliquota', 'icms\\s*diferenca\\s*de\\s*aliquota', 'difal', ...MARCAS_NAO_GUIA_ICMS],
   },
   'GIA-ST': {
     nome: 'GIA-ST',
@@ -309,7 +325,7 @@ const PERFIS: Record<string, PerfilValidacao> = {
     nome: 'Diferencial de Alíquota',
     anchorsObrigatorios: [],
     denominacaoRegex: /(icms\s*diferenca\s*de\s*aliquota|diferencial\s*de\s*aliquota|difal)/i,
-    palavrasProibidas: ['simples nacional', 'icms\\s*st\\s*entradas', 'icms\\s*rec\\s*\\.\\s*antecipado'],
+    palavrasProibidas: ['simples nacional', 'icms\\s*st\\s*entradas', 'icms\\s*rec\\s*\\.\\s*antecipado', ...MARCAS_NAO_GUIA_ICMS],
   },
   'DAPI': {
     nome: 'DAPI (Minas Gerais)',
@@ -398,13 +414,17 @@ const PERFIS: Record<string, PerfilValidacao> = {
     nome: 'ICMS Antecipado',
     anchorsObrigatorios: [],
     denominacaoRegex: /(icms\s*rec\s*\.?\s*antecipado|icms\s*antecipado)/i,
-    palavrasProibidas: ['icms\\s*st\\s*entradas', 'icms\\s*diferenca\\s*de\\s*aliquota'],
+    palavrasProibidas: ['icms\\s*st\\s*entradas', 'icms\\s*diferenca\\s*de\\s*aliquota', ...MARCAS_NAO_GUIA_ICMS],
   },
   'ST ANTECIPADO': {
     nome: 'ST Antecipado',
     anchorsObrigatorios: [],
-    denominacaoRegex: /(icms\s*st\s*entradas|substituicao\s*tributaria.*entrada)/i,
-    palavrasProibidas: ['icms\\s*rec\\s*\\.\\s*antecipado'],
+    // Adjacência (sem ".*" largo): nos livros de apuração "substituição tributária"
+    // e "entradas" aparecem como SEÇÕES distantes e o ".*" casava por engano,
+    // gerando [ST ANTECIPADO, LIVROS FISCAIS]. Guia real diz "ICMS ST ENTRADAS"
+    // ou "substituição tributária - entradas" grudado.
+    denominacaoRegex: /(icms\s*st\s*entradas|substituicao\s*tributaria\s*[-–]?\s*entrada)/i,
+    palavrasProibidas: ['icms\\s*rec\\s*\\.\\s*antecipado', ...MARCAS_NAO_GUIA_ICMS],
   },
 
   // ─── Internas do escritório ─────────────────────────────────────────────
