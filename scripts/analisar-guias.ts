@@ -12,7 +12,7 @@
  *
  * Saída: scripts/output-analise-guias.csv (gitignored) + resumo no stdout.
  */
-import { readdirSync, readFileSync, writeFileSync, statSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, existsSync, type Dirent } from 'node:fs';
 import { resolve, join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -35,6 +35,9 @@ const flag = (n: string): string | null => {
   return i >= 0 && argv[i + 1] ? argv[i + 1] : null;
 };
 const dirAlvo = flag('--dir') ?? T_ROOT;
+// --dirs-file: arquivo com uma pasta por linha; varre só essas (permite paralelizar
+// dividindo as ~393 empresas em fatias, cada processo numa fatia).
+const dirsFile = flag('--dirs-file');
 const filtro = flag('--filtro');
 const filtroRe = filtro ? new RegExp(filtro, 'i') : null;
 // Filtro por CAMINHO: --inclui só pega PDFs cujo caminho casa; --exclui pula.
@@ -83,18 +86,18 @@ async function extrair(filePath: string, maxPaginas = 3): Promise<string> {
 
 function walk(dir: string, acc: string[] = []): string[] {
   if (limite > 0 && acc.length >= limite) return acc; // early-stop: nao varre 297k
-  let entries: string[] = [];
-  try { entries = readdirSync(dir); } catch { return acc; }
+  // withFileTypes evita 1 statSync por entrada — crucial em drive de rede (T:),
+  // onde cada statSync é uma ida-e-volta. Reduz a varredura de minutos pra segundos.
+  let entries: Dirent[] = [];
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return acc; }
   for (const e of entries) {
     if (limite > 0 && acc.length >= limite) return acc;
-    const full = join(dir, e);
-    let st;
-    try { st = statSync(full); } catch { continue; }
-    if (st.isDirectory()) {
+    const full = join(dir, e.name);
+    if (e.isDirectory()) {
       if (/[\\/]_/.test(full) && !/_PENDENTES/i.test(dirAlvo)) continue; // pula "_" salvo se foi o alvo
       walk(full, acc);
-    } else if (/\.pdf$/i.test(e)) {
-      if (filtroRe && !filtroRe.test(e)) continue;
+    } else if (e.isFile() && /\.pdf$/i.test(e.name)) {
+      if (filtroRe && !filtroRe.test(e.name)) continue;
       if (incluiRe && !incluiRe.test(full)) continue;
       if (excluiRe && excluiRe.test(full)) continue;
       acc.push(full);
@@ -110,9 +113,20 @@ const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_RO
 console.log('Carregando empresas + configs do banco...');
 const { data: empresasRows } = await admin.from('empresas').select('*').is('desligada_em', null);
 const empresas = (empresasRows ?? []) as Empresa[];
-const { data: configRows } = await admin
-  .from('empresa_obrigacoes_config')
-  .select('empresa_id, obrigacao, ativa, codigos, nao_envia_cliente, motivo');
+// Pagina os configs — PostgREST devolve no máximo 1000 por página. Sem isso, o
+// desempate por código de receita não roda pras empresas além da 1000ª linha e
+// infla "obrigacao_ambigua" falsamente.
+type ConfigRow = { empresa_id: string; obrigacao: string; ativa: boolean; codigos: string[] | null; nao_envia_cliente: boolean; motivo: string | null };
+const configRows: ConfigRow[] = [];
+for (let from = 0; ; from += 1000) {
+  const { data, error } = await admin
+    .from('empresa_obrigacoes_config')
+    .select('empresa_id, obrigacao, ativa, codigos, nao_envia_cliente, motivo')
+    .range(from, from + 999);
+  if (error || !data || data.length === 0) break;
+  configRows.push(...(data as ConfigRow[]));
+  if (data.length < 1000) break;
+}
 const configsPorEmpresa = new Map<string, Map<string, ConfigObrigacao>>();
 for (const r of (configRows ?? []) as Array<{ empresa_id: string; obrigacao: string; ativa: boolean; codigos: string[] | null; nao_envia_cliente: boolean; motivo: string | null }>) {
   if (!configsPorEmpresa.has(r.empresa_id)) configsPorEmpresa.set(r.empresa_id, new Map());
@@ -125,8 +139,15 @@ for (const r of (configRows ?? []) as Array<{ empresa_id: string; obrigacao: str
 }
 console.log(`  ${empresas.length} empresas, ${configRows?.length ?? 0} configs.`);
 
-console.log(`Varrendo ${dirAlvo} ${filtro ? `(filtro nome ~ /${filtro}/i)` : ''}...`);
-let pdfs = walk(dirAlvo);
+let pdfs: string[] = [];
+if (dirsFile) {
+  const dirs = readFileSync(dirsFile, 'utf8').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  console.log(`Varrendo ${dirs.length} pastas de ${dirsFile} ${filtro ? `(filtro nome ~ /${filtro}/i)` : ''}...`);
+  for (const d of dirs) walk(d, pdfs);
+} else {
+  console.log(`Varrendo ${dirAlvo} ${filtro ? `(filtro nome ~ /${filtro}/i)` : ''}...`);
+  pdfs = walk(dirAlvo);
+}
 if (limite > 0) pdfs = pdfs.slice(0, limite);
 console.log(`  ${pdfs.length} PDFs a analisar.\n`);
 
