@@ -151,12 +151,12 @@ function SidebarEmpresaRow({
         onClick={() => onSelect(empresa.id)}
         className={`w-full h-full text-left px-3.5 py-3 transition flex items-center gap-3 ${
           ativa
-            ? 'bg-indigo-50 dark:bg-indigo-950/30 border-l-2 border-indigo-600 dark:border-indigo-400'
+            ? 'bg-cyan-50 dark:bg-cyan-950/30 border-l-2 border-cyan-600 dark:border-cyan-400'
             : 'hover:bg-slate-50 dark:hover:bg-slate-800/40 border-l-2 border-transparent'
         }`}
       >
         <div className="min-w-0 flex-1">
-          <div className={`text-[11px] font-mono ${ativa ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-400 dark:text-slate-500'}`}>
+          <div className={`text-[11px] font-mono ${ativa ? 'text-cyan-700 dark:text-cyan-300' : 'text-slate-400 dark:text-slate-500'}`}>
             {empresa.codigo}
           </div>
           <div className={`text-sm font-medium truncate ${ativa ? 'text-slate-900 dark:text-slate-100' : 'text-slate-700 dark:text-slate-200'}`}>
@@ -327,8 +327,10 @@ export default function EnvioGuiasPage() {
         return true;
       })
       .sort((a, b) => {
-        if (a.pendentes !== b.pendentes) return b.pendentes - a.pendentes;
-        return a.empresa.codigo.localeCompare(b.empresa.codigo);
+        // Ordem alfabética por nome (razão social), acento-insensível.
+        const na = (a.empresa.razao_social || a.empresa.apelido || '').trim();
+        const nb = (b.empresa.razao_social || b.empresa.apelido || '').trim();
+        return na.localeCompare(nb, 'pt-BR', { sensitivity: 'base' });
       });
     return out;
   }, [empresasVisiveis, search, checklistMap, obrigacoesAtivasMap, filtroObrigacao, filtroStatus]);
@@ -437,7 +439,7 @@ export default function EnvioGuiasPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar empresa, código, CNPJ..."
-              className="w-full rounded-lg bg-slate-50 dark:bg-slate-800 pl-10 pr-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 border border-transparent focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900/40 focus:bg-white dark:focus:bg-slate-900 outline-none transition"
+              className="w-full rounded-lg bg-slate-50 dark:bg-slate-800 pl-10 pr-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 border border-transparent focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 dark:focus:ring-cyan-900/40 focus:bg-white dark:focus:bg-slate-900 outline-none transition"
             />
           </div>
           <div className="relative">
@@ -447,14 +449,14 @@ export default function EnvioGuiasPage() {
               value={mes}
               onChange={(e) => { if (e.target.value) setMes(e.target.value); }}
               aria-label="Competência da guia"
-              className="w-full rounded-lg bg-slate-50 dark:bg-slate-800 pl-10 pr-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 border border-transparent focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900/40 focus:bg-white dark:focus:bg-slate-900 outline-none transition [color-scheme:light] dark:[color-scheme:dark]"
+              className="w-full rounded-lg bg-slate-50 dark:bg-slate-800 pl-10 pr-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 border border-transparent focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 dark:focus:ring-cyan-900/40 focus:bg-white dark:focus:bg-slate-900 outline-none transition [color-scheme:light] dark:[color-scheme:dark]"
             />
           </div>
           <select
             value={filtroObrigacao}
             onChange={(e) => setFiltroObrigacao(e.target.value)}
             aria-label="Filtrar por obrigação"
-            className="w-full rounded-lg bg-slate-50 dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 border border-transparent focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900/40 focus:bg-white dark:focus:bg-slate-900 outline-none transition"
+            className="w-full rounded-lg bg-slate-50 dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 border border-transparent focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 dark:focus:ring-cyan-900/40 focus:bg-white dark:focus:bg-slate-900 outline-none transition"
           >
             <option value="">Todas as obrigações</option>
             {TODAS_OBRIGACOES_FILTRO.map((o) => (
@@ -465,7 +467,7 @@ export default function EnvioGuiasPage() {
             value={filtroStatus}
             onChange={(e) => setFiltroStatus(e.target.value as 'todos' | 'pendentes' | 'enviadas')}
             aria-label="Filtrar por status"
-            className="w-full rounded-lg bg-slate-50 dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 border border-transparent focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900/40 focus:bg-white dark:focus:bg-slate-900 outline-none transition"
+            className="w-full rounded-lg bg-slate-50 dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 border border-transparent focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 dark:focus:ring-cyan-900/40 focus:bg-white dark:focus:bg-slate-900 outline-none transition"
           >
             <option value="todos">Todos status</option>
             <option value="pendentes">Só pendentes</option>
@@ -553,7 +555,7 @@ export default function EnvioGuiasPage() {
                         return (
                           <>
                             <span className="text-slate-300 dark:text-slate-600">·</span>
-                            <span className="font-medium text-indigo-600 dark:text-indigo-400">{label}</span>
+                            <span className="font-medium text-cyan-600 dark:text-cyan-400">{label}</span>
                           </>
                         );
                       })()}
@@ -700,7 +702,7 @@ function PreviewExemplo({ arquivo, trecho }: { arquivo: string | null; trecho: s
           </div>
           <button
             onClick={() => setExpandido((v) => !v)}
-            className="mt-1 text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+            className="mt-1 text-[10px] font-semibold text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300"
           >
             {expandido ? 'Mostrar menos' : 'Mostrar trecho completo'}
           </button>
@@ -740,7 +742,7 @@ function CardObrigacao({ linha, preview, onAcao, onDetalhes }: CardObrigacaoProp
         icon: <FileText size={14} />,
       }
     : {
-        cardBorder: 'border-slate-200 bg-white hover:border-indigo-300 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-indigo-500',
+        cardBorder: 'border-slate-200 bg-white hover:border-cyan-300 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-cyan-500',
         badgeBg: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60',
         icon: <FileText size={14} />,
       };
@@ -807,7 +809,7 @@ function CardObrigacao({ linha, preview, onAcao, onDetalhes }: CardObrigacaoProp
             ? 'bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700'
             : naoEnviaCliente
             ? 'bg-slate-900 dark:bg-slate-700 text-white hover:bg-slate-800 dark:hover:bg-slate-600'
-            : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-400'
+            : 'bg-cyan-600 text-white hover:bg-cyan-700 dark:bg-cyan-500 dark:hover:bg-cyan-400'
         }`}
       >
         {enviada ? (
@@ -986,14 +988,14 @@ function ModalDetalheObrigacao({
                 <FileText size={11} /> Arquivo armazenado
               </div>
               <div className="flex items-center gap-3">
-                <FileText size={20} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+                <FileText size={20} className="text-cyan-600 dark:text-cyan-400 shrink-0" />
                 <div className="min-w-0 flex-1 text-sm font-medium text-slate-800 dark:text-slate-200 truncate" title={checklistItem.arquivoNome ?? ''}>
                   {checklistItem.arquivoNome || 'arquivo.pdf'}
                 </div>
                 <button
                   onClick={abrirPdfArmazenado}
                   disabled={abrindo}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-400 text-white transition disabled:opacity-50 shrink-0"
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold bg-cyan-600 hover:bg-cyan-700 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white transition disabled:opacity-50 shrink-0"
                 >
                   {abrindo ? <Loader2 className="animate-spin" size={12} /> : <ExternalLink size={12} />}
                   Visualizar
@@ -1113,7 +1115,7 @@ function ModalDetalheObrigacao({
                             <button
                               type="button"
                               onClick={() => void abrirPdfHistorico(ev.arquivoStoragePath!)}
-                              className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                              className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300"
                             >
                               <ExternalLink size={9} /> Ver PDF desta versão
                             </button>
@@ -1174,7 +1176,7 @@ function ModalDetalheObrigacao({
             className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition ${
               naoEnviaCliente
                 ? 'bg-slate-900 hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600'
-                : 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-400'
+                : 'bg-cyan-600 hover:bg-cyan-700 dark:bg-cyan-500 dark:hover:bg-cyan-400'
             }`}
           >
             {enviada ? (
@@ -1704,7 +1706,7 @@ function ModalEnviarGuia({
                 )}
               </div>
 
-              <label className="block rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-6 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition">
+              <label className="block rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-6 text-center cursor-pointer hover:border-cyan-400 hover:bg-cyan-50/30 dark:hover:bg-cyan-900/10 transition">
                 <Upload className="mx-auto mb-2 text-slate-400 dark:text-slate-500" size={28} />
                 <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                   {arquivosMulti.length === 0 ? 'Selecionar os PDFs dos livros' : 'Adicionar mais arquivos'}
@@ -1751,7 +1753,7 @@ function ModalEnviarGuia({
                     const duplicado = a.tipo && (contagemPorTipo.get(a.tipo) ?? 0) > 1;
                     return (
                       <li key={idx} className="px-3 py-2 flex items-center gap-3">
-                        <FileText className="text-indigo-600 dark:text-indigo-400 shrink-0" size={16} />
+                        <FileText className="text-cyan-600 dark:text-cyan-400 shrink-0" size={16} />
                         <div className="min-w-0 flex-1">
                           <div className="text-xs font-medium text-slate-900 dark:text-slate-100 truncate">{f.name}</div>
                           <div className="text-[10px] mt-0.5 flex items-center gap-1.5">
@@ -1790,7 +1792,7 @@ function ModalEnviarGuia({
               )}
             </div>
           ) : !arquivo ? (
-            <label className="block rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-8 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition">
+            <label className="block rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-8 text-center cursor-pointer hover:border-cyan-400 hover:bg-cyan-50/30 dark:hover:bg-cyan-900/10 transition">
               <Upload className="mx-auto mb-2 text-slate-400 dark:text-slate-500" size={32} />
               <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">Escolher PDF da guia</div>
               <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Clique para selecionar o arquivo</div>
@@ -1807,7 +1809,7 @@ function ModalEnviarGuia({
             </label>
           ) : (
             <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-3 flex items-center gap-3">
-              <FileText className="text-indigo-600 dark:text-indigo-400 shrink-0" size={20} />
+              <FileText className="text-cyan-600 dark:text-cyan-400 shrink-0" size={20} />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{arquivo.name}</div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -1934,7 +1936,7 @@ function ModalEnviarGuia({
             className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-50 disabled:cursor-not-allowed ${
               precisaForcar ? 'bg-red-600 hover:bg-red-700'
               : naoEnviaCliente ? 'bg-slate-900 hover:bg-slate-800'
-              : 'bg-indigo-600 hover:bg-indigo-700'
+              : 'bg-cyan-600 hover:bg-cyan-700'
             }`}
           >
             {enviando ? (
@@ -2111,7 +2113,7 @@ function ModalConfigurarObrigacoes({
         </div>
 
         <div className="p-5 max-h-[65vh] overflow-y-auto">
-          <div className="rounded-lg bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 p-3 text-xs text-indigo-900 dark:text-indigo-200 mb-4 leading-relaxed">
+          <div className="rounded-lg bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800/60 p-3 text-xs text-cyan-900 dark:text-cyan-200 mb-4 leading-relaxed">
             <strong>Como funciona:</strong> desligue as obrigações que esta empresa NÃO tem.
             Obrigações desligadas somem da aba <em>Envio de Guias</em>. Códigos de receita servem para o validador rejeitar PDFs errados.
           </div>
@@ -2138,7 +2140,7 @@ function ModalConfigurarObrigacoes({
                       estado.ativa
                         ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
                         : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/40'
-                    } ${tinhaPendencia ? 'ring-2 ring-indigo-200 dark:ring-indigo-700/60' : ''}`}
+                    } ${tinhaPendencia ? 'ring-2 ring-cyan-200 dark:ring-cyan-700/60' : ''}`}
                   >
                     {/* Header do card */}
                     <div className="flex items-center gap-3 p-3">
@@ -2149,7 +2151,7 @@ function ModalConfigurarObrigacoes({
                         aria-label={estado.ativa ? 'Desativar' : 'Ativar'}
                       >
                         {estado.ativa ? (
-                          <ToggleRight className="text-indigo-600 dark:text-indigo-400" size={32} />
+                          <ToggleRight className="text-cyan-600 dark:text-cyan-400" size={32} />
                         ) : (
                           <ToggleLeft className="text-slate-400 dark:text-slate-500" size={32} />
                         )}
@@ -2160,7 +2162,7 @@ function ModalConfigurarObrigacoes({
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           {tinhaPendencia && (
-                            <span className="text-[10px] text-indigo-700 dark:text-indigo-300 font-semibold uppercase tracking-wider bg-indigo-100 dark:bg-indigo-900/40 rounded-md px-1.5 py-0.5">
+                            <span className="text-[10px] text-cyan-700 dark:text-cyan-300 font-semibold uppercase tracking-wider bg-cyan-100 dark:bg-cyan-900/40 rounded-md px-1.5 py-0.5">
                               Alteração não salva
                             </span>
                           )}
@@ -2187,7 +2189,7 @@ function ModalConfigurarObrigacoes({
                           onChange={(e) => atualizarPendente(obrigacao, { motivo: e.target.value })}
                           placeholder="Motivo (opcional, ex: empresa só de serviços)"
                           disabled={salvando}
-                          className="w-full text-xs rounded-md border border-slate-300 dark:border-slate-600 px-2.5 py-1.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900/40 outline-none transition"
+                          className="w-full text-xs rounded-md border border-slate-300 dark:border-slate-600 px-2.5 py-1.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 dark:focus:ring-cyan-900/40 outline-none transition"
                         />
                       </div>
                     )}
@@ -2217,7 +2219,7 @@ function ModalConfigurarObrigacoes({
                             }}
                             placeholder="ex: 0120-6, 0121-4  (separe por vírgula, deixe vazio se não validar)"
                             disabled={salvando}
-                            className="w-full text-xs font-mono rounded-md border border-slate-300 dark:border-slate-600 px-2.5 py-1.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900/40 outline-none transition"
+                            className="w-full text-xs font-mono rounded-md border border-slate-300 dark:border-slate-600 px-2.5 py-1.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 dark:focus:ring-cyan-900/40 outline-none transition"
                           />
                           <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
                             {estado.codigos.length > 0
@@ -2233,7 +2235,7 @@ function ModalConfigurarObrigacoes({
                             checked={estado.naoEnviaCliente}
                             onChange={(e) => atualizarPendente(obrigacao, { naoEnviaCliente: e.target.checked })}
                             disabled={salvando}
-                            className="rounded border-slate-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500"
+                            className="rounded border-slate-300 dark:border-slate-600 text-cyan-600 focus:ring-cyan-500"
                           />
                           <span><strong>Não envia ao cliente</strong> — obrigação interna do escritório (SPED, REINF, Livros etc)</span>
                         </label>
@@ -2261,7 +2263,7 @@ function ModalConfigurarObrigacoes({
             <button
               onClick={salvar}
               disabled={salvando || pendentes.size === 0}
-              className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-400 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-cyan-600 hover:bg-cyan-700 dark:bg-cyan-500 dark:hover:bg-cyan-400 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {salvando ? (
                 <><Loader2 className="animate-spin" size={14} /> Salvando…</>
