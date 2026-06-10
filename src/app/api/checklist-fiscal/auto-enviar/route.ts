@@ -30,6 +30,8 @@ import {
 import {
   identificarEmpresa, identificarObrigacao, competenciaDoPdf, type ConfigObrigacao,
 } from './_identificar';
+import { estagiarItemLote, fecharLotesMaduros } from './_shared-lote';
+import { classificarTipoLivro } from '@/app/utils/validarGuia';
 import {
   resolverDestinatariosFiscais, criarNotificacaoSistema,
   rotuloTipoProblema, severidadeDoProblema,
@@ -49,6 +51,7 @@ type StatusProcessamento =
   | 'pendente_aprovacao_competencia_antiga' // competência > 60 dias atrás
   | 'duplicado_periodo'                    // envio anterior dessa empresa+mes+obrigacao no checklist
   | 'interno_marcado_feito'                // obrigação tipo "não envia cliente" — só marca check
+  | 'aguardando_lote'                      // LIVROS FISCAIS — estagiado no lote, envia quando fechar
   | 'erro';
 
 // Quantos dias atrás é "competência antiga" — não envia automaticamente,
@@ -363,11 +366,14 @@ export async function POST(req: Request) {
   // — a chave passa a ser o hash. Só faz curto-circuito em status TERMINAL de
   // sucesso; pendências/erros podem ser reprocessados (re-soltar após corrigir
   // config, p.ex.). Double-send segue barrado pelo guard de duplicado (passo 14).
+  // 'aguardando_lote' também curto-circuita: o livro já está estagiado no lote
+  // (vai sair quando o lote fechar); re-soltar o MESMO arquivo não deve re-estagiar
+  // nem virar "livro atrasado". Um livro NOVO (hash diferente) não é afetado.
   const { data: jaProcessado } = await admin
     .from('guias_auto_processadas')
     .select('id, status, processado_em')
     .eq('hash_arquivo', hashArquivo)
-    .in('status', ['enviado', 'interno_marcado_feito'])
+    .in('status', ['enviado', 'interno_marcado_feito', 'aguardando_lote'])
     .order('processado_em', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -647,6 +653,71 @@ export async function POST(req: Request) {
     return NextResponse.json({
       status: 'interno_marcado_feito',
       detalhes: { empresa: empresa.codigo || empresa.razao_social, obrigacao, competencia },
+      destino: montarDestino(empresa, competencia, nomeCanonico),
+    });
+  }
+
+  // 12.5 LIVROS FISCAIS: não envia agora — ESTAGIA no lote pra mandar todos os
+  // livros (entrada, saída, apuração ICMS/IPI, ISS) JUNTOS num email só quando o
+  // lote fechar (ver _shared-lote.ts). A tarefa fica pendente até o lote sair.
+  if (obrigacao === 'LIVROS FISCAIS') {
+    const tipoLivro = classificarTipoLivro(textoPdf);
+    let r: Awaited<ReturnType<typeof estagiarItemLote>>;
+    try {
+      r = await estagiarItemLote(admin, {
+        empresa, competencia, hashArquivo, fileBuffer, nomeArquivo: nomeCanonico, tipoLivro, caminhoServidor,
+      });
+    } catch (e) {
+      await registrarProblema(admin, {
+        caminhoServidor, nomeArquivo, hashArquivo, empresaId: empresa.id, empresaNomePasta: null,
+        tipoProblema: 'erro',
+        detalhes: { motivo: `Falha ao estagiar o livro no lote: ${e instanceof Error ? e.message : 'erro'}` },
+        competenciaParseada: competencia, obrigacaoParseada: obrigacao,
+      });
+      await registrarProcessado(admin, {
+        caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
+        nomeArquivo, status: 'pendente_correcao', detalhes: { tipoProblema: 'erro' },
+      });
+      return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'erro' } });
+    }
+    if (r.status === 'lote_ja_enviado') {
+      // Livro chegou DEPOIS de o lote do mês já ter sido enviado — registra
+      // pendência (não re-envia o lote, pra não duplicar os já enviados).
+      await registrarProblema(admin, {
+        caminhoServidor, nomeArquivo, hashArquivo, empresaId: empresa.id, empresaNomePasta: null,
+        tipoProblema: 'erro',
+        detalhes: { motivo: `O livro "${nomeArquivo}" chegou depois do lote de ${competencia} já ter sido enviado. Se for um livro que faltou, envie manualmente.`, livro_atrasado: true, tipoLivro },
+        competenciaParseada: competencia, obrigacaoParseada: obrigacao,
+      });
+      await registrarProcessado(admin, {
+        caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
+        nomeArquivo, status: 'pendente_correcao', detalhes: { motivo: 'livro_atrasado_lote', tipoLivro },
+      });
+      return NextResponse.json({ status: 'pendente_correcao', detalhes: { motivo: 'lote já enviado' } });
+    }
+    // estagiado / ja_estagiado → tarefa aguardando o lote fechar.
+    await registrarProcessado(admin, {
+      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
+      nomeArquivo, status: 'aguardando_lote',
+      detalhes: { motivo: r.status === 'ja_estagiado' ? 'Livro já estava no lote' : 'Livro estagiado — aguardando os demais do lote', tipoLivro, loteId: r.loteId },
+    });
+    // Gatilho de CAMINHO RÁPIDO: se este livro completou os 5 tipos conhecidos, o
+    // lote fecha e envia AGORA (sem depender do watcher/cron). fecharLotesMaduros
+    // só fecha este lote se já tem os 5 (o debounce é coberto pelo watcher/cron).
+    // await porque em serverless o trabalho pós-resposta é descartado.
+    if (r.status === 'estagiado') {
+      const baseUrlLote = (() => {
+        const proto = req.headers.get('x-forwarded-proto') ?? 'https';
+        const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host');
+        if (host) return `${proto}://${host}`;
+        return process.env.NEXT_PUBLIC_APP_URL?.trim()?.replace(/\/+$/, '') ?? null;
+      })();
+      try { await fecharLotesMaduros(admin, { ghostUserId, baseUrl: baseUrlLote }); }
+      catch (e) { console.error('[auto-enviar] fechar lote (caminho rápido) falhou:', e); }
+    }
+    return NextResponse.json({
+      status: 'aguardando_lote',
+      detalhes: { empresa: empresa.codigo || empresa.razao_social, obrigacao, competencia, tipoLivro, loteId: r.loteId },
       destino: montarDestino(empresa, competencia, nomeCanonico),
     });
   }

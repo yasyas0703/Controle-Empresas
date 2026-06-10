@@ -124,6 +124,7 @@ if (!TOKEN) {
 const BASE_URL = urlArg || env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 const API_URL = `${BASE_URL.replace(/\/+$/, '')}/api/checklist-fiscal/auto-enviar`;
 const HEARTBEAT_URL = `${API_URL}/heartbeat`;
+const FECHAR_LOTES_URL = `${API_URL}/fechar-lotes`;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // State local (idempotência rápida — não substitui a do servidor)
@@ -348,7 +349,9 @@ async function arquivarNaEmpresa(caminho, destino) {
 // Retorna true se o arquivo saiu da entrada (arquivado ou movido pra pendentes);
 // false se ficou preso (re-tentar só a movimentação depois).
 async function moverConformeResultado(caminho, resultado) {
-  const enviou = resultado.status === 'enviado' || resultado.status === 'interno_marcado_feito';
+  // 'aguardando_lote': o livro já foi ESTAGIADO no lote (salvo no Storage) — pode
+  // sair da entrada e ir pro arquivo da empresa; o envio sai quando o lote fecha.
+  const enviou = resultado.status === 'enviado' || resultado.status === 'interno_marcado_feito' || resultado.status === 'aguardando_lote';
   if (enviou && resultado.destino) {
     return await arquivarNaEmpresa(caminho, resultado.destino);
   }
@@ -414,6 +417,28 @@ async function drenarFila() {
     }
   }
   processando = false;
+  // Esvaziou a fila — tenta fechar lotes de livros maduros (caminho rápido quando
+  // os 5 tipos já chegaram). O debounce é coberto pelo interval em iniciar().
+  fecharLotes();
+}
+
+let fechandoLotes = false;
+async function fecharLotes() {
+  if (fechandoLotes) return;
+  fechandoLotes = true;
+  try {
+    const res = await fetch(FECHAR_LOTES_URL, { method: 'POST', headers: { 'X-Machine-Token': TOKEN } });
+    if (res.ok) {
+      const j = await res.json().catch(() => null);
+      if (j && (j.enviados || j.parciais || j.falhas)) {
+        log.info(`Lotes de livros: ${j.enviados ?? 0} enviado(s), ${j.parciais ?? 0} parcial(is), ${j.falhas ?? 0} falha(s).`);
+      }
+    }
+  } catch {
+    // best-effort — silencioso
+  } finally {
+    fechandoLotes = false;
+  }
 }
 
 async function processarArquivo(caminho) {
@@ -438,7 +463,7 @@ async function processarArquivo(caminho) {
   // reprocessáveis: se a usuária corrige a causa e joga o arquivo de novo na
   // entrada, tem que tentar de novo. (erro_rede também reprocessa — a requisição
   // nunca chegou no servidor.)
-  const SKIP_STATUSES = new Set(['enviado', 'interno_marcado_feito', 'ja_processado', 'duplicado_periodo']);
+  const SKIP_STATUSES = new Set(['enviado', 'interno_marcado_feito', 'ja_processado', 'duplicado_periodo', 'aguardando_lote']);
   const stEntry = state.processados[caminho];
   if (stEntry && stEntry.hash === hash && SKIP_STATUSES.has(stEntry.status)) {
     // Já teve desfecho terminal — NUNCA reenvia. Mas se foi enviado e o
@@ -658,6 +683,10 @@ function iniciar() {
 
   // Varre arquivamentos presos (PDF aberto na hora do envio) a cada 45s.
   if (!ONCE) setInterval(reprocessarArquivamentosPresos, 45_000);
+
+  // Fecha lotes de livros maduros por DEBOUNCE (empresa que tem só 3 livros e
+  // parou de mandar) a cada 60s — além do disparo ao esvaziar a fila.
+  if (!ONCE) setInterval(fecharLotes, 60_000);
 
   const watcher = chokidar.watch(PASTA_ENTRADA, {
     persistent: true,

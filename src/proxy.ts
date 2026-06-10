@@ -42,6 +42,8 @@ function isPublicPath(pathname: string): boolean {
   if (pathname === '/api/checklist-fiscal/auto-enviar') return true;
   // Heartbeat do mesmo daemon (dead-man switch) — também autentica por X-Machine-Token.
   if (pathname === '/api/checklist-fiscal/auto-enviar/heartbeat') return true;
+  // Fecha os lotes de livros maduros — chamado pelo daemon a cada ciclo (X-Machine-Token).
+  if (pathname === '/api/checklist-fiscal/auto-enviar/fechar-lotes') return true;
 
   return false;
 }

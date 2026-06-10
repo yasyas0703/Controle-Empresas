@@ -693,3 +693,27 @@ export function validarGuia(
 export function obrigacoesComValidacao(): string[] {
   return Object.keys(PERFIS);
 }
+
+// ─── Lote de Livros Fiscais ────────────────────────────────────────────────────
+export type TipoLivro = 'entradas' | 'saidas' | 'apuracao_icms' | 'apuracao_ipi' | 'iss' | 'outro';
+
+/** Os 5 tipos canônicos de livro que o escritório costuma gerar por competência. */
+export const TIPOS_LIVRO_CANONICOS: TipoLivro[] = ['entradas', 'saidas', 'apuracao_icms', 'apuracao_ipi', 'iss'];
+
+/**
+ * Sub-classifica um PDF JÁ reconhecido como LIVROS FISCAIS no tipo de livro, pra o
+ * lote saber quais dos 5 tipos já chegaram. O texto desses livros costuma vir
+ * ESPAÇADO letra-a-letra (ver matchSemEspacos), então testa também a versão sem
+ * espaços. IPI antes de ICMS porque ambos têm "registro de apuracao do".
+ */
+export function classificarTipoLivro(texto: string): TipoLivro {
+  const norm = normalizar(texto);
+  const semEsp = norm.replace(/\s+/g, '');
+  const tem = (re: RegExp) => re.test(norm) || re.test(semEsp);
+  if (tem(/registro\s*de\s*apuracao\s*do\s*ipi/)) return 'apuracao_ipi';
+  if (tem(/registro\s*de\s*apuracao\s*do\s*icms/)) return 'apuracao_icms';
+  if (tem(/registro\s*de\s*notas\s*fiscais\s*e\s*servicos/)) return 'iss';
+  if (tem(/registro\s*de\s*entradas/)) return 'entradas';
+  if (tem(/registro\s*de\s*saidas/)) return 'saidas';
+  return 'outro';
+}

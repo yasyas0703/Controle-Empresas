@@ -17,6 +17,7 @@ import { sendEmailViaUserGmail } from '@/lib/gmailSend';
 import {
   resolverDestinatariosFiscais, criarNotificacaoSistema, rotuloTipoProblema,
 } from '@/lib/alertasAutoEnvio';
+import { fecharLotesMaduros } from '../../checklist-fiscal/auto-enviar/_shared-lote';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -64,6 +65,19 @@ async function processar() {
   const admin = getSupabaseAdmin();
   const ghostUserId = process.env.GHOST_USER_ID || null;
   const resultado: Record<string, unknown> = { ts: new Date().toISOString() };
+
+  // Backstop dos lotes de livros: fecha+envia os lotes maduros que o watcher não
+  // fechou (ex: watcher caiu). Gatilho primário é o watcher chamando /fechar-lotes.
+  if (ghostUserId) {
+    try {
+      resultado.lotesLivros = await fecharLotesMaduros(admin, {
+        ghostUserId,
+        baseUrl: process.env.NEXT_PUBLIC_APP_URL?.trim()?.replace(/\/+$/, '') ?? null,
+      });
+    } catch (e) {
+      console.error('[cron] falha ao fechar lotes de livros:', e);
+    }
+  }
 
   // Destinatários fiscais (gerentes/admins; fallback admins). Usados nos dois alertas.
   const destinatarios = await resolverDestinatariosFiscais(admin, null);
