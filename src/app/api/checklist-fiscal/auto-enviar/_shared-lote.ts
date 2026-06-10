@@ -27,7 +27,8 @@ import type { Empresa } from '@/app/types';
 const BUCKET_DOCUMENTOS = 'documentos';
 const BUCKET_PORTAL = 'portal-documentos';
 const OBRIGACAO_LIVROS = 'LIVROS FISCAIS';
-export const LOTE_DEBOUNCE_MIN_DEFAULT = Number(process.env.LOTE_DEBOUNCE_MIN ?? 15) || 15;
+// Lote incompleto parado há mais que isto (horas) → alerta (não envia). Default 18h.
+const LOTE_PARADO_HORAS_DEFAULT = Number(process.env.LOTE_PARADO_HORAS ?? 18) || 18;
 
 interface LoteRow {
   id: string;
@@ -294,21 +295,21 @@ export async function enviarLote(
 // ─── Fecha os lotes maduros (chamado pelo watcher e pelo cron backstop) ──────
 export async function fecharLotesMaduros(
   admin: SupabaseClient,
-  params: { ghostUserId: string; baseUrl?: string | null; debounceMin?: number },
+  params: { ghostUserId: string; baseUrl?: string | null },
 ): Promise<{ fechados: number; enviados: number; parciais: number; falhas: number }> {
-  const debounceMin = params.debounceMin ?? LOTE_DEBOUNCE_MIN_DEFAULT;
   const out = { fechados: 0, enviados: 0, parciais: 0, falhas: 0 };
 
   const { data: abertosData } = await admin.from('lotes_livros_fiscais').select('*').eq('status', 'aberto');
   const abertos = (abertosData ?? []) as LoteRow[];
   if (abertos.length === 0) return out;
 
-  const cutoff = Date.now() - debounceMin * 60_000;
+  // "SEMPRE 5" (decisão da usuária): o lote só fecha e envia quando os 5 tipos
+  // conhecidos chegaram. Incompleto NÃO é enviado — fica aberto; o cron chama
+  // alertarLotesIncompletosParados pra avisar se ficar muito tempo sem completar,
+  // pra nunca sumir em silêncio.
   const maduros = abertos.filter((l) => {
     const tipos = (l.tipos_recebidos ?? []).filter((t) => TIPOS_LIVRO_CANONICOS.includes(t as TipoLivro));
-    const temOs5 = tipos.length >= TIPOS_LIVRO_CANONICOS.length; // caminho rápido
-    const debouncePassou = new Date(l.ultimo_item_em).getTime() < cutoff;
-    return temOs5 || debouncePassou;
+    return tipos.length >= TIPOS_LIVRO_CANONICOS.length;
   });
   if (maduros.length === 0) return out;
 
@@ -331,11 +332,7 @@ export async function fecharLotesMaduros(
     }
     if (res.ok) {
       out.enviados++;
-      if (res.parcial) {
-        out.parciais++;
-        // Enviou, mas com menos que os 5 tipos — avisa (não bloqueia).
-        await alertarLoteParcial(admin, empresa, lote, res.tiposAusentes, res.enviados);
-      }
+      if (res.parcial) out.parciais++; // não deve ocorrer (só fecha com os 5) — defensivo.
     } else {
       out.falhas++;
       // Mantém o lote 'aberto' pra tentar de novo no próximo ciclo; alerta UMA vez.
@@ -349,15 +346,51 @@ const ROTULO_TIPO: Record<string, string> = {
   entradas: 'Entradas', saidas: 'Saídas', apuracao_icms: 'Apuração ICMS', apuracao_ipi: 'Apuração IPI', iss: 'ISS',
 };
 
-async function alertarLoteParcial(admin: SupabaseClient, empresa: Empresa, lote: LoteRow, ausentes: TipoLivro[], enviados: number): Promise<void> {
-  const nome = empresa.apelido || empresa.razao_social || empresa.codigo;
-  const faltam = ausentes.map((t) => ROTULO_TIPO[t] ?? t).join(', ');
-  const destinatarios = (await resolverDestinatariosFiscais(admin, empresa.id)).map((u) => u.id);
-  await criarNotificacaoSistema(admin, {
-    titulo: `Livros enviados incompletos — ${nome}`,
-    mensagem: `Enviei ${enviados} livro(s) de ${nome} (${lote.competencia}), mas faltou(aram): ${faltam}. Confira se algum livro não foi colocado na pasta.`,
-    tipo: 'aviso', empresaId: empresa.id, destinatarios,
+/**
+ * Rede de segurança do "sempre 5": como o lote incompleto NÃO é enviado, esta
+ * função (chamada pelo cron) avisa quando um lote fica parado há muito tempo sem
+ * completar os 5 tipos — pra a pessoa colocar o que falta ou resolver manual.
+ * Não envia nada; só alerta. Dedup por lote (detalhes.parado_alertado_em).
+ */
+export async function alertarLotesIncompletosParados(
+  admin: SupabaseClient,
+  params: { staleHoras?: number },
+): Promise<{ alertados: number }> {
+  const staleHoras = params.staleHoras ?? LOTE_PARADO_HORAS_DEFAULT;
+  const out = { alertados: 0 };
+  const { data: abertosData } = await admin.from('lotes_livros_fiscais').select('*').eq('status', 'aberto');
+  const abertos = (abertosData ?? []) as LoteRow[];
+  const cutoff = Date.now() - staleHoras * 3_600_000;
+  const parados = abertos.filter((l) => {
+    const tipos = (l.tipos_recebidos ?? []).filter((t) => TIPOS_LIVRO_CANONICOS.includes(t as TipoLivro));
+    const incompleto = tipos.length < TIPOS_LIVRO_CANONICOS.length;
+    const velho = new Date(l.ultimo_item_em).getTime() < cutoff;
+    const jaAlertado = !!(l.detalhes && (l.detalhes as { parado_alertado_em?: string }).parado_alertado_em);
+    return incompleto && velho && !jaAlertado;
   });
+  if (parados.length === 0) return out;
+  const empresaIds = [...new Set(parados.map((l) => l.empresa_id))];
+  const { data: empresasData } = await admin.from('empresas').select('*').in('id', empresaIds);
+  const empresasMap = new Map<string, Empresa>();
+  for (const e of (empresasData ?? []) as Empresa[]) empresasMap.set(e.id, e);
+  for (const lote of parados) {
+    const empresa = empresasMap.get(lote.empresa_id);
+    if (!empresa) continue;
+    const nome = empresa.apelido || empresa.razao_social || empresa.codigo;
+    const tipos = (lote.tipos_recebidos ?? []).filter((t) => TIPOS_LIVRO_CANONICOS.includes(t as TipoLivro));
+    const faltam = TIPOS_LIVRO_CANONICOS.filter((t) => !tipos.includes(t)).map((t) => ROTULO_TIPO[t] ?? t).join(', ');
+    const destinatarios = (await resolverDestinatariosFiscais(admin, empresa.id)).map((u) => u.id);
+    await criarNotificacaoSistema(admin, {
+      titulo: `Livros incompletos parados — ${nome}`,
+      mensagem: `O lote de livros de ${nome} (${lote.competencia}) está com ${tipos.length} de ${TIPOS_LIVRO_CANONICOS.length} tipos e parado há mais de ${staleHoras}h. Faltam: ${faltam}. Coloque os livros que faltam (ou resolva manual) — não envio incompleto.`,
+      tipo: 'aviso', empresaId: empresa.id, destinatarios,
+    });
+    await admin.from('lotes_livros_fiscais')
+      .update({ detalhes: { ...(lote.detalhes ?? {}), parado_alertado_em: new Date().toISOString() } })
+      .eq('id', lote.id);
+    out.alertados++;
+  }
+  return out;
 }
 
 async function alertarLoteFalhou(admin: SupabaseClient, empresa: Empresa, lote: LoteRow, motivo: string): Promise<void> {

@@ -17,7 +17,7 @@ import { sendEmailViaUserGmail } from '@/lib/gmailSend';
 import {
   resolverDestinatariosFiscais, criarNotificacaoSistema, rotuloTipoProblema,
 } from '@/lib/alertasAutoEnvio';
-import { fecharLotesMaduros } from '../../checklist-fiscal/auto-enviar/_shared-lote';
+import { fecharLotesMaduros, alertarLotesIncompletosParados } from '../../checklist-fiscal/auto-enviar/_shared-lote';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -77,6 +77,12 @@ async function processar() {
     } catch (e) {
       console.error('[cron] falha ao fechar lotes de livros:', e);
     }
+  }
+  // "Sempre 5": avisa (não envia) os lotes incompletos parados há muito tempo.
+  try {
+    resultado.lotesParados = await alertarLotesIncompletosParados(admin, {});
+  } catch (e) {
+    console.error('[cron] falha ao alertar lotes parados:', e);
   }
 
   // Destinatários fiscais (gerentes/admins; fallback admins). Usados nos dois alertas.

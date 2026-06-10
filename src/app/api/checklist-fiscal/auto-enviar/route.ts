@@ -702,8 +702,8 @@ export async function POST(req: Request) {
       detalhes: { motivo: r.status === 'ja_estagiado' ? 'Livro já estava no lote' : 'Livro estagiado — aguardando os demais do lote', tipoLivro, loteId: r.loteId },
     });
     // Gatilho de CAMINHO RÁPIDO: se este livro completou os 5 tipos conhecidos, o
-    // lote fecha e envia AGORA (sem depender do watcher/cron). fecharLotesMaduros
-    // só fecha este lote se já tem os 5 (o debounce é coberto pelo watcher/cron).
+    // lote fecha e envia AGORA (sem depender do watcher/cron). "Sempre 5":
+    // fecharLotesMaduros só envia lote com os 5 tipos; incompleto fica aguardando.
     // await porque em serverless o trabalho pós-resposta é descartado.
     if (r.status === 'estagiado') {
       const baseUrlLote = (() => {
