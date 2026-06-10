@@ -279,3 +279,67 @@ function compPorVencimento(texto: string): string | null {
 export function competenciaDoPdf(texto: string): string | null {
   return compPorIntervalo(texto) ?? compPorRotulo(texto) ?? compPorChaveDfe(texto) ?? compPorVencimento(texto) ?? extrairDados(texto).competencia;
 }
+
+// ─── Competência de LIVROS FISCAIS (caso especial) ─────────────────────────────
+// Livro fiscal NÃO é guia: as datas nele SÃO o próprio mês de apuração, não um
+// vencimento. Por isso a cascata de guia erra feio aqui — o `compPorVencimento`
+// pega a maior data (ex.: 31/05/2026, fim do período) e SUBTRAI 1 mês, jogando o
+// livro de maio pra abril. Quando isso acontece com só alguns livros do conjunto,
+// o lote racha em duas competências e nunca fecha (precisa dos 5 tipos juntos).
+//
+// Todo livro traz o período como "PERÍODO: 01/MM/AAAA a 31/MM/AAAA" ou
+// "MÊS OU PERÍODO/ANO: ... 01/MM/AAAA". A competência é esse mês DIRETO (sem
+// subtrair). Camadas, da mais confiável pra menos — todas usam o mês COMO ESTÁ:
+//   1) intervalo "DD a DD/MM/AAAA" (período de apuração grudado);
+//   2) data logo após o rótulo de período/mês de referência;
+//   3) início do período "01/MM/AAAA" (livro sempre começa no dia 1º);
+//   4) data mais futura plausível — mês COMO ESTÁ (nunca menos 1).
+// Se nada casar, devolve null → a rota registra pendência (melhor que chutar mês
+// errado e rachar o lote).
+
+function ymSeData(dia: number, mes: number, ano: number): string | null {
+  if (dia < 1 || dia > 31 || !compValida(ano, mes)) return null;
+  return compYm(ano, mes);
+}
+
+function compLivroPorRotulo(texto: string): string | null {
+  // Rótulo de período seguido (em até 30 não-dígitos) de uma data DD/MM/AAAA.
+  const re = /(?:per[ií]odo|m[eê]s\s*ou\s*per[ií]odo\s*\/?\s*ano|m[eê]s\s*(?:de\s*)?refer[eê]ncia)[^\d]{0,30}(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/i;
+  const m = texto.match(re);
+  return m ? ymSeData(Number(m[1]), Number(m[2]), Number(m[3])) : null;
+}
+
+function compLivroPorInicioPeriodo(texto: string): string | null {
+  // Início do período: livro fiscal sempre cobre o mês inteiro, começa no dia 1º.
+  // "01/MM/AAAA" é assinatura forte do mês de apuração.
+  const m = texto.match(/\b0?1[\/\-.](\d{1,2})[\/\-.](\d{4})\b/);
+  return m ? ymSeData(1, Number(m[1]), Number(m[2])) : null;
+}
+
+function compLivroPorDataMaisFutura(texto: string): string | null {
+  // Igual ao compPorVencimento, mas SEM subtrair 1 mês: a maior data do livro é
+  // o fim do período (31/MM) — o próprio mês de apuração.
+  const limite = Date.now() + 200 * 86400000;
+  let best: { y: number; m: number; ts: number } | null = null;
+  for (const mm of texto.matchAll(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/g)) {
+    const d = Number(mm[1]); const mes = Number(mm[2]); let y = Number(mm[3]);
+    if (mm[3].length === 2) y += 2000;
+    if (mm[3].length === 3) continue;
+    if (!compValida(y, mes) || d < 1 || d > 31) continue;
+    const ts = Date.UTC(y, mes - 1, d);
+    if (ts > limite) continue;
+    if (!best || ts > best.ts) best = { y, m: mes, ts };
+  }
+  return best ? compYm(best.y, best.m) : null;
+}
+
+/**
+ * Competência de um PDF JÁ reconhecido como LIVROS FISCAIS. Diferente da de guia:
+ * usa o mês de apuração DIRETO, nunca subtrai. Ver bloco de comentário acima.
+ */
+export function competenciaDeLivro(texto: string): string | null {
+  return compPorIntervalo(texto)
+    ?? compLivroPorRotulo(texto)
+    ?? compLivroPorInicioPeriodo(texto)
+    ?? compLivroPorDataMaisFutura(texto);
+}

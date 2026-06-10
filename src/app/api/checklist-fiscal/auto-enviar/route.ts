@@ -28,7 +28,7 @@ import {
   enviarGuia, marcarChecklistComoFeito, jaEnviadaNoChecklist, subirPendente, subirDocumentoInterno,
 } from './_shared-envio';
 import {
-  identificarEmpresa, identificarObrigacao, competenciaDoPdf, type ConfigObrigacao,
+  identificarEmpresa, identificarObrigacao, competenciaDoPdf, competenciaDeLivro, type ConfigObrigacao,
 } from './_identificar';
 import { estagiarItemLote, fecharLotesMaduros } from './_shared-lote';
 import { classificarTipoLivro } from '@/app/utils/validarGuia';
@@ -512,7 +512,13 @@ export async function POST(req: Request) {
   }
   const obrigacao = identObr.obrigacao;
 
-  const competencia = competenciaDoPdf(textoPdf);
+  // LIVROS FISCAIS usam detecção própria: o mês é o do período de apuração DIRETO,
+  // sem subtrair 1 (livro não tem "vencimento"). A cascata de guia jogava livros de
+  // maio pra abril e rachava o lote em duas competências (nunca fechava). Ver
+  // competenciaDeLivro em _identificar.ts.
+  const competencia = obrigacao === 'LIVROS FISCAIS'
+    ? competenciaDeLivro(textoPdf)
+    : competenciaDoPdf(textoPdf);
   if (!competencia) {
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,

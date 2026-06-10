@@ -153,7 +153,43 @@ export async function estagiarItemLote(
   await admin.from('lotes_livros_fiscais')
     .update({ tipos_recebidos: tipos, qtd_itens: (loteRow.qtd_itens ?? 0) + 1, ultimo_item_em: new Date().toISOString() })
     .eq('id', loteRow.id);
+  // Já anexa o livro na célula do checklist (fica salvo/visível na tarefa), mas SEM
+  // concluir — a pedido: enquanto o lote não fecha, a usuária vê o que já chegou e a
+  // tarefa NÃO conta como feita. A conclusão só acontece quando o lote envia
+  // (enviarLote -> marcarChecklistComoFeito). Best-effort: não trava o estágio.
+  await anexarParcialNoChecklist(admin, {
+    empresaId, competencia: params.competencia, storagePath, nomeArquivo: params.nomeArquivo,
+  }).catch((e) => console.error('[estagiarItemLote] anexar parcial falhou:', e));
   return { loteId: loteRow.id, status: 'estagiado', tipoLivro: params.tipoLivro };
+}
+
+// Anexa o livro recém-estagiado na célula do checklist de LIVROS FISCAIS, sem
+// marcar concluído. Cria a linha se não existir. Nunca rebaixa uma linha já
+// concluída (lote já enviado). A célula guarda 1 anexo (arquivo_url) — com vários
+// livros parciais, mostra o último que chegou; o conjunto completo vai no envio.
+async function anexarParcialNoChecklist(
+  admin: SupabaseClient,
+  params: { empresaId: string; competencia: string; storagePath: string; nomeArquivo: string },
+): Promise<void> {
+  const { data: ja } = await admin
+    .from('checklist_fiscal')
+    .select('id, concluido')
+    .eq('empresa_id', params.empresaId).eq('mes', params.competencia).eq('obrigacao', OBRIGACAO_LIVROS)
+    .maybeSingle();
+  const linha = ja as { id?: string; concluido?: boolean } | null;
+  if (linha?.concluido) return; // já enviado/concluído — não mexe
+  const nowIso = new Date().toISOString();
+  if (linha?.id) {
+    await admin.from('checklist_fiscal')
+      .update({ arquivo_url: params.storagePath, arquivo_nome: params.nomeArquivo, atualizado_em: nowIso })
+      .eq('id', linha.id);
+  } else {
+    await admin.from('checklist_fiscal')
+      .insert({
+        empresa_id: params.empresaId, mes: params.competencia, obrigacao: OBRIGACAO_LIVROS,
+        arquivo_url: params.storagePath, arquivo_nome: params.nomeArquivo,
+      });
+  }
 }
 
 // ─── Enviar o lote (1 email, N anexos) ──────────────────────────────────────
