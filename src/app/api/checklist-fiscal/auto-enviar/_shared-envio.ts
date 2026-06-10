@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { getOAuthClient, decryptToken } from '@/lib/googleOAuth';
 import { sendPushToCliente } from '@/lib/webPush';
 import { vencimentoDoMes, vencimentoDoMesSn } from '@/app/utils/regrasVencimentosFiscais';
+import { ehObrigacaoSempreInterna } from '@/app/types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
 
@@ -227,7 +228,7 @@ export interface ResultadoEnvio {
 
 export interface ErroEnvio {
   ok: false;
-  motivo: 'gmail_nao_conectado' | 'sem_emails' | 'storage_upload_failed' | 'gmail_send_failed';
+  motivo: 'gmail_nao_conectado' | 'sem_emails' | 'storage_upload_failed' | 'gmail_send_failed' | 'obrigacao_interna';
   erro: string;
 }
 
@@ -259,6 +260,13 @@ export async function enviarGuia(
     baseUrl?: string | null;
   },
 ): Promise<ResultadoEnvio | ErroEnvio> {
+  // 0. Guard de obrigação SEMPRE interna (RECIBO/DECLARAÇÃO do DAS): NUNCA vai
+  // pro cliente. Defesa no chokepoint de e-mail — cobre auto-envio E aprovação
+  // admin (aprovar-e-enviar). O caller deve tratar como "marcar feito interno".
+  if (ehObrigacaoSempreInterna(params.obrigacao)) {
+    return { ok: false, motivo: 'obrigacao_interna', erro: 'Obrigação interna — não envia e-mail pro cliente.' };
+  }
+
   // 1. Carrega token Gmail do ghost user
   const { data: tokenRow } = await admin
     .from('usuario_gmail_tokens')

@@ -8,6 +8,7 @@ import {
   autenticarRequest, assertPodeEnviar, checkRateLimit, buscarEnvioAnterior,
   validarPdfNoServidor, carregarEmpresaCompleta, getSupabaseAdmin, isErroApi,
 } from '../_shared';
+import { ehObrigacaoSempreInterna } from '@/app/types';
 
 export const runtime = 'nodejs';
 
@@ -172,6 +173,37 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: perm.error, code: perm.code }, { status: perm.status });
     }
 
+    // ─── 1.4 Guard: obrigação SEMPRE interna (RECIBO/DECLARAÇÃO do DAS) ─────
+    // NUNCA envia e-mail pro cliente — só é marcada/arquivada. A UI roteia
+    // internas pra "marcar feito", mas aqui é a defesa no servidor (cobre o
+    // Checklist Mensal e qualquer caller direto).
+    if (ehObrigacaoSempreInterna(body.obrigacao)) {
+      return NextResponse.json(
+        { error: 'Esta obrigação é interna (não vai pro cliente). Marque como feita — o arquivo fica arquivado sem enviar e-mail.', code: 'obrigacao_interna' },
+        { status: 409 },
+      );
+    }
+
+    // ─── 1.5 Gate: não envia obrigação DESATIVADA no envio (config.ativa=false) ──
+    // Espelha o gate do auto-envio. A aba Envio já esconde o botão de obrigação
+    // inativa, mas DevTools poderia burlar — aqui é a defesa no servidor.
+    // Obrigação SEM config ou ATIVA segue normal (default permissivo, não quebra
+    // empresa nova/não-configurada). Normaliza NFC pra casar acento decomposto.
+    {
+      const { data: cfgRow } = await admin
+        .from('empresa_obrigacoes_config')
+        .select('ativa')
+        .eq('empresa_id', body.empresaId)
+        .eq('obrigacao', body.obrigacao.normalize('NFC'))
+        .maybeSingle();
+      if (cfgRow && (cfgRow as { ativa?: boolean }).ativa === false) {
+        return NextResponse.json(
+          { error: 'Esta obrigação está inativa no envio para esta empresa. Ative em "Configurar Obrigações" antes de enviar.', code: 'obrigacao_inativa' },
+          { status: 409 },
+        );
+      }
+    }
+
     // ─── 2. Rate limit: máx 30 envios/min por usuário ──────────────────
     const rl = await checkRateLimit(admin, userId);
     if (isErroApi(rl)) {
@@ -293,6 +325,23 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: validacao.error, code: validacao.code, meta: validacao.meta },
         { status: validacao.status },
+      );
+    }
+
+    // ─── 7.5 Bloqueio de competência divergente ────────────────────────────
+    // O PDF TEM que ser do mês selecionado — senão marca o checklist no mês
+    // errado. Espelha o bloqueio do front (envio manual no mês certo). Hard
+    // block (não forçável): a correção é selecionar o mês certo. Defesa no
+    // servidor cobre tanto a aba Envio quanto o Checklist Mensal (mesma rota).
+    const compDetectada = validacao.resultado.detectado.competencia;
+    if (compDetectada && compDetectada !== body.mes) {
+      return NextResponse.json(
+        {
+          error: `Este arquivo é da competência ${compDetectada}, mas você selecionou ${body.mes}. Envie no mês correto.`,
+          code: 'competencia_divergente',
+          meta: { detectada: compDetectada, selecionada: body.mes },
+        },
+        { status: 422 },
       );
     }
 

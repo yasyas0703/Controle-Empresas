@@ -38,6 +38,7 @@ import {
 } from '@/lib/alertasAutoEnvio';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
+import { ehObrigacaoSempreInterna } from '@/app/types';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -643,9 +644,10 @@ export async function POST(req: Request) {
     });
   }
 
-  // 12. Obrigação INTERNA (nao_envia_cliente=true): não envia email, só marca
-  // check — mas salva o PDF anexado na célula do Checklist mesmo assim.
-  if (config.naoEnviaCliente) {
+  // 12. Obrigação INTERNA: não envia email, só marca check — mas salva o PDF
+  // anexado na célula do Checklist mesmo assim. Interna = config.nao_envia_cliente
+  // OU obrigação sempre-interna (RECIBO/DECLARAÇÃO do DAS — nunca vão pro cliente).
+  if (config.naoEnviaCliente || ehObrigacaoSempreInterna(obrigacao)) {
     const docPathInterno = await subirDocumentoInterno(admin, empresa.id, fileBuffer, nomeCanonico);
     await marcarChecklistComoFeito(admin, {
       empresaId: empresa.id, mes: competencia, obrigacao, ghostUserId,

@@ -140,6 +140,22 @@ export const VENCIMENTOS_FISCAIS_SN_NOMES = [
 
 export type VencimentoFiscalSnNome = (typeof VENCIMENTOS_FISCAIS_SN_NOMES)[number];
 
+/**
+ * Obrigações SEMPRE internas (não enviam e-mail pro cliente — só marcam o checklist
+ * e arquivam o PDF). RECIBO e DECLARAÇÃO do DAS são documentos internos do
+ * escritório; só a EMISSÃO GUIA DAS vai pro cliente pagar. Vale pra TODAS as
+ * empresas, independente da config por empresa. (decisão da Yasmin, 2026-06-10)
+ */
+export const OBRIGACOES_SEMPRE_INTERNAS = ['RECIBO DAS', 'DECLARAÇÃO DAS'] as const;
+
+/** True se a obrigação é sempre interna (compara normalizado NFC/upper). */
+export function ehObrigacaoSempreInterna(nome: string): boolean {
+  const n = (nome ?? '').normalize('NFC').trim().toUpperCase();
+  return (OBRIGACOES_SEMPRE_INTERNAS as readonly string[]).some(
+    (o) => o.normalize('NFC').toUpperCase() === n,
+  );
+}
+
 /** Nomes canônicos (lower-case) usados para identificar departamentos fiscais. */
 export const FISCAL_DEPT_NOME = 'fiscal';
 export const FISCAL_SN_DEPT_NOME = 'fiscal - sn';

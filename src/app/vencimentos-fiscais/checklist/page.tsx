@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import type { ChecklistFiscalItem, Empresa, UUID, Usuario } from '@/app/types';
-import { VENCIMENTOS_FISCAIS_NOMES, VENCIMENTOS_FISCAIS_SN_NOMES, OBRIGACOES_FISCAIS_CHECKLIST_EXTRAS, FISCAL_DEPT_NOME, FISCAL_SN_DEPT_NOME } from '@/app/types';
+import { VENCIMENTOS_FISCAIS_NOMES, VENCIMENTOS_FISCAIS_SN_NOMES, OBRIGACOES_FISCAIS_CHECKLIST_EXTRAS, FISCAL_DEPT_NOME, FISCAL_SN_DEPT_NOME, ehObrigacaoSempreInterna } from '@/app/types';
 import * as db from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { sortByPtBr } from '@/lib/sort';
@@ -678,6 +678,34 @@ export default function ChecklistFiscalPage() {
       });
       setArqPreview(false);
       setArqSignedUrl(null);
+
+      // 2.5 Interna (RECIBO/DECLARAÇÃO do DAS): NUNCA envia pro cliente — só marca
+      // feito e guarda o anexo (já subido acima). Não chama o envio por e-mail.
+      if (ehObrigacaoSempreInterna(arqTarget.obrigacao)) {
+        await db.upsertChecklistFiscal({
+          empresaId: arqTarget.empresa.id,
+          mes,
+          obrigacao: arqTarget.obrigacao,
+          status: 'feito',
+          concluidoPorId: currentUserId,
+          concluidoPorNome: currentUser?.nome,
+          observacao: '[INTERNA] arquivo guardado para controle do escritório (não enviado ao cliente)',
+        });
+        setItems((prev) => {
+          const next = new Map(prev);
+          next.set(key, {
+            ...result.item,
+            status: 'feito',
+            concluido: true,
+            concluidoPorId: currentUserId ?? null,
+            concluidoPorNome: currentUser?.nome,
+            concluidoEm: new Date().toISOString(),
+          });
+          return next;
+        });
+        mostrarAlerta('Marcada (interna)', 'Obrigação interna — arquivo guardado, NÃO enviado pro cliente.', 'sucesso');
+        return;
+      }
 
       // 3. Tenta enviar por email — passa checklistId pra habilitar pixel de tracking
       const env = await db.enviarAnexoChecklist({

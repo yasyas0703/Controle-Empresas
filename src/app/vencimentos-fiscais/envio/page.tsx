@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { List, type RowComponentProps } from 'react-window';
 import {
-  AlertTriangle, ArrowLeft, Building2, Calendar, Check, CheckCircle2, Clock, Eye, ExternalLink, FileText, Loader2,
+  AlertTriangle, ArrowLeft, Ban, Building2, Calendar, Check, CheckCircle2, Clock, Eye, ExternalLink, FileText, Loader2,
   MailCheck, MailX, Search, Send, Settings, Shield, ShieldAlert, ToggleLeft, ToggleRight, Upload, X, XCircle,
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
@@ -38,7 +38,7 @@ import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
 import type {
   ChecklistFiscalItem, Departamento, Empresa, EmpresaEmailCliente, EmpresaObrigacaoConfig, Tributacao, UUID, VencimentoFiscal,
 } from '@/app/types';
-import { VENCIMENTOS_FISCAIS_NOMES, VENCIMENTOS_FISCAIS_SN_NOMES } from '@/app/types';
+import { VENCIMENTOS_FISCAIS_NOMES, VENCIMENTOS_FISCAIS_SN_NOMES, ehObrigacaoSempreInterna } from '@/app/types';
 
 // Lista única de obrigações pra usar no filtro do header (ordem: regime normal + SN sem duplicar)
 const TODAS_OBRIGACOES_FILTRO: string[] = [
@@ -126,6 +126,10 @@ interface ObrigacaoLinha {
   status: StatusEnvio;
   checklistItem: ChecklistFiscalItem | null;
   naoEnviaCliente: boolean;
+  // Aparece no checklist (regra/override) mas NÃO está ativa no envio → card
+  // só-leitura (cinza), sem botão de enviar. Mantém as duas telas com o mesmo
+  // conjunto, sem permitir mandar guia de obrigação desativada/dispensada.
+  inativa: boolean;
 }
 
 interface LinhaSidebar {
@@ -422,31 +426,48 @@ export default function EnvioGuiasPage() {
   }
 
   // Obrigações da empresa selecionada para o mês escolhido.
-  // Estratégia: se a empresa TEM configs no banco (foi processada), mostra
-  // SÓ as ativas (bate com a contagem da sidebar). Se NÃO tem nenhuma config,
-  // mostra todas as do regime — fallback pra empresas novas ainda não
-  // processadas pelo script de descoberta.
+  // EXIBE o mesmo conjunto que o Checklist Mensal: toda obrigação que APLICA
+  // (override manual OU regra por estado/cidade). As que não estão ATIVAS no
+  // envio (config.ativa=false numa empresa já configurada) aparecem como
+  // "inativa" (cinza, só-leitura) — não somem, mas não dá pra enviar. Empresa
+  // sem nenhuma config = tudo ativo (fallback de empresa nova).
   const obrigacoesEmpresa: ObrigacaoLinha[] = useMemo(() => {
     if (!empresaSelecionada) return [];
+    // Regime nulo (empresa ambígua, sem tributação/depto claro) → trata como
+    // FISCAL, igual ao default do Checklist (quem não é Fiscal-SN cai na aba
+    // Fiscal). Sem isto, regime null carregava a UNIÃO e vazava obrigação SN
+    // (DAS etc.) numa empresa que o checklist mostra como fiscal.
+    const regime = regimeEfetivo(empresaSelecionada, departamentos, configsPorEmpresa.get(empresaSelecionada.id)) ?? 'lucro_presumido';
     const fiscais = garantirVencimentosFiscaisComRegras(
       empresaSelecionada.vencimentosFiscais,
       empresaSelecionada.estado,
       empresaSelecionada.cidade,
       undefined,
-      regimeEfetivo(empresaSelecionada, departamentos, configsPorEmpresa.get(empresaSelecionada.id)),
+      regime,
     );
     const configs = configsPorEmpresa.get(empresaSelecionada.id) ?? [];
     const configPorNome = new Map(configs.map((c) => [c.obrigacao, c]));
-    const ativasSet = new Set(configs.filter((c) => c.ativa).map((c) => c.obrigacao));
-    const temAlgumaConfig = configs.length > 0;
+    // Mesmo predicado do Checklist: override sobrescreve; senão regra do regime.
+    const aplicaNoChecklist = (nome: string): boolean => {
+      const ov = obrigacoesOverridesMap.get(`${empresaSelecionada.id}|${nome}`);
+      if (typeof ov === 'boolean') return ov;
+      return regime === 'simples_nacional'
+        ? obrigacaoSnAplicaParaEmpresa(nome, empresaSelecionada.estado, empresaSelecionada.cidade)
+        : obrigacaoAplicaParaEmpresa(nome, empresaSelecionada.estado, empresaSelecionada.cidade);
+    };
     return fiscais
-      .filter((f) => (temAlgumaConfig ? ativasSet.has(f.nome) : true))
+      .filter((f) => aplicaNoChecklist(f.nome))
       .filter((f) => (filtroObrigacao ? f.nome === filtroObrigacao : true))
       .map((fiscal) => {
         const it = checklistMap.get(`${empresaSelecionada.id}|${fiscal.nome}`);
         const status: StatusEnvio = it?.concluido ? 'enviada' : 'pendente';
         const cfg = configPorNome.get(fiscal.nome);
-        return { fiscal, status, checklistItem: it ?? null, naoEnviaCliente: cfg?.naoEnviaCliente ?? false };
+        // Inativa = existe config E está explicitamente desativada (ativa=false).
+        // Sem linha de config = NÃO é inativa (default enviável) — espelha o gate
+        // do servidor (enviar-anexo 1.5, que só barra ativa===false).
+        const inativa = !!cfg && cfg.ativa === false;
+        const naoEnviaCliente = (cfg?.naoEnviaCliente ?? false) || ehObrigacaoSempreInterna(fiscal.nome);
+        return { fiscal, status, checklistItem: it ?? null, naoEnviaCliente, inativa };
       })
       .filter((row) => {
         if (filtroStatus === 'pendentes') return row.status === 'pendente';
@@ -454,10 +475,12 @@ export default function EnvioGuiasPage() {
         return true;
       })
       .sort((a, b) => {
+        // inativas por último; depois pendentes antes de enviadas; depois nome.
+        if (a.inativa !== b.inativa) return a.inativa ? 1 : -1;
         if (a.status !== b.status) return a.status === 'pendente' ? -1 : 1;
         return a.fiscal.nome.localeCompare(b.fiscal.nome);
       });
-  }, [empresaSelecionada, checklistMap, configsPorEmpresa, departamentos, filtroObrigacao, filtroStatus]);
+  }, [empresaSelecionada, checklistMap, configsPorEmpresa, departamentos, obrigacoesOverridesMap, filtroObrigacao, filtroStatus]);
 
   if (!authReady) return null;
 
@@ -652,7 +675,7 @@ export default function EnvioGuiasPage() {
         // Lógica idêntica ao Checklist: override manual sobrescreve, senão usa regra.
         const overrideKey = `${e.id}|${obrigacao}`;
         const override = obrigacoesOverridesMap.get(overrideKey);
-        const regime = regimeEfetivo(e, departamentos, configsPorEmpresa.get(e.id));
+        const regime = regimeEfetivo(e, departamentos, configsPorEmpresa.get(e.id)) ?? 'lucro_presumido';
         const aplicaNoChecklist = typeof override === 'boolean'
           ? override
           : regime === 'simples_nacional'
@@ -664,7 +687,7 @@ export default function EnvioGuiasPage() {
             fiscal={modalEnvio.fiscal}
             mes={mes}
             codigosEsperados={configDeObrigacao(e.id, obrigacao)?.codigos ?? []}
-            naoEnviaCliente={configDeObrigacao(e.id, obrigacao)?.naoEnviaCliente ?? false}
+            naoEnviaCliente={(configDeObrigacao(e.id, obrigacao)?.naoEnviaCliente ?? false) || ehObrigacaoSempreInterna(obrigacao)}
             podeForcar={canManage || isPrivileged}
             currentUserNome={currentUser?.nome ?? null}
             aplicaNoChecklist={aplicaNoChecklist}
@@ -774,12 +797,20 @@ interface CardObrigacaoProps {
 }
 
 function CardObrigacao({ linha, preview, onAcao, onDetalhes }: CardObrigacaoProps) {
-  const { fiscal, status, checklistItem, naoEnviaCliente } = linha;
+  const { fiscal, status, checklistItem, naoEnviaCliente, inativa } = linha;
   const enviada = status === 'enviada';
   const codigos = preview?.codigos ?? [];
 
-  // Estilos por estado (3 estados: enviada, interna pendente, normal pendente)
-  const stateStyles = enviada
+  // Estilos por estado (4 estados: inativa, enviada, interna pendente, normal pendente).
+  // Inativa tem prioridade: obrigação que aparece no checklist mas não está ativa
+  // no envio — card apagado, só-leitura, sem botão de enviar.
+  const stateStyles = inativa
+    ? {
+        cardBorder: 'border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/40 opacity-70',
+        badgeBg: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700',
+        icon: <Ban size={14} />,
+      }
+    : enviada
     ? {
         cardBorder: 'border-emerald-200 bg-emerald-50/30 dark:border-emerald-800/60 dark:bg-emerald-950/20',
         badgeBg: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800',
@@ -808,7 +839,7 @@ function CardObrigacao({ linha, preview, onAcao, onDetalhes }: CardObrigacaoProp
           <div className="flex items-center gap-1.5 mb-1">
             <span className={`inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded-md border px-1.5 py-0.5 ${stateStyles.badgeBg}`}>
               {stateStyles.icon}
-              {enviada ? 'Enviada' : naoEnviaCliente ? 'Interna' : 'Pendente'}
+              {inativa ? 'Inativa' : enviada ? 'Enviada' : naoEnviaCliente ? 'Interna' : 'Pendente'}
             </span>
           </div>
           <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate" title={fiscal.nome}>
@@ -851,25 +882,31 @@ function CardObrigacao({ linha, preview, onAcao, onDetalhes }: CardObrigacaoProp
         </div>
       )}
 
-      {/* Ação */}
-      <button
-        onClick={(e) => { e.stopPropagation(); onAcao(); }}
-        className={`mt-auto inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-          enviada
-            ? 'bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700'
-            : naoEnviaCliente
-            ? 'bg-slate-900 dark:bg-slate-700 text-white hover:bg-slate-800 dark:hover:bg-slate-600'
-            : 'bg-cyan-600 text-white hover:bg-cyan-700 dark:bg-cyan-500 dark:hover:bg-cyan-400'
-        }`}
-      >
-        {enviada ? (
-          <><Upload size={12} /> Reenviar</>
-        ) : naoEnviaCliente ? (
-          <><CheckCircle2 size={12} /> Marcar feito</>
-        ) : (
-          <><Send size={12} /> Enviar guia</>
-        )}
-      </button>
+      {/* Ação — inativa não tem botão de enviar (só-leitura); abre detalhes no card. */}
+      {inativa ? (
+        <div className="mt-auto inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-400 dark:text-slate-500 border border-dashed border-slate-200 dark:border-slate-700">
+          <Ban size={12} /> Inativa no envio
+        </div>
+      ) : (
+        <button
+          onClick={(e) => { e.stopPropagation(); onAcao(); }}
+          className={`mt-auto inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+            enviada
+              ? 'bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700'
+              : naoEnviaCliente
+              ? 'bg-slate-900 dark:bg-slate-700 text-white hover:bg-slate-800 dark:hover:bg-slate-600'
+              : 'bg-cyan-600 text-white hover:bg-cyan-700 dark:bg-cyan-500 dark:hover:bg-cyan-400'
+          }`}
+        >
+          {enviada ? (
+            <><Upload size={12} /> Reenviar</>
+          ) : naoEnviaCliente ? (
+            <><CheckCircle2 size={12} /> Marcar feito</>
+          ) : (
+            <><Send size={12} /> Enviar guia</>
+          )}
+        </button>
+      )}
     </div>
   );
 }
@@ -894,7 +931,7 @@ interface ModalDetalheProps {
 function ModalDetalheObrigacao({
   empresa, linha, mes, currentUserEmail, onClose, onEnviar, onErro, onInfo, onAviso, onRecarregar,
 }: ModalDetalheProps) {
-  const { fiscal, status, checklistItem, naoEnviaCliente } = linha;
+  const { fiscal, status, checklistItem, naoEnviaCliente, inativa } = linha;
   const enviada = status === 'enviada';
   const [abrindo, setAbrindo] = useState(false);
   const [verificandoEntregas, setVerificandoEntregas] = useState(false);
@@ -1267,22 +1304,28 @@ function ModalDetalheObrigacao({
           >
             Fechar
           </button>
-          <button
-            onClick={onEnviar}
-            className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition ${
-              naoEnviaCliente
-                ? 'bg-slate-900 hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600'
-                : 'bg-cyan-600 hover:bg-cyan-700 dark:bg-cyan-500 dark:hover:bg-cyan-400'
-            }`}
-          >
-            {enviada ? (
-              <><Upload size={14} /> {naoEnviaCliente ? 'Substituir arquivo' : 'Reenviar'}</>
-            ) : naoEnviaCliente ? (
-              <><CheckCircle2 size={14} /> Marcar feito</>
-            ) : (
-              <><Send size={14} /> Enviar guia</>
-            )}
-          </button>
+          {inativa ? (
+            <span className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-slate-400 dark:text-slate-500 border border-dashed border-slate-200 dark:border-slate-700">
+              <Ban size={14} /> Inativa no envio — ative em Configurar
+            </span>
+          ) : (
+            <button
+              onClick={onEnviar}
+              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition ${
+                naoEnviaCliente
+                  ? 'bg-slate-900 hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600'
+                  : 'bg-cyan-600 hover:bg-cyan-700 dark:bg-cyan-500 dark:hover:bg-cyan-400'
+              }`}
+            >
+              {enviada ? (
+                <><Upload size={14} /> {naoEnviaCliente ? 'Substituir arquivo' : 'Reenviar'}</>
+              ) : naoEnviaCliente ? (
+                <><CheckCircle2 size={14} /> Marcar feito</>
+              ) : (
+                <><Send size={14} /> Enviar guia</>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </ModalBase>
@@ -1441,6 +1484,13 @@ function ModalEnviarGuia({
   const valido = resultado?.valido ?? false;
   const precisaForcar = !valido && bloqueios.length > 0;
 
+  // Competência do PDF diferente do mês selecionado → BLOQUEIA o envio (a pedido).
+  // A guia TEM que ser enviada no mês certo; senão marca o checklist no mês errado.
+  // Não é forçável: a correção é selecionar o mês certo (ou trocar o arquivo).
+  const competenciaDivergente = !!(
+    resultado?.detectado.competencia && resultado.detectado.competencia !== mes
+  );
+
   // ─── Validação multi (LIVROS FISCAIS) ──────────────────────────────────
   // Conta cada tipo detectado; bloqueia envio se faltam tipos, há duplicados
   // ou algum arquivo não foi reconhecido.
@@ -1459,7 +1509,7 @@ function ModalEnviarGuia({
     naoReconhecidos.length === 0 &&
     !algumAnalisando;
 
-  const podeEnviar = aplicaNoChecklist && (isMulti
+  const podeEnviar = aplicaNoChecklist && !competenciaDivergente && (isMulti
     ? multiOk && emails.length > 0 && !enviando
     : !!arquivo &&
       !!resultado &&
@@ -1690,9 +1740,6 @@ function ModalEnviarGuia({
       setEnviando(false);
     }
   }
-
-  const competenciaDivergente =
-    resultado?.detectado.competencia && resultado.detectado.competencia !== mes;
 
   return (
     <ModalBase isOpen={true} onClose={enviando ? () => undefined : onClose} dialogClassName="max-w-2xl">
@@ -2008,8 +2055,22 @@ function ModalEnviarGuia({
             </div>
           )}
 
+          {/* Bloqueio por competência divergente — não dá pra enviar no mês errado */}
+          {resultado && competenciaDivergente && (
+            <div className="rounded-lg bg-red-50 border border-red-300 p-3 text-xs text-red-900 flex items-start gap-2">
+              <ShieldAlert size={16} className="text-red-600 shrink-0 mt-0.5" />
+              <span>
+                <strong>Mês errado.</strong> Este PDF é da competência{' '}
+                <strong>{resultado.detectado.competencia ? formatComp(resultado.detectado.competencia) : '—'}</strong>,
+                mas você selecionou <strong>{formatComp(mes)}</strong>. Selecione{' '}
+                {resultado.detectado.competencia ? formatComp(resultado.detectado.competencia) : 'o mês correto'}{' '}
+                lá em cima (ou confira se o arquivo é o certo) pra poder enviar.
+              </span>
+            </div>
+          )}
+
           {/* Sucesso */}
-          {resultado && valido && (
+          {resultado && valido && !competenciaDivergente && (
             <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-900 flex items-center gap-2">
               <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
               <span><strong>Guia validada.</strong> Tudo confere — pode enviar.</span>
@@ -2211,7 +2272,7 @@ function ModalConfigurarObrigacoes({
         <div className="p-5 max-h-[65vh] overflow-y-auto">
           <div className="rounded-lg bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800/60 p-3 text-xs text-cyan-900 dark:text-cyan-200 mb-4 leading-relaxed">
             <strong>Como funciona:</strong> desligue as obrigações que esta empresa NÃO tem.
-            Obrigações desligadas somem da aba <em>Envio de Guias</em>. Códigos de receita servem para o validador rejeitar PDFs errados.
+            Obrigações desligadas aparecem como <strong>Inativa</strong> (cinza, só-leitura) na aba <em>Envio de Guias</em> — não dá pra enviar até reativar. Códigos de receita servem para o validador rejeitar PDFs errados.
           </div>
 
           {carregando ? (

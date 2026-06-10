@@ -19,7 +19,9 @@ import { assertManager } from '@/lib/apiAuth';
 import { validarPdfNoServidor, carregarEmpresaCompleta, isErroApi } from '@/app/api/checklist-fiscal/_shared';
 import {
   enviarGuia, baixarPendente, deletarPendente, jaEnviadaNoChecklist,
+  marcarChecklistComoFeito, subirDocumentoInterno,
 } from '@/app/api/checklist-fiscal/auto-enviar/_shared-envio';
+import { ehObrigacaoSempreInterna } from '@/app/types';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -155,6 +157,24 @@ export async function POST(req: Request) {
   const { data: userRow } = await admin
     .from('usuarios').select('nome').eq('id', authz.callerId).maybeSingle();
   const callerNome = (userRow as { nome?: string } | null)?.nome ?? 'Admin';
+
+  // 6.5 Interna (RECIBO/DECLARAÇÃO do DAS): aprovar = marcar feito INTERNO, sem
+  // e-mail pro cliente. Sem isto, o enviarGuia recusaria (guard interno) e a
+  // pendência ficaria presa. Sobe o doc interno + marca o checklist e encerra.
+  if (ehObrigacaoSempreInterna(pend.obrigacao)) {
+    const docPathInterno = await subirDocumentoInterno(admin, pend.empresa_id, fileBuffer, pend.nome_arquivo);
+    await marcarChecklistComoFeito(admin, {
+      empresaId: pend.empresa_id, mes: pend.competencia, obrigacao: pend.obrigacao, ghostUserId,
+      arquivoNome: pend.nome_arquivo, arquivoUrl: docPathInterno ?? undefined, fonte: 'aprovado-admin',
+      enviadoPorIdOverride: authz.callerId, enviadoPorNomeOverride: `${callerNome} (aprovou — interna)`,
+    });
+    await admin.from('guias_auto_processadas').update({
+      status: 'interno_marcado_feito',
+      detalhes: { ...(pend.detalhes ?? {}), aprovada_interna_em: new Date().toISOString() },
+    }).eq('id', pend.id);
+    await deletarPendente(admin, pathPendente);
+    return NextResponse.json({ ok: true, interna: true });
+  }
 
   // 7. Envia
   const baseUrl = (() => {

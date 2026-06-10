@@ -19,6 +19,7 @@ import {
   autenticarRequest, assertPodeEnviar, checkRateLimit, buscarEnvioAnterior,
   validarPdfNoServidor, carregarEmpresaCompleta, getSupabaseAdmin, isErroApi,
 } from '../_shared';
+import { ehObrigacaoSempreInterna } from '@/app/types';
 
 export const runtime = 'nodejs';
 
@@ -191,6 +192,30 @@ export async function POST(req: Request) {
     const perm = await assertPodeEnviar(admin, userId, body.empresaId);
     if (isErroApi(perm)) {
       return NextResponse.json({ error: perm.error, code: perm.code }, { status: perm.status });
+    }
+
+    // ─── 1.4 Guard: obrigação SEMPRE interna — nunca envia pro cliente ────
+    if (ehObrigacaoSempreInterna(body.obrigacao)) {
+      return NextResponse.json(
+        { error: 'Esta obrigação é interna (não vai pro cliente). Marque como feita — sem enviar e-mail.', code: 'obrigacao_interna' },
+        { status: 409 },
+      );
+    }
+
+    // ─── 1.5 Gate: não envia obrigação DESATIVADA no envio (config.ativa=false) ──
+    {
+      const { data: cfgRow } = await admin
+        .from('empresa_obrigacoes_config')
+        .select('ativa')
+        .eq('empresa_id', body.empresaId)
+        .eq('obrigacao', body.obrigacao.normalize('NFC'))
+        .maybeSingle();
+      if (cfgRow && (cfgRow as { ativa?: boolean }).ativa === false) {
+        return NextResponse.json(
+          { error: 'Esta obrigação está inativa no envio para esta empresa. Ative em "Configurar Obrigações" antes de enviar.', code: 'obrigacao_inativa' },
+          { status: 409 },
+        );
+      }
     }
 
     // ─── 2. Rate limit ─────────────────────────────────────────────────
