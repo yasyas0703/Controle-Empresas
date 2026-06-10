@@ -22,6 +22,7 @@ import {
   registrarEnvioChecklist,
   removerEnvioChecklist,
   setObrigacaoHabilitacao,
+  toChecklistItem,
   upsertChecklistFiscal,
   upsertEmpresaObrigacaoConfig,
   uploadChecklistArquivo,
@@ -277,6 +278,54 @@ export default function EnvioGuiasPage() {
       }
     }).catch(() => undefined);
   }, [authReady, mes, recarregarChecklist, recarregarOverrides]);
+
+  // Realtime: quando outra usuária envia/marca uma guia, a linha em
+  // checklist_fiscal é atualizada no banco. Em vez de refetch (caro), aplicamos
+  // a mudança direto do payload do evento — custo ~zero de banco. Mesmo padrão
+  // da aba Checklist Mensal. Filtrado por mês pra só receber o que está na tela.
+  useEffect(() => {
+    if (!authReady) return;
+    const channel = supabase
+      .channel(`envio-guias-${mes}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'checklist_fiscal', filter: `mes=eq.${mes}` },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (payload: any) => {
+          if (payload.eventType === 'DELETE') {
+            const oldId = payload.old?.id;
+            if (!oldId) return;
+            setChecklistDoMes((prev) => prev.filter((it) => it.id !== oldId));
+            return;
+          }
+          const row = payload.new;
+          if (!row?.id) return;
+          const item = toChecklistItem(row);
+          setChecklistDoMes((prev) => {
+            const idx = prev.findIndex((it) => it.empresaId === item.empresaId && it.obrigacao === item.obrigacao);
+            if (idx === -1) return [...prev, item];
+            const next = prev.slice();
+            next[idx] = item;
+            return next;
+          });
+        },
+      )
+      .subscribe();
+
+    // Realtime é fire-and-forget: se o WebSocket cair (notebook dormiu, troca de
+    // rede, Wi-Fi caiu), os eventos perdidos NÃO voltam sozinhos. Ao reativar a
+    // aba, refaz o fetch pra reconciliar o que escapou — assim o "não precisa dar
+    // F5" continua valendo mesmo depois de a máquina ter dormido.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') recarregarChecklist();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [authReady, mes, recarregarChecklist]);
 
   // Mapa: "empresaId|obrigacao" -> ChecklistFiscalItem
   const checklistMap = useMemo(() => {

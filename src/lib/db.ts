@@ -802,6 +802,24 @@ export async function fetchEmpresas(): Promise<Empresa[]> {
   }
 
   return empresas.map((e) => ({
+    ...mapEmpresaScalars(e),
+    rets: retsMap.get(e.id) ?? [],
+    documentos: docsMap.get(e.id) ?? [],
+    observacoes: obsMap.get(e.id) ?? [],
+    responsaveis: respsMap.get(e.id) ?? {},
+  }));
+}
+
+// Mapeia só os campos escalares da linha `empresas` (tudo que NÃO vem de
+// join). Extraído de fetchEmpresas pra ser reusado pelo realtime: o evento
+// postgres_changes traz apenas a linha da tabela empresas — sem
+// rets/documentos/observacoes/responsaveis, que vivem em tabelas separadas.
+// Quem consome via realtime mescla isto preservando os relacionamentos que
+// já tem em memória (ver SistemaContext).
+export function mapEmpresaScalars(
+  e: EmpresaRow,
+): Omit<Empresa, 'rets' | 'documentos' | 'observacoes' | 'responsaveis'> {
+  return {
     id: e.id,
     cadastrada: e.cadastrada,
     cnpj: e.cnpj ?? undefined,
@@ -814,7 +832,6 @@ export async function fetchEmpresas(): Promise<Empresa[]> {
     servicos: e.servicos ?? [],
     tags: e.tags ?? [],
     possuiRet: e.possui_ret,
-    rets: retsMap.get(e.id) ?? [],
     inscricao_estadual: e.inscricao_estadual ?? undefined,
     inscricao_municipal: e.inscricao_municipal ?? undefined,
     regime_federal: e.regime_federal ?? undefined,
@@ -842,12 +859,9 @@ export async function fetchEmpresas(): Promise<Empresa[]> {
     telefone: e.telefone ?? undefined,
     formaEnvio: normalizarFormaEnvio(e.forma_envio),
     vencimentosFiscais: normalizarVencimentosFiscais(e.vencimentos_fiscais),
-    responsaveis: respsMap.get(e.id) ?? {},
-    documentos: docsMap.get(e.id) ?? [],
-    observacoes: obsMap.get(e.id) ?? [],
     criadoEm: toIso(e.criado_em),
     atualizadoEm: toIso(e.atualizado_em),
-  }));
+  };
 }
 
 export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: UUID[]): Promise<string> {
@@ -1820,7 +1834,7 @@ function normalizarEnviosHistorico(raw: unknown): ChecklistEnvioEvento[] {
     });
 }
 
-function toChecklistItem(row: ChecklistFiscalRow): ChecklistFiscalItem {
+export function toChecklistItem(row: ChecklistFiscalRow): ChecklistFiscalItem {
   const statusVal = row.status === 'feito' || row.status === 'sem_obrigacao' ? row.status : null;
   return {
     id: row.id,

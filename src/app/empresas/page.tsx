@@ -6,7 +6,7 @@ import { useSistema } from '@/app/context/SistemaContext';
 import type { Empresa, UUID, Limiares } from '@/app/types';
 import { LIMIARES_DEFAULTS } from '@/app/types';
 import { detectTipoEstabelecimento, formatarDocumento, getTipoInscricaoDisplay } from '@/app/utils/validation';
-import { daysUntil, isRetRenovado } from '@/app/utils/date';
+import { daysUntil, isRetRenovado, formatMesAno } from '@/app/utils/date';
 import ModalCadastrarEmpresa from '@/app/components/ModalCadastrarEmpresa';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import ModalImportarPlanilha from '@/app/components/ModalImportarPlanilha';
@@ -30,7 +30,7 @@ export default function EmpresasPage() {
 
   const [limiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
 
-  const { getDepName, getDepIndex, getUserName } = useEntityLoaders();
+  const { getDepName, getDepIndex, getUserName, getUserEmail } = useEntityLoaders();
 
   const [search, setSearch] = useState('');
   const [searchCodigo, setSearchCodigo] = useState('');
@@ -215,27 +215,27 @@ export default function EmpresasPage() {
 
         {canManage && (filtered.length > 0 || selectedVisibleIds.length > 0) && (
           <div className="mt-5 flex items-center justify-between gap-3 flex-wrap">
-            <label className="inline-flex items-center gap-2 text-sm font-semibold text-gray-700 select-none">
+            <label className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--text-2)] select-none">
               <input
                 ref={selectAllRef}
                 type="checkbox"
-                className="h-4 w-4 rounded border-gray-300"
+                className="h-4 w-4 rounded-[var(--radius-sm)] border-[var(--border-strong)]"
                 checked={allSelected}
                 onChange={(e) => toggleSelectAll(e.target.checked)}
                 disabled={selectableIds.length === 0}
               />
               Selecionar todas
-              <span className="text-xs text-gray-400 font-bold">({selectedVisibleIds.length}/{selectableIds.length})</span>
+              <span className="ct-num text-xs text-[var(--text-muted)] font-semibold">({selectedVisibleIds.length}/{selectableIds.length})</span>
             </label>
 
             <button
               onClick={apagarSelecionadas}
               disabled={selectedVisibleIds.length === 0}
               className={
-                'inline-flex items-center gap-2 rounded-xl px-4 py-2.5 font-bold transition ' +
+                'inline-flex items-center gap-2 rounded-[var(--radius-md)] px-4 py-2.5 font-semibold transition-colors ' +
                 (selectedVisibleIds.length === 0
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-red-50 text-red-700 hover:bg-red-100')
+                  ? 'bg-[var(--surface-3)] text-[var(--text-muted)] cursor-not-allowed'
+                  : 'bg-[var(--danger-soft)] text-[var(--danger)] hover:brightness-95')
               }
               title="Apagar selecionadas"
             >
@@ -255,18 +255,19 @@ export default function EmpresasPage() {
           const totalVencidos = e.documentos.filter((d) => { const dias = daysUntil(d.validade); return dias !== null && dias < 0; }).length
             + e.rets.filter((r) => { if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) return false; const dias = daysUntil(r.vencimento); return dias !== null && dias < 0; }).length;
           const totalRenovados = e.rets.filter((r) => isRetRenovado(r.vencimento, r.ultimaRenovacao)).length;
-          const proximoVencDias = (() => {
-            let min: number | null = null;
-            for (const d of e.documentos) {
-              const dias = daysUntil(d.validade);
-              if (dias !== null && dias >= 0 && (min === null || dias < min)) min = dias;
-            }
+          const proximoVenc = (() => {
+            let minDias: number | null = null;
+            let minData: string | null = null;
+            const considerar = (dias: number | null, data?: string) => {
+              if (dias === null || dias < 0) return;
+              if (minDias === null || dias < minDias) { minDias = dias; minData = data ?? null; }
+            };
+            for (const d of e.documentos) considerar(daysUntil(d.validade), d.validade);
             for (const r of e.rets) {
               if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) continue;
-              const dias = daysUntil(r.vencimento);
-              if (dias !== null && dias >= 0 && (min === null || dias < min)) min = dias;
+              considerar(daysUntil(r.vencimento), r.vencimento);
             }
-            return min;
+            return { dias: minDias, data: minData };
           })();
           return (
             <div key={e.id} className="rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--border-strong)] transition-colors p-5">
@@ -276,14 +277,14 @@ export default function EmpresasPage() {
                     <label className="inline-flex items-center gap-2 select-none">
                       <input
                         type="checkbox"
-                        className="h-4 w-4 rounded border-gray-300"
+                        className="h-4 w-4 rounded-[var(--radius-sm)] border-[var(--border-strong)]"
                         checked={checked}
                         onChange={(ev) => toggleSelect(e.id, ev.target.checked)}
                         disabled={!canEdit}
                         title={canEdit ? 'Selecionar empresa' : 'Sem permissão'}
                       />
                     </label>
-                    <span className="shrink-0 ct-num rounded-sm bg-[var(--surface-3)] text-[var(--text-1)] px-2 py-0.5 text-xs font-semibold border border-[var(--border)]">
+                    <span className="shrink-0 ct-num rounded-[var(--radius-sm)] bg-[var(--surface-3)] text-[var(--text-1)] px-2 py-0.5 text-xs font-semibold border border-[var(--border)]">
                       {e.codigo}
                     </span>
                     {(() => {
@@ -291,18 +292,15 @@ export default function EmpresasPage() {
                       const effective = computed || e.tipoEstabelecimento;
                       const digits = (e.cnpj || '').replace(/\D/g, '');
                       const tipoIns = getTipoInscricaoDisplay(e.cnpj, e.tipoInscricao);
+                      const tipoChip = 'rounded-[var(--radius-sm)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-[var(--surface-3)] text-[var(--text-2)] border border-[var(--border-subtle)]';
                       if (digits.length === 11) {
-                        return <span className="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase bg-sky-100 text-sky-700">CPF</span>;
+                        return <span className={tipoChip}>CPF</span>;
                       }
                       if (effective) {
-                        return (
-                          <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase ${effective === 'matriz' ? 'bg-teal-100 text-teal-700' : 'bg-teal-100 text-teal-700'}`}>
-                            {effective}
-                          </span>
-                        );
+                        return <span className={tipoChip}>{effective}</span>;
                       }
                       if (tipoIns && tipoIns !== 'CNPJ') {
-                        return <span className="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase bg-gray-100 text-gray-600">{tipoIns}</span>;
+                        return <span className={tipoChip}>{tipoIns}</span>;
                       }
                       return null;
                     })()}
@@ -316,15 +314,15 @@ export default function EmpresasPage() {
                         <span className="ct-num">{totalRenovados}</span> RENOVADO(S)
                       </span>
                     )}
-                    {proximoVencDias !== null && totalVencidos === 0 && (
-                      <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold flex items-center gap-1 ${
-                        proximoVencDias <= limiares.critico
-                          ? 'bg-orange-100 text-orange-700'
-                          : proximoVencDias <= limiares.atencao
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'bg-green-100 text-green-700'
+                    {proximoVenc.dias !== null && totalVencidos === 0 && (
+                      <span className={`rounded-[var(--radius-sm)] px-2 py-0.5 text-[10px] font-semibold inline-flex items-center gap-1 ${
+                        proximoVenc.dias <= limiares.critico
+                          ? 'bg-[var(--danger-soft)] text-[var(--danger)]'
+                          : proximoVenc.dias <= limiares.atencao
+                            ? 'bg-[var(--warn-soft)] text-[var(--warn)]'
+                            : 'text-[var(--text-3)]'
                       }`}>
-                        <Clock size={10} /> Vence em {proximoVencDias}d
+                        <Clock size={10} /> Vence <span className="ct-num">{formatMesAno(proximoVenc.data ?? undefined)}</span>
                       </span>
                     )}
                     {(e.tags || []).map((tagNome) => {
@@ -337,29 +335,29 @@ export default function EmpresasPage() {
                         pink: 'bg-pink-100 text-pink-700', rose: 'bg-rose-100 text-rose-700', slate: 'bg-slate-100 text-slate-700',
                       };
                       return (
-                        <span key={tagNome} className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${colorMap[cor] ?? colorMap.slate}`}>
+                        <span key={tagNome} className={`rounded-[var(--radius-sm)] px-2 py-0.5 text-[10px] font-semibold ${colorMap[cor] ?? colorMap.slate}`}>
                           {tagNome}
                         </span>
                       );
                     })}
                   </div>
-                  <div className="font-bold text-gray-900 mt-2 truncate">{nome}</div>
-                  {e.apelido && e.razao_social && <div className="text-sm text-gray-500 truncate">({e.apelido})</div>}
+                  <div className="mt-2 text-[15px] font-semibold tracking-[-0.01em] text-[var(--text-1)] truncate">{nome}</div>
+                  {e.apelido && e.razao_social && <div className="text-[13px] text-[var(--text-3)] truncate">({e.apelido})</div>}
                 </div>
               </div>
 
-              <div className="mt-3 text-sm text-gray-700 space-y-1.5">
+              <div className="mt-3 text-[13px] space-y-1.5">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-gray-500">
+                  <span className="font-medium text-[var(--text-3)]">
                     {getTipoInscricaoDisplay(e.cnpj, e.tipoInscricao) || 'Doc'}:
                   </span>
-                  <span className="text-gray-800">{e.cnpj ? formatarDocumento(e.cnpj, getTipoInscricaoDisplay(e.cnpj, e.tipoInscricao) || undefined) : '-'}</span>
+                  <span className="ct-num text-[var(--text-2)]">{e.cnpj ? formatarDocumento(e.cnpj, getTipoInscricaoDisplay(e.cnpj, e.tipoInscricao) || undefined) : '-'}</span>
                 </div>
-                {e.regime_federal && <div className="flex items-center gap-2"><span className="font-semibold text-gray-500">Regime:</span> <span className="text-gray-800">{e.regime_federal}</span></div>}
-                <div className="flex items-center gap-2"><span className="font-semibold text-gray-500">Local:</span> <span className="text-gray-800">{e.cidade || '-'}{e.estado ? `/${e.estado}` : ''}</span></div>
-                <div className="flex items-center gap-4">
-                  <span className="flex items-center gap-1 text-blue-600"><FileText size={13} /> {e.documentos.length} docs</span>
-                  <span className="flex items-center gap-1 text-emerald-600"><CalendarClock size={13} /> {e.rets.length} RETs</span>
+                {e.regime_federal && <div className="flex items-center gap-2"><span className="font-medium text-[var(--text-3)]">Regime:</span> <span className="text-[var(--text-2)]">{e.regime_federal}</span></div>}
+                <div className="flex items-center gap-2"><span className="font-medium text-[var(--text-3)]">Local:</span> <span className="text-[var(--text-2)]">{e.cidade || '-'}{e.estado ? `/${e.estado}` : ''}</span></div>
+                <div className="flex items-center gap-4 text-[var(--text-2)]">
+                  <span className="flex items-center gap-1"><FileText size={13} className="text-[var(--text-muted)]" /> <span className="ct-num">{e.documentos.length}</span> docs</span>
+                  <span className="flex items-center gap-1"><CalendarClock size={13} className="text-[var(--text-muted)]" /> <span className="ct-num">{e.rets.length}</span> RETs</span>
                 </div>
               </div>
 
@@ -368,7 +366,7 @@ export default function EmpresasPage() {
                 const resps = sortResponsaveisByNome(
                   Object.entries(e.responsaveis || {})
                     .filter(([, uid]) => uid)
-                    .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid), depIdx: getDepIndex(dId) }))
+                    .map(([dId, uid]) => ({ dep: getDepName(dId), user: getUserName(uid), email: getUserEmail(uid), depIdx: getDepIndex(dId) }))
                     .filter((r) => r.dep && r.user)
                 );
                 if (resps.length === 0) return null;
@@ -380,10 +378,11 @@ export default function EmpresasPage() {
                         return (
                           <div
                             key={r.dep}
-                            className={`rounded-[var(--radius)] px-2 py-1 bg-[var(--surface-3)] border border-[var(--border-subtle)] border-l-[3px] ${c.bar}`}
+                            className={`rounded-[var(--radius)] px-2.5 py-1.5 bg-[var(--surface-3)] border border-[var(--border-subtle)] border-l-[3px] ${c.bar}`}
                           >
                             <div className={`text-[10px] font-semibold ${c.text} uppercase tracking-wider`}>{r.dep}</div>
                             <div className="text-[11px] font-semibold text-[var(--text-1)] truncate">{r.user}</div>
+                            {r.email && <div className="text-[10px] text-[var(--text-3)] truncate" title={r.email}>{r.email}</div>}
                           </div>
                         );
                       })}
@@ -395,7 +394,7 @@ export default function EmpresasPage() {
               {(e.servicos?.length ?? 0) > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1">
                   {e.servicos.slice(0, 3).map((s) => (
-                    <span key={s} className="rounded-sm bg-[var(--surface-3)] text-[var(--text-2)] px-2 py-0.5 text-[11px] font-semibold">{s}</span>
+                    <span key={s} className="rounded-[var(--radius-sm)] bg-[var(--surface-3)] text-[var(--text-2)] px-2 py-0.5 text-[11px] font-semibold">{s}</span>
                   ))}
                   {e.servicos.length > 3 && <span className="text-[11px] text-[var(--text-3)]">+{e.servicos.length - 3}</span>}
                 </div>
@@ -430,7 +429,7 @@ export default function EmpresasPage() {
         })}
 
         {filtered.length === 0 && (
-          <div className="rounded-2xl bg-white shadow-sm p-8 text-center text-gray-400 md:col-span-3">
+          <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] p-8 text-center text-[var(--text-3)] md:col-span-3">
             Nenhuma empresa encontrada.
           </div>
         )}
@@ -438,19 +437,19 @@ export default function EmpresasPage() {
 
       {/* Paginação */}
       {filtered.length > perPage && (
-        <div className="rounded-2xl bg-white p-3 sm:p-4 shadow-sm flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
+        <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] p-3 sm:p-4 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 text-sm text-[var(--text-2)]">
             <span className="font-semibold">Página</span>
-            <span className="rounded-lg bg-gray-100 px-2.5 py-1 font-bold text-gray-800 tabular-nums">
-              {pageClamped} <span className="text-gray-400">/ {totalPages}</span>
+            <span className="ct-num rounded-[var(--radius-sm)] bg-[var(--surface-3)] px-2.5 py-1 font-semibold text-[var(--text-1)]">
+              {pageClamped} <span className="text-[var(--text-muted)]">/ {totalPages}</span>
             </span>
-            <span className="text-gray-400 hidden sm:inline">·</span>
+            <span className="text-[var(--text-muted)] hidden sm:inline">·</span>
             <label className="hidden sm:inline-flex items-center gap-1.5 text-xs">
-              <span className="text-gray-500">Empresas por página:</span>
+              <span className="text-[var(--text-3)]">Empresas por página:</span>
               <select
                 value={perPage}
                 onChange={(e) => setPerPage(Number(e.target.value))}
-                className="rounded-lg bg-gray-50 border border-gray-200 px-2 py-1 text-xs font-bold focus:ring-2 focus:ring-cyan-400"
+                className="ct-num rounded-[var(--radius)] bg-[var(--surface-2)] border border-[var(--border)] px-2 py-1 text-xs font-semibold focus:outline-none focus:border-[var(--brand)] focus:shadow-[0_0_0_1px_var(--brand)]"
               >
                 <option value={25}>25</option>
                 <option value={50}>50</option>
@@ -463,7 +462,7 @@ export default function EmpresasPage() {
             <button
               onClick={() => setPage(1)}
               disabled={pageClamped <= 1}
-              className="rounded-lg px-2 py-1.5 text-xs font-bold bg-gray-50 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              className="rounded-[var(--radius)] px-2 py-1.5 text-xs font-semibold bg-[var(--surface-3)] text-[var(--text-2)] hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               title="Primeira página"
             >
               «
@@ -471,7 +470,7 @@ export default function EmpresasPage() {
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={pageClamped <= 1}
-              className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-bold bg-gray-50 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              className="inline-flex items-center gap-1 rounded-[var(--radius)] px-3 py-1.5 text-sm font-semibold bg-[var(--surface-3)] text-[var(--text-2)] hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft size={16} />
               <span className="hidden sm:inline">Anterior</span>
@@ -479,7 +478,7 @@ export default function EmpresasPage() {
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={pageClamped >= totalPages}
-              className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-bold bg-gradient-to-r from-cyan-600 to-teal-500 text-white hover:from-cyan-700 hover:to-teal-600 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition"
+              className="inline-flex items-center gap-1 rounded-[var(--radius)] px-3 py-1.5 text-sm font-semibold bg-[var(--brand)] text-white hover:bg-[var(--brand-strong)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <span className="hidden sm:inline">Próxima</span>
               <ChevronRight size={16} />
@@ -487,7 +486,7 @@ export default function EmpresasPage() {
             <button
               onClick={() => setPage(totalPages)}
               disabled={pageClamped >= totalPages}
-              className="rounded-lg px-2 py-1.5 text-xs font-bold bg-gray-50 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              className="rounded-[var(--radius)] px-2 py-1.5 text-xs font-semibold bg-[var(--surface-3)] text-[var(--text-2)] hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               title="Última página"
             >
               »

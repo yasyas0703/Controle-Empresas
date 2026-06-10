@@ -47,6 +47,17 @@ export function formatBR(dateStr?: string): string {
   return d.toLocaleDateString('pt-BR');
 }
 
+const MESES_ABREV = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+// "mar/2031" — usado quando a data exata importa menos que o mês/ano
+// (ex: badge de próximo vencimento no card de empresa, que antes mostrava
+// "Vence em 412d" — informação sem valor pra um vencimento distante).
+export function formatMesAno(dateStr?: string): string {
+  const d = parseISODate(dateStr);
+  if (!d) return '-';
+  return `${MESES_ABREV[d.getMonth()]}/${d.getFullYear()}`;
+}
+
 /**
  * Verifica se um RET foi renovado: a data de renovação é >= a data de vencimento.
  * Quando renovado, o RET não deve ser considerado "vencido".

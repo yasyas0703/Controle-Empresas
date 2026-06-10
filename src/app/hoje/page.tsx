@@ -9,7 +9,8 @@ import {
 import { useSistema } from '@/app/context/SistemaContext';
 import { useLocalStorageState } from '@/app/hooks/useLocalStorageState';
 import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
-import { fetchChecklistFiscalByMes, fetchObrigacoesOverrides } from '@/lib/db';
+import { fetchChecklistFiscalByMes, fetchObrigacoesOverrides, toChecklistItem } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { obrigacaoAplicaParaEmpresa, obrigacaoSnAplicaParaEmpresa } from '@/app/utils/regrasVencimentosFiscais';
 import {
   FISCAL_DEPT_NOME, FISCAL_SN_DEPT_NOME,
@@ -99,16 +100,66 @@ export default function HojePage() {
 
   // Carrega checklist do mês corrente + anterior pra saber o que já foi marcado como feito.
   const [checklistItems, setChecklistItems] = useState<ChecklistFiscalItem[]>([]);
-  useEffect(() => {
+
+  // Os dois meses que esta tela observa (corrente + anterior). useMemo([]) =
+  // calcula uma vez no mount; a tela é sempre sobre "hoje".
+  const mesesObservados = useMemo(() => {
     const hoje = new Date();
     const atual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
     const antMes = new Date(hoje);
     antMes.setMonth(antMes.getMonth() - 1);
     const anterior = `${antMes.getFullYear()}-${String(antMes.getMonth() + 1).padStart(2, '0')}`;
-    Promise.all([fetchChecklistFiscalByMes(atual), fetchChecklistFiscalByMes(anterior)])
-      .then(([a, b]) => setChecklistItems([...a, ...b]))
-      .catch((err) => console.error('[hoje] erro ao carregar checklist:', err));
+    return [atual, anterior];
   }, []);
+
+  const recarregarChecklist = React.useCallback(() => {
+    Promise.all(mesesObservados.map((m) => fetchChecklistFiscalByMes(m)))
+      .then((listas) => setChecklistItems(listas.flat()))
+      .catch((err) => console.error('[hoje] erro ao carregar checklist:', err));
+  }, [mesesObservados]);
+
+  useEffect(() => { recarregarChecklist(); }, [recarregarChecklist]);
+
+  // Realtime: aplica mudanças do checklist_fiscal (envio manual ou auto-envio do
+  // watcher) direto do payload nos dois meses observados — sem refetch. A
+  // reconciliação no foco cobre eventos perdidos se o WebSocket cair.
+  useEffect(() => {
+    let ch = supabase.channel(`hoje-checklist-${mesesObservados.join('-')}`);
+    for (const m of mesesObservados) {
+      ch = ch.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'checklist_fiscal', filter: `mes=eq.${m}` },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (payload: any) => {
+          if (payload.eventType === 'DELETE') {
+            const oldId = payload.old?.id;
+            if (!oldId) return;
+            setChecklistItems((prev) => prev.filter((it) => it.id !== oldId));
+            return;
+          }
+          const row = payload.new;
+          if (!row?.id) return;
+          const item = toChecklistItem(row);
+          setChecklistItems((prev) => {
+            const idx = prev.findIndex((it) => it.id === item.id);
+            if (idx === -1) return [...prev, item];
+            const next = prev.slice();
+            next[idx] = item;
+            return next;
+          });
+        },
+      );
+    }
+    ch.subscribe();
+
+    const onVisible = () => { if (document.visibilityState === 'visible') recarregarChecklist(); };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      supabase.removeChannel(ch);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [mesesObservados, recarregarChecklist]);
 
   // Carrega overrides manuais "empresa × obrigação → habilitada?". Sem override,
   // segue a regra automática por UF/cidade.

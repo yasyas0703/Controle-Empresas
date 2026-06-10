@@ -525,44 +525,74 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   // -- Realtime: sincroniza automaticamente quando outro usuário faz mudanças --
   // Pausa quando a aba está oculta — usuário com aba minimizada/em background
   // não precisa receber eventos. Quando volta o foco, refetch + reassina.
+  //
+  // Em vez de refetch geral a cada evento (que baixava ~400 empresas × 5 tabelas
+  // pra CADA conectado em TODA edição), aplicamos a mudança direto do payload.
+  // Custo de banco ~zero: o evento postgres_changes já carrega a linha nova.
+  //
+  // Pegadinha: a tabela `empresas` só traz os campos escalares. Os
+  // relacionamentos (rets/documentos/observacoes/responsaveis) vivem em outras
+  // tabelas e NÃO vêm no payload — por isso preservamos os que já estão no
+  // state. Mudança só de relacionamento (ex: trocar responsável) não reflete
+  // na hora pra quem está com a aba aberta; é reconciliada no refetch ao focar
+  // a aba (onVisibilityChange) — que é barato porque acontece raramente.
   useEffect(() => {
     if (!state.currentUserId) return;
 
     const userId = state.currentUserId;
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
-    const scheduleReload = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        loadForUser(userId as UUID).catch(console.error);
-      }, 1500);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const applyEmpresaChange = (payload: any) => {
+      if (payload.eventType === 'DELETE') {
+        const oldId = payload.old?.id;
+        if (!oldId) return;
+        setState((prev) => ({
+          ...prev,
+          empresas: prev.empresas.filter((e) => e.id !== oldId),
+        }));
+        return;
+      }
+      const row = payload.new;
+      if (!row?.id) return;
+      const scalars = db.mapEmpresaScalars(row);
+      setState((prev) => {
+        const idx = prev.empresas.findIndex((e) => e.id === row.id);
+        if (idx === -1) {
+          // INSERT de empresa nova: entra com relacionamentos vazios. O refetch
+          // ao focar a aba popula responsaveis/docs/rets. (Empresa sem
+          // responsável fiscal nem aparece em telas como o Envio de Guias.)
+          const nova: Empresa = { ...scalars, rets: [], documentos: [], observacoes: [], responsaveis: {} };
+          return { ...prev, empresas: [nova, ...prev.empresas] };
+        }
+        // UPDATE — ou echo do próprio INSERT otimista. Mescla os escalares e
+        // preserva os relacionamentos já carregados (não vêm no payload).
+        const atual = prev.empresas[idx];
+        const next = prev.empresas.slice();
+        next[idx] = {
+          ...scalars,
+          rets: atual.rets,
+          documentos: atual.documentos,
+          observacoes: atual.observacoes,
+          responsaveis: atual.responsaveis,
+        };
+        return { ...prev, empresas: next };
+      });
     };
 
-    // Lista enxuta. Removidas:
-    //  - 'logs', 'lixeira', 'documentos', 'observacoes', 'rets', 'responsaveis':
-    //     consultados sob demanda nas telas que precisam.
-    //  - 'notificacoes': vinha disparando refetch geral toda vez que QUALQUER
-    //     usuário recebia uma notificação. Substituído por polling 60s + on focus.
-    //  - 'usuarios', 'departamentos', 'servicos', 'tags': mudam raramente
-    //     (só admin cadastra) — não vale gastar realtime. Quem cadastrar dá F5.
-    // Mantida só 'empresas' — entidade principal, todo mundo trabalha em cima.
-    const tables = [
-      'empresas',
-    ];
-
+    // Só 'empresas' — entidade principal em que todo mundo trabalha. Outras
+    // tabelas (logs/lixeira/usuarios/departamentos/notificacoes) mudam raro ou
+    // são carregadas sob demanda; notificações usam polling leve (ver abaixo).
     const subscribe = () => {
       if (channel) return;
-      let ch = supabase.channel(`app-realtime-${userId}`);
-      for (const table of tables) {
-        ch = ch.on(
+      channel = supabase
+        .channel(`app-realtime-${userId}`)
+        .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table },
-          scheduleReload
-        );
-      }
-      ch.subscribe();
-      channel = ch;
+          { event: '*', schema: 'public', table: 'empresas' },
+          applyEmpresaChange
+        )
+        .subscribe();
     };
 
     const unsubscribe = () => {
@@ -573,16 +603,13 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        // Voltou pro foco: refetch imediato pra pegar o que perdeu, depois reassina.
+        // Voltou pro foco: refetch reconcilia relacionamentos e INSERTs que
+        // chegaram sem joins; depois reassina.
         loadForUser(userId as UUID).catch(console.error);
         subscribe();
       } else {
         // Saiu de foco: para de receber mensagens realtime.
         unsubscribe();
-        if (debounceTimer) {
-          clearTimeout(debounceTimer);
-          debounceTimer = null;
-        }
       }
     };
 
@@ -594,7 +621,6 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      if (debounceTimer) clearTimeout(debounceTimer);
       unsubscribe();
     };
   }, [state.currentUserId, loadForUser]);

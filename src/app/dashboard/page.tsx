@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { AlertTriangle, Calendar, CalendarClock, FileText, Building2, Clock, Search, MapPin, Briefcase, Eye, Pencil, PowerOff, Trash2, CheckSquare, Square, FileDown, X, Tag, History, FileSpreadsheet, ChevronDown, StickyNote } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { supabase } from '@/lib/supabase';
-import { daysUntil, formatBR, isRetRenovado } from '@/app/utils/date';
+import { daysUntil, formatBR, formatMesAno, isRetRenovado } from '@/app/utils/date';
 import { detectTipoEstabelecimento, detectTipoInscricao, formatarDocumento, getTipoInscricaoDisplay } from '@/app/utils/validation';
 import type { Empresa, UUID, Limiares, HistoricoVencimentoItem } from '@/app/types';
 import { LIMIARES_DEFAULTS, FORMAS_ENVIO } from '@/app/types';
@@ -897,7 +897,7 @@ export default function DashboardPage() {
           })();
 
           return (
-            <div key={e.id} className={`rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow p-5 ${selecionando && selecionadas.has(e.id) ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}>
+            <div key={e.id} className={`rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--border-strong)] transition-colors p-5 ${selecionando && selecionadas.has(e.id) ? 'ring-2 ring-[var(--brand)] ring-offset-1' : ''}`}>
               <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0 flex-1">
                     {selecionando && (
@@ -911,19 +911,19 @@ export default function DashboardPage() {
                           }
                           setSelecionadas(newSet);
                         }}
-                        className="shrink-0 mt-1 p-1 hover:bg-gray-100 rounded-lg transition"
+                        className="shrink-0 mt-1 p-1 hover:bg-[var(--surface-3)] rounded-[var(--radius)] transition-colors"
                         title={selecionadas.has(e.id) ? 'Desselecionar' : 'Selecionar'}
                       >
                         {selecionadas.has(e.id) ? (
-                          <CheckSquare size={20} className="text-blue-600" />
+                          <CheckSquare size={20} className="text-[var(--brand)]" />
                         ) : (
-                          <Square size={20} className="text-gray-400" />
+                          <Square size={20} className="text-[var(--text-muted)]" />
                         )}
                       </button>
                     )}
                     <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="shrink-0 rounded-lg bg-cyan-50 text-cyan-700 px-2.5 py-1 text-xs font-bold">
+                    <span className="shrink-0 ct-num rounded-[var(--radius-sm)] bg-[var(--surface-3)] text-[var(--text-1)] px-2 py-0.5 text-xs font-semibold border border-[var(--border)]">
                       {e.codigo}
                     </span>
                     {(() => {
@@ -931,29 +931,26 @@ export default function DashboardPage() {
                       const effective = computed || e.tipoEstabelecimento;
                       const digits = (e.cnpj || '').replace(/\D/g, '');
                       const tipoIns = getTipoInscricaoDisplay(e.cnpj, e.tipoInscricao);
+                      const tipoChip = 'rounded-[var(--radius-sm)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-[var(--surface-3)] text-[var(--text-2)] border border-[var(--border-subtle)]';
                       if (digits.length === 11) {
-                        return <span className="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase bg-sky-100 text-sky-700">CPF</span>;
+                        return <span className={tipoChip}>CPF</span>;
                       }
                       if (effective) {
-                        return (
-                          <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase ${effective === 'matriz' ? 'bg-teal-100 text-teal-700' : 'bg-teal-100 text-teal-700'}`}>
-                            {effective}
-                          </span>
-                        );
+                        return <span className={tipoChip}>{effective}</span>;
                       }
                       if (tipoIns && tipoIns !== 'CNPJ') {
-                        return <span className="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase bg-gray-100 text-gray-600">{tipoIns}</span>;
+                        return <span className={tipoChip}>{tipoIns}</span>;
                       }
                       return null;
                     })()}
                     {totalVencidos > 0 && (
-                      <span className="rounded-md bg-red-100 text-red-700 px-2 py-0.5 text-[10px] font-bold flex items-center gap-1">
-                        <AlertTriangle size={10} /> {totalVencidos} VENCIDO(S)
+                      <span className="ct-badge ct-badge-danger gap-1">
+                        <AlertTriangle size={10} /> <span className="ct-num">{totalVencidos}</span> VENCIDO(S)
                       </span>
                     )}
                     {totalRenovados > 0 && (
-                      <span className="rounded-md bg-blue-100 text-blue-700 px-2 py-0.5 text-[10px] font-bold flex items-center gap-1">
-                        {totalRenovados} RENOVADO(S)
+                      <span className="ct-badge ct-badge-ok gap-1">
+                        <span className="ct-num">{totalRenovados}</span> RENOVADO(S)
                       </span>
                     )}
                     {(e.tags || []).map((tagNome) => {
@@ -966,27 +963,40 @@ export default function DashboardPage() {
                         pink: 'bg-pink-100 text-pink-700', rose: 'bg-rose-100 text-rose-700', slate: 'bg-slate-100 text-slate-700',
                       };
                       return (
-                        <span key={tagNome} className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${colorMap[cor] ?? colorMap.slate}`}>
+                        <span key={tagNome} className={`rounded-[var(--radius-sm)] px-2 py-0.5 text-[10px] font-semibold ${colorMap[cor] ?? colorMap.slate}`}>
                           {tagNome}
                         </span>
                       );
                     })}
                     {totalRisco > 0 && (
-                      <span className="rounded-md bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px] font-bold flex items-center gap-1">
-                        <Clock size={10} /> {totalRisco} em risco
+                      <span className="ct-badge ct-badge-warn gap-1">
+                        <Clock size={10} /> <span className="ct-num">{totalRisco}</span> em risco
                       </span>
                     )}
-                    {proximoVencDias !== null && totalVencidos === 0 && (
-                      <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold flex items-center gap-1 ${
-                        proximoVencDias <= limiares.critico
-                          ? 'bg-orange-100 text-orange-700'
-                          : proximoVencDias <= limiares.atencao
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'bg-green-100 text-green-700'
-                      }`}>
-                        <Clock size={10} /> Vence em {proximoVencDias}d
-                      </span>
-                    )}
+                    {proximoVencDias !== null && totalVencidos === 0 && (() => {
+                      const proximaData = (() => {
+                        let minDias: number | null = null;
+                        let minData: string | null = null;
+                        const considerar = (dias: number | null, data?: string) => {
+                          if (dias === null || dias < 0) return;
+                          if (minDias === null || dias < minDias) { minDias = dias; minData = data ?? null; }
+                        };
+                        for (const d of e.documentos) considerar(daysUntil(d.validade), d.validade);
+                        for (const r of e.rets) considerar(daysUntil(r.vencimento), r.vencimento);
+                        return minData;
+                      })();
+                      return (
+                        <span className={`rounded-[var(--radius-sm)] px-2 py-0.5 text-[10px] font-semibold inline-flex items-center gap-1 ${
+                          proximoVencDias <= limiares.critico
+                            ? 'bg-[var(--danger-soft)] text-[var(--danger)]'
+                            : proximoVencDias <= limiares.atencao
+                              ? 'bg-[var(--warn-soft)] text-[var(--warn)]'
+                              : 'text-[var(--text-3)]'
+                        }`}>
+                          <Clock size={10} /> Vence <span className="ct-num">{formatMesAno(proximaData ?? undefined)}</span>
+                        </span>
+                      );
+                    })()}
                     {e.cliente_desde && (() => {
                       const [y, m] = e.cliente_desde.split('-');
                       if (!y || !m) return null;
@@ -995,38 +1005,38 @@ export default function DashboardPage() {
                       const anosCliente = new Date().getFullYear() - Number(y);
                       return (
                         <span
-                          className="rounded-md bg-violet-50 text-violet-700 px-2 py-0.5 text-[10px] font-bold flex items-center gap-1 border border-violet-200"
+                          className="rounded-[var(--radius-sm)] bg-[var(--surface-3)] text-[var(--text-2)] px-2 py-0.5 text-[10px] font-semibold inline-flex items-center gap-1 border border-[var(--border-subtle)]"
                           title={`Cliente há ${anosCliente} ano(s)`}
                         >
-                          <Calendar size={10} /> Cliente desde {label}
+                          <Calendar size={10} className="text-[var(--text-muted)]" /> Cliente desde <span className="ct-num">{label}</span>
                         </span>
                       );
                     })()}
                   </div>
-                  <div className="font-bold text-gray-900 text-lg mt-2 truncate">{nome}</div>
-                  {e.apelido && e.razao_social && <div className="text-sm text-gray-500 truncate">({e.apelido})</div>}
+                  <div className="text-[15px] font-semibold tracking-[-0.01em] text-[var(--text-1)] mt-2 truncate">{nome}</div>
+                  {e.apelido && e.razao_social && <div className="text-[13px] text-[var(--text-3)] truncate">({e.apelido})</div>}
                     </div>
                   </div>
                 <div className="flex gap-1.5">
-                  <button onClick={() => setEmpresaView(e)} className="rounded-lg p-2 hover:bg-blue-50 transition" title="Ver detalhes">
-                    <Eye size={17} className="text-blue-500" />
+                  <button onClick={() => setEmpresaView(e)} className="rounded-[var(--radius)] p-2 text-[var(--text-2)] hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)] transition-colors" title="Ver detalhes">
+                    <Eye size={17} />
                   </button>
-                  <button onClick={() => setEmpresaEdit(e)} className="rounded-lg p-2 hover:bg-teal-50 transition" title="Editar" disabled={!canEditEmpresa(currentUserId, canManage, e)}>
-                    <Pencil size={17} className="text-teal-500" />
+                  <button onClick={() => setEmpresaEdit(e)} className="rounded-[var(--radius)] p-2 text-[var(--text-2)] hover:bg-[var(--brand-soft)] hover:text-[var(--brand-strong)] transition-colors disabled:opacity-50" title="Editar" disabled={!canEditEmpresa(currentUserId, canManage, e)}>
+                    <Pencil size={17} />
                   </button>
-                  <button onClick={() => setConfirmDesligar(e)} className="rounded-lg p-2 hover:bg-amber-50 transition" title="Desligar (marcar como ex-cliente)" disabled={!canEditEmpresa(currentUserId, canManage, e)}>
-                    <PowerOff size={17} className="text-amber-500" />
+                  <button onClick={() => setConfirmDesligar(e)} className="rounded-[var(--radius)] p-2 text-[var(--text-2)] hover:bg-[var(--warn-soft)] hover:text-[var(--warn)] transition-colors disabled:opacity-50" title="Desligar (marcar como ex-cliente)" disabled={!canEditEmpresa(currentUserId, canManage, e)}>
+                    <PowerOff size={17} />
                   </button>
-                  <button onClick={() => setConfirmDelete(e)} className="rounded-lg p-2 hover:bg-red-50 transition" title="Excluir definitivo" disabled={!canEditEmpresa(currentUserId, canManage, e)}>
-                    <Trash2 size={17} className="text-red-400" />
+                  <button onClick={() => setConfirmDelete(e)} className="rounded-[var(--radius)] p-2 text-[var(--text-2)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] transition-colors disabled:opacity-50" title="Excluir definitivo" disabled={!canEditEmpresa(currentUserId, canManage, e)}>
+                    <Trash2 size={17} />
                   </button>
                 </div>
               </div>
 
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Briefcase size={14} className="text-blue-400 shrink-0" />
-                  <span className="font-medium text-gray-500">{(() => {
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-[13px]">
+                <div className="flex items-center gap-2 text-[var(--text-2)]">
+                  <Briefcase size={14} className="text-[var(--text-muted)] shrink-0" />
+                  <span className="font-medium text-[var(--text-3)]">{(() => {
                     const d = (e.cnpj || '').replace(/\D/g, '');
                     if (d.length === 11) return 'CPF:';
                     if (d.length === 14) return 'CNPJ:';
@@ -1036,46 +1046,46 @@ export default function DashboardPage() {
                     if (e.tipoInscricao) return `${e.tipoInscricao}:`;
                     return 'Doc:';
                   })()}</span>
-                  <span className="text-gray-800 truncate">{e.cnpj ? formatarDocumento(e.cnpj, (e.cnpj.replace(/\D/g, '').length === 11 ? 'CPF' : e.cnpj.replace(/\D/g, '').length === 12 ? 'CNO' : e.tipoInscricao || 'CNPJ')) : '-'}</span>
+                  <span className="ct-num text-[var(--text-2)] truncate">{e.cnpj ? formatarDocumento(e.cnpj, (e.cnpj.replace(/\D/g, '').length === 11 ? 'CPF' : e.cnpj.replace(/\D/g, '').length === 12 ? 'CNO' : e.tipoInscricao || 'CNPJ')) : '-'}</span>
                 </div>
-                <div className="flex items-center gap-2 text-gray-600">
-                  <MapPin size={14} className="text-rose-400 shrink-0" />
-                  <span className="font-medium text-gray-500">Local:</span>
-                  <span className="text-gray-800 truncate">{e.cidade || '-'}{e.estado ? `/${e.estado}` : ''}</span>
+                <div className="flex items-center gap-2 text-[var(--text-2)]">
+                  <MapPin size={14} className="text-[var(--text-muted)] shrink-0" />
+                  <span className="font-medium text-[var(--text-3)]">Local:</span>
+                  <span className="text-[var(--text-2)] truncate">{e.cidade || '-'}{e.estado ? `/${e.estado}` : ''}</span>
                 </div>
-                <div className="flex items-center gap-2 text-gray-600">
-                  <FileText size={14} className="text-amber-400 shrink-0" />
-                  <span className="font-medium text-gray-500">Regime:</span>
-                  <span className="text-gray-800 truncate">{e.regime_federal || '-'}</span>
+                <div className="flex items-center gap-2 text-[var(--text-2)]">
+                  <FileText size={14} className="text-[var(--text-muted)] shrink-0" />
+                  <span className="font-medium text-[var(--text-3)]">Regime:</span>
+                  <span className="text-[var(--text-2)] truncate">{e.regime_federal || '-'}</span>
                 </div>
-                <div className="flex items-center gap-2 text-gray-600">
-                  <CalendarClock size={14} className="text-emerald-400 shrink-0" />
-                  <span className="font-medium text-gray-500">Docs:</span>
-                  <span className="text-gray-800">{e.documentos.length}</span>
-                  <span className="font-medium text-gray-500 ml-1">RETs:</span>
-                  <span className="text-gray-800">{e.rets.length}</span>
+                <div className="flex items-center gap-2 text-[var(--text-2)]">
+                  <CalendarClock size={14} className="text-[var(--text-muted)] shrink-0" />
+                  <span className="font-medium text-[var(--text-3)]">Docs:</span>
+                  <span className="ct-num text-[var(--text-2)]">{e.documentos.length}</span>
+                  <span className="font-medium text-[var(--text-3)] ml-1">RETs:</span>
+                  <span className="ct-num text-[var(--text-2)]">{e.rets.length}</span>
                 </div>
               </div>
 
               {(e.servicos?.length ?? 0) > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {e.servicos.slice(0, 5).map((s) => (
-                    <span key={s} className="rounded-md bg-cyan-50 text-teal-600 px-2 py-0.5 text-[11px] font-semibold">{s}</span>
+                    <span key={s} className="rounded-[var(--radius-sm)] bg-[var(--surface-3)] text-[var(--text-2)] px-2 py-0.5 text-[11px] font-semibold">{s}</span>
                   ))}
-                  {e.servicos.length > 5 && <span className="text-[11px] text-gray-400">+{e.servicos.length - 5}</span>}
+                  {e.servicos.length > 5 && <span className="text-[11px] text-[var(--text-3)]">+{e.servicos.length - 5}</span>}
                 </div>
               )}
               {itensDashboard.length > 0 && (
-                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-1)] p-3">
                   <div className="flex items-center justify-between gap-3 mb-3">
-                    <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Vencimentos no dashboard</div>
-                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-slate-600 border border-slate-200">
+                    <div className="text-[10px] font-semibold text-[var(--text-3)] uppercase tracking-wider">Vencimentos no dashboard</div>
+                    <span className="ct-num rounded-[var(--radius-sm)] bg-[var(--surface-2)] px-2 py-0.5 text-[10px] font-semibold text-[var(--text-2)] border border-[var(--border)]">
                       {itensDashboard.length} item(ns)
                     </span>
                   </div>
                   <div className="space-y-2">
                     {itensDashboard.slice(0, 4).map((item) => (
-                      <div key={item.itemId} className="rounded-xl border border-slate-200 bg-white p-3">
+                      <div key={item.itemId} className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] p-3">
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
@@ -1090,13 +1100,13 @@ export default function DashboardPage() {
                               }`}>
                                 {item.dias < 0 ? 'VENCIDO' : item.dias <= limiares.critico ? 'CRITICO' : item.dias <= limiares.atencao ? 'ATENCAO' : 'PROXIMO'}
                               </span>
-                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                              <span className="rounded-[var(--radius-sm)] bg-[var(--surface-3)] px-2 py-0.5 text-[10px] font-semibold text-[var(--text-2)]">
                                 {item.tipo}
                               </span>
                             </div>
-                            <div className="mt-2 text-sm font-semibold text-slate-900 break-words">{item.nome}</div>
-                            <div className="mt-1 text-xs text-slate-500">
-                              Vencimento: {formatBR(item.vencimento)} - {item.dias < 0 ? `${Math.abs(item.dias)} dia(s) em atraso` : `${item.dias} dia(s) restantes`}
+                            <div className="mt-2 text-sm font-semibold text-[var(--text-1)] break-words">{item.nome}</div>
+                            <div className="mt-1 text-xs text-[var(--text-3)]">
+                              Vencimento: <span className="ct-num">{formatBR(item.vencimento)}</span> - {item.dias < 0 ? `${Math.abs(item.dias)} dia(s) em atraso` : `${item.dias} dia(s) restantes`}
                             </div>
                             <div className="mt-2 flex flex-wrap gap-2">
                               {item.tagVencimento && (
@@ -1116,7 +1126,7 @@ export default function DashboardPage() {
                           <div className="flex items-center gap-2 lg:pl-4">
                             <button
                               onClick={() => abrirHistoricoItem(item.empresaId, item.itemId, item.tipo)}
-                              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                              className="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs font-semibold text-[var(--text-2)] hover:bg-[var(--surface-3)] transition-colors">
                               <History size={14} />
                               Editar tag / andamento
                             </button>
@@ -1125,7 +1135,7 @@ export default function DashboardPage() {
                       </div>
                     ))}
                     {itensDashboard.length > 4 && (
-                      <div className="text-[11px] font-semibold text-slate-500">
+                      <div className="text-[11px] font-semibold text-[var(--text-3)]">
                         +{itensDashboard.length - 4} item(ns) a mais nessa empresa
                       </div>
                     )}
@@ -1144,16 +1154,19 @@ export default function DashboardPage() {
                 );
                 if (resps.length === 0) return null;
                 return (
-                  <div className="mt-4 pt-4 border-t border-gray-100">
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Responsáveis</div>
+                  <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
+                    <div className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-2">Responsáveis</div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                       {resps.map((r) => {
                         const c = DEPT_COLORS[r.depIdx % 8];
                         return (
-                          <div key={r.dep} className={`rounded-lg px-2.5 py-1.5 bg-[var(--surface-3)] border border-[var(--border-subtle)] border-l-[3px] ${c.bar}`}>
-                            <div className={`text-[10px] font-bold ${c.text} uppercase tracking-wide`}>{r.dep}</div>
-                            <div className="text-xs font-semibold text-gray-800 truncate">{r.user}</div>
-                            {r.email && <div className="text-[10px] text-gray-500 truncate" title={r.email}>{r.email}</div>}
+                          <div
+                            key={r.dep}
+                            className={`rounded-[var(--radius)] px-2.5 py-1.5 bg-[var(--surface-3)] border border-[var(--border-subtle)] border-l-[3px] ${c.bar}`}
+                          >
+                            <div className={`text-[10px] font-semibold ${c.text} uppercase tracking-wider`}>{r.dep}</div>
+                            <div className="text-[11px] font-semibold text-[var(--text-1)] truncate">{r.user}</div>
+                            {r.email && <div className="text-[10px] text-[var(--text-3)] truncate" title={r.email}>{r.email}</div>}
                           </div>
                         );
                       })}
@@ -1175,7 +1188,7 @@ export default function DashboardPage() {
                         <div className="text-[10px] font-bold text-amber-700 uppercase tracking-wide flex items-center gap-1">
                           <StickyNote size={11} /> Particularidade · {DEPARTAMENTO_LABELS[s]}
                         </div>
-                        <div className="text-xs text-gray-800 whitespace-pre-wrap mt-0.5">
+                        <div className="text-xs text-[var(--text-2)] whitespace-pre-wrap mt-0.5">
                           {e.particularidadesPorDep?.[s]}
                         </div>
                       </div>
@@ -1192,7 +1205,7 @@ export default function DashboardPage() {
                     <div className="text-[10px] font-bold text-[var(--text-3)] uppercase tracking-wide">
                       Forma de Envio
                     </div>
-                    <div className="text-xs text-gray-800 mt-0.5 flex flex-wrap gap-1.5">
+                    <div className="text-xs text-[var(--text-2)] mt-0.5 flex flex-wrap gap-1.5">
                       {e.formaEnvio.map((fe) => {
                         const opt = FORMAS_ENVIO.find((o) => o.value === fe);
                         return (
@@ -1213,7 +1226,7 @@ export default function DashboardPage() {
         })}
 
         {filteredEmpresas.length === 0 && (
-          <div className="rounded-2xl bg-white shadow-sm p-10 text-center text-gray-400 md:col-span-2">
+          <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] p-10 text-center text-[var(--text-3)] md:col-span-2">
             Nenhuma empresa encontrada com os filtros atuais.
           </div>
         )}
@@ -1222,21 +1235,21 @@ export default function DashboardPage() {
       {/* Paginação: render lazy. Não monta as 400 empresas de uma vez. */}
       {filteredEmpresas.length > paginaTamanho && (
         <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 mt-2 px-2">
-          <span className="text-xs text-gray-500">
-            Mostrando <strong>{empresasVisiveisPagina.length}</strong> de <strong>{filteredEmpresas.length}</strong> empresas
+          <span className="text-xs text-[var(--text-3)]">
+            Mostrando <strong className="ct-num text-[var(--text-2)]">{empresasVisiveisPagina.length}</strong> de <strong className="ct-num text-[var(--text-2)]">{filteredEmpresas.length}</strong> empresas
           </span>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setPaginaTamanho((v) => v + 50)}
-              className="rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 text-xs sm:text-sm font-bold transition shadow-sm"
+              className="rounded-[var(--radius)] bg-[var(--brand)] hover:bg-[var(--brand-strong)] text-white px-4 py-2 text-xs sm:text-sm font-semibold transition-colors"
             >
               Mostrar mais 50
             </button>
             <button
               onClick={() => setPaginaTamanho(filteredEmpresas.length)}
-              className="rounded-xl border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 text-xs sm:text-sm font-bold transition"
+              className="rounded-[var(--radius)] border border-[var(--border)] hover:bg-[var(--surface-3)] text-[var(--text-2)] px-4 py-2 text-xs sm:text-sm font-semibold transition-colors"
             >
-              Ver todas ({filteredEmpresas.length})
+              Ver todas (<span className="ct-num">{filteredEmpresas.length}</span>)
             </button>
           </div>
         </div>

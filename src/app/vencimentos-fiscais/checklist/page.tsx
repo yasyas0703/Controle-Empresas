@@ -437,21 +437,10 @@ export default function ChecklistFiscalPage() {
             return next;
           });
         } else {
-          const statusRow = row.status === 'feito' || row.status === 'sem_obrigacao' ? row.status : null;
-          const item: ChecklistFiscalItem = {
-            id: row.id,
-            empresaId: row.empresa_id,
-            mes: row.mes,
-            obrigacao: row.obrigacao,
-            concluido: !!row.concluido,
-            status: statusRow,
-            concluidoPorId: row.concluido_por_id,
-            concluidoPorNome: row.concluido_por_nome ?? undefined,
-            concluidoEm: row.concluido_em ?? undefined,
-            observacao: row.observacao ?? undefined,
-            criadoEm: row.criado_em ?? '',
-            atualizadoEm: row.atualizado_em ?? '',
-          };
+          // toChecklistItem mapeia a linha COMPLETA (incl. arquivoUrl,
+          // enviosHistorico, arquivoHistorico) — o mapeador inline antigo
+          // perdia esses campos no echo do realtime.
+          const item = db.toChecklistItem(row);
           setItems((prev) => {
             const next = new Map(prev);
             next.set(buildKey(item.empresaId, item.obrigacao), item);
@@ -461,10 +450,19 @@ export default function ChecklistFiscalPage() {
       })
       .subscribe();
 
+    // Realtime é fire-and-forget: se o WebSocket cair (notebook dormiu, troca de
+    // rede), os eventos perdidos NÃO voltam sozinhos. Ao reativar a aba, refaz o
+    // fetch pra reconciliar o que escapou — assim a tela fica correta sem F5.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') carregar(mes);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
     return () => {
       supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [mes]);
+  }, [mes, carregar]);
 
   // Marca/desmarca uma célula. status null = limpa
   const toggle = async (empresa: Empresa, obrigacao: string, novo: 'feito' | 'sem_obrigacao' | null) => {
@@ -587,7 +585,17 @@ export default function ChecklistFiscalPage() {
         });
         mostrarAlerta('Dispensado', 'Obrigação dispensada com justificativa.', 'sucesso');
       } else {
-        await db.updateChecklistObservacao(obsTarget.empresa.id, mes, obsTarget.obrigacao, obsText);
+        const salvo = await db.updateChecklistObservacao(obsTarget.empresa.id, mes, obsTarget.obrigacao, obsText);
+        // Update otimista local: o ícone de observação fica roxo (ou volta a
+        // cinza, quando apaga) na hora, sem depender do round-trip do realtime.
+        // updateChecklistObservacao retorna a linha completa do banco (preserva
+        // concluido/status/arquivo), então usamos ela direto.
+        const key = buildKey(obsTarget.empresa.id, obsTarget.obrigacao);
+        setItems((prev) => {
+          const next = new Map(prev);
+          next.set(key, salvo);
+          return next;
+        });
         mostrarAlerta('Observação salva', 'A observação foi registrada no checklist.', 'sucesso');
       }
       setObsTarget(null);

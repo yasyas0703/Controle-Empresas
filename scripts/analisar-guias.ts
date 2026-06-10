@@ -207,10 +207,14 @@ for (const f of pdfs) {
     continue;
   }
 
+  // AUDITORIA DE CONFIG: reconheceu, mas ENVIARIA de verdade? (espelha o route)
+  const cfgO = configs.get(ro.obrigacao);
+  const envioStatus = !cfgO ? 'config_ausente' : (!cfgO.ativa ? 'inativa' : (cfgO.naoEnviaCliente ? 'interna' : 'ok'));
   bump('OK:' + ro.obrigacao);
+  bump('ENVIO:' + envioStatus);
   linhas.push({
     arquivo: rel, empresa: empNome ?? '', tipoMatch: ie.tipoMatch ?? '', obrigacao: ro.obrigacao,
-    resultado: 'reconhecida', detalhe: `comp=${comp}`,
+    resultado: 'reconhecida', detalhe: `comp=${comp} envio=${envioStatus}`,
   });
 }
 

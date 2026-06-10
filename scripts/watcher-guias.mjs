@@ -118,7 +118,7 @@ function loadEnv() {
 const env = loadEnv();
 const TOKEN = env.AUTO_ENVIO_TOKEN;
 if (!TOKEN) {
-  console.error('❌ AUTO_ENVIO_TOKEN faltando em .env.local');
+  console.error('ERRO: AUTO_ENVIO_TOKEN faltando em .env.local');
   process.exit(1);
 }
 const BASE_URL = urlArg || env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
@@ -139,7 +139,7 @@ function carregarState() {
     state = JSON.parse(raw);
     if (!state.processados) state.processados = {};
   } catch (err) {
-    console.error('⚠️  Não consegui ler state, começando do zero:', err.message);
+    console.error('AVISO: Não consegui ler state, começando do zero:', err.message);
     state = { processados: {}, ultimaSalvada: null };
   }
 }
@@ -158,7 +158,7 @@ function salvarStateSync() {
     state.ultimaSalvada = new Date().toISOString();
     writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
   } catch (err) {
-    console.error('⚠️  Falha ao salvar state:', err.message);
+    console.error('AVISO: Falha ao salvar state:', err.message);
   }
 }
 
@@ -196,12 +196,12 @@ function logCli(cor, prefix, msg) {
 }
 
 const log = {
-  info:  (msg, extra) => { logCli(CORES.azul, 'INFO ', msg); logFile('info', msg, extra); },
-  ok:    (msg, extra) => { logCli(CORES.verde, '✅ OK ', msg); logFile('ok', msg, extra); },
-  warn:  (msg, extra) => { logCli(CORES.amarelo, '⚠️  WARN', msg); logFile('warn', msg, extra); },
-  err:   (msg, extra) => { logCli(CORES.vermelho, '❌ ERR', msg); logFile('error', msg, extra); },
-  step:  (msg, extra) => { logCli(CORES.ciano, '➜   ', msg); logFile('step', msg, extra); },
-  skip:  (msg, extra) => { logCli(CORES.dim, '·   skip', msg); logFile('skip', msg, extra); },
+  info:  (msg, extra) => { logCli(CORES.azul, 'INFO', msg); logFile('info', msg, extra); },
+  ok:    (msg, extra) => { logCli(CORES.verde, 'OK  ', msg); logFile('ok', msg, extra); },
+  warn:  (msg, extra) => { logCli(CORES.amarelo, 'WARN', msg); logFile('warn', msg, extra); },
+  err:   (msg, extra) => { logCli(CORES.vermelho, 'ERR ', msg); logFile('error', msg, extra); },
+  step:  (msg, extra) => { logCli(CORES.ciano, 'STEP', msg); logFile('step', msg, extra); },
+  skip:  (msg, extra) => { logCli(CORES.dim, 'SKIP', msg); logFile('skip', msg, extra); },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -644,18 +644,18 @@ function imprimirCabecalho() {
   console.log('║  Watcher de Guias Fiscais — Controle Triar                   ║');
   console.log('╚══════════════════════════════════════════════════════════════╝');
   console.log('');
-  console.log(`  📥 Entrada:     ${PASTA_ENTRADA}`);
-  console.log(`  📦 Arquiva em:  ${T_ROOT}\\<EMPRESA>\\<REGIME>\\<ANO>\\`);
-  console.log(`  ⏳ Pendências:  ${PASTA_PENDENTES}`);
-  console.log(`  🌐 API:         ${API_URL}`);
-  console.log(`  🔑 Token:       ${TOKEN.slice(0, 8)}...${TOKEN.slice(-4)}`);
-  console.log(`  💾 State:       ${STATE_FILE}`);
-  console.log(`  📝 Log:         ${LOG_FILE}`);
-  console.log(`  ♻️  Já no state: ${Object.keys(state.processados).length} arquivos`);
-  if (DRY_RUN) console.log(`  ${CORES.amarelo}🧪 MODO DRY-RUN — NÃO vai chamar a API nem mover arquivos.${CORES.reset}`);
-  if (Number.isFinite(LIMIT)) console.log(`  ${CORES.amarelo}🔢 LIMIT: processa só ${LIMIT} arquivos${CORES.reset}`);
-  if (ONCE) console.log(`  ${CORES.amarelo}⏭️  ONCE: processa o que tem e sai${CORES.reset}`);
-  if (EMPRESA_FILTRO) console.log(`  ${CORES.amarelo}ℹ️  --empresa "${EMPRESA_FILTRO}" ignorado (pasta única e mista).${CORES.reset}`);
+  console.log(`  Entrada:     ${PASTA_ENTRADA}`);
+  console.log(`  Arquiva em:  ${T_ROOT}\\<EMPRESA>\\<REGIME>\\<ANO>\\`);
+  console.log(`  Pendências:  ${PASTA_PENDENTES}`);
+  console.log(`  API:         ${API_URL}`);
+  console.log(`  Token:       ${TOKEN.slice(0, 8)}...${TOKEN.slice(-4)}`);
+  console.log(`  State:       ${STATE_FILE}`);
+  console.log(`  Log:         ${LOG_FILE}`);
+  console.log(`  Já no state: ${Object.keys(state.processados).length} arquivos`);
+  if (DRY_RUN) console.log(`  ${CORES.amarelo}MODO DRY-RUN — NÃO vai chamar a API nem mover arquivos.${CORES.reset}`);
+  if (Number.isFinite(LIMIT)) console.log(`  ${CORES.amarelo}LIMIT: processa só ${LIMIT} arquivos${CORES.reset}`);
+  if (ONCE) console.log(`  ${CORES.amarelo}ONCE: processa o que tem e sai${CORES.reset}`);
+  if (EMPRESA_FILTRO) console.log(`  ${CORES.amarelo}--empresa "${EMPRESA_FILTRO}" ignorado (pasta única e mista).${CORES.reset}`);
   console.log('');
   console.log('  Pressione Ctrl+C pra parar (salva state antes).');
   console.log('');

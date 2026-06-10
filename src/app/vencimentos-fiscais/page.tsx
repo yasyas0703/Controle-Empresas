@@ -16,6 +16,7 @@ import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento'
 import ModalLimiares from '@/app/components/ModalLimiares';
 import { sortByPtBr } from '@/lib/sort';
 import { fetchChecklistFiscalByMes } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
 
 function mesAtualKey(): string {
@@ -113,10 +114,35 @@ export default function VencimentosFiscaisPage() {
     return () => { cancelado = true; };
   }, [mesCorrente]);
 
-  // Realtime removido daqui pra economizar mensagens do plano free do Supabase.
-  // O checklist mensal (página /vencimentos-fiscais/checklist) ainda mantém realtime,
-  // que é a tela onde a edição acontece. Aqui no painel de vencimentos as mudanças
-  // aparecem na próxima troca de mês ou refresh.
+  // Realtime: quando uma guia é enviada/marcada (inclusive pelo auto-envio do
+  // watcher), o checklist_fiscal muda no banco. Aplicamos a mudança direto do
+  // payload no Set de "feitas" — custo ~zero de banco, sem refetch. Filtrado pelo
+  // MESMO mês que esta tela consulta (mesCorrente). A reconciliação no foco
+  // (efeito abaixo) cobre eventos perdidos se o WebSocket cair.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`painel-fiscal-${mesCorrente}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'checklist_fiscal', filter: `mes=eq.${mesCorrente}` },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (payload: any) => {
+          const row = payload.new ?? payload.old;
+          if (!row?.empresa_id || !row?.obrigacao) return;
+          const key = `${row.empresa_id}|${row.obrigacao}`;
+          setChecklistFeitas((prev) => {
+            const next = new Set(prev);
+            if (payload.eventType === 'DELETE' || !row.concluido) next.delete(key);
+            else next.add(key);
+            return next;
+          });
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [mesCorrente]);
 
   // Quando a aba volta a ficar visível (ex: usuário trocou de aba e voltou),
   // refaz o fetch do checklist por garantia (caso o realtime tenha perdido evento)
