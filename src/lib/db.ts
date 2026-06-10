@@ -1918,6 +1918,25 @@ export async function setObrigacaoHabilitacao(payload: {
     .select()
     .single();
   if (error) throw error;
+  // Sincronia checklist -> envio: o que está ATIVO no envio TEM que estar
+  // habilitado no checklist. Logo, se a obrigação foi DESABILITADA no checklist,
+  // ela não pode continuar ativa no envio (senão enviaria guia de tarefa que nem
+  // aparece). Só desativa config que JÁ existe e está ativa — sem config, o envio
+  // já não manda. Best-effort: falha aqui não derruba a habilitação.
+  if (!payload.habilitada) {
+    const { error: syncErr } = await supabase
+      .from('empresa_obrigacoes_config')
+      .update({
+        ativa: false,
+        alterada_em: new Date().toISOString(),
+        alterada_por_id: payload.porId ?? null,
+        alterada_por_nome: payload.porNome ?? null,
+      })
+      .eq('empresa_id', payload.empresaId)
+      .eq('obrigacao', payload.obrigacao)
+      .eq('ativa', true);
+    if (syncErr) console.error('[setObrigacaoHabilitacao] sync envio->off falhou:', syncErr.message);
+  }
   return toObrigacaoOverride(data as ObrigacaoOverrideRow);
 }
 
@@ -3701,6 +3720,23 @@ export async function upsertEmpresaObrigacaoConfig(payload: {
     .select()
     .single();
   if (error) throw error;
+  // Sincronia envio -> checklist: o que está ATIVO no envio TEM que aparecer
+  // habilitado no checklist mensal (senão marca concluído num lugar e some no
+  // outro). Força o override de habilitação. Best-effort: falha aqui não derruba
+  // o salvar da config de envio.
+  if (payload.ativa) {
+    const { error: syncErr } = await supabase
+      .from('empresa_obrigacoes_habilitadas')
+      .upsert({
+        empresa_id: payload.empresaId,
+        obrigacao: payload.obrigacao,
+        habilitada: true,
+        habilitada_por_id: payload.currentUserId ?? null,
+        habilitada_por_nome: payload.currentUserNome?.trim() || null,
+        habilitada_em: new Date().toISOString(),
+      }, { onConflict: 'empresa_id,obrigacao' });
+    if (syncErr) console.error('[upsertEmpresaObrigacaoConfig] sync checklist->on falhou:', syncErr.message);
+  }
   return toEmpresaObrigacaoConfig(data as EmpresaObrigacaoConfigRow);
 }
 
