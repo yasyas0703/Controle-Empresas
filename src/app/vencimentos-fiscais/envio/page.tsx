@@ -16,6 +16,7 @@ import {
   fetchChecklistFiscalByMes,
   fetchEmpresaEmailsCliente,
   fetchEmpresaObrigacoesConfig,
+  fetchLoteLivrosItens,
   fetchObrigacoesAtivasPorEmpresa,
   fetchObrigacoesOverrides,
   getChecklistArquivoSignedUrl,
@@ -898,6 +899,23 @@ function ModalDetalheObrigacao({
   const [abrindo, setAbrindo] = useState(false);
   const [verificandoEntregas, setVerificandoEntregas] = useState(false);
 
+  // LIVROS FISCAIS chega em LOTE de vários PDFs, mas a célula guarda só 1 anexo.
+  // Busca todos os itens do lote pra mostrar cada livro (todos têm o MESMO nome
+  // de arquivo — o que distingue é o tipo: entradas/saídas/ICMS/IPI/ISS).
+  const [loteItens, setLoteItens] = useState<Array<{ nomeArquivo: string; storagePath: string; tipoLivro: string | null }>>([]);
+  useEffect(() => {
+    if (fiscal.nome !== 'LIVROS FISCAIS') { setLoteItens([]); return; }
+    let cancel = false;
+    fetchLoteLivrosItens(empresa.id, mes)
+      .then((its) => { if (!cancel) setLoteItens(its); })
+      .catch((e) => console.error('[ModalDetalhe] fetchLoteLivrosItens:', e));
+    return () => { cancel = true; };
+  }, [fiscal.nome, empresa.id, mes]);
+  const rotuloTipoLivro = (t: string | null): string => ({
+    entradas: 'Entradas', saidas: 'Saídas', apuracao_icms: 'Apuração ICMS',
+    apuracao_ipi: 'Apuração IPI', iss: 'ISS', outro: 'Outro',
+  }[t ?? 'outro'] ?? 'Outro');
+
   const podeApagarHistoricoEnvios = (currentUserEmail ?? '').toLowerCase() === 'admin@triarcontabilidade.com.br';
 
   async function verificarEntregas() {
@@ -1053,6 +1071,35 @@ function ModalDetalheObrigacao({
             </div>
           )}
 
+          {/* Livros do lote (LIVROS FISCAIS) — a célula guarda 1 anexo, mas o
+              lote tem vários; lista todos pra visualizar cada um. */}
+          {loteItens.length > 0 && (
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-3">
+              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <FileText size={11} /> Livros do lote
+                <span className="rounded-full bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 text-[9px] font-black text-slate-700 dark:text-slate-200">
+                  {loteItens.length}
+                </span>
+              </div>
+              <ul className="space-y-1.5">
+                {loteItens.map((it) => (
+                  <li key={it.storagePath} className="flex items-center gap-3">
+                    <FileText size={18} className="text-cyan-600 dark:text-cyan-400 shrink-0" />
+                    <div className="min-w-0 flex-1 text-sm font-medium text-slate-800 dark:text-slate-200 truncate" title={it.nomeArquivo}>
+                      {rotuloTipoLivro(it.tipoLivro)}
+                    </div>
+                    <button
+                      onClick={() => void abrirPdfHistorico(it.storagePath)}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold bg-cyan-600 hover:bg-cyan-700 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white transition shrink-0"
+                    >
+                      <ExternalLink size={12} /> Visualizar
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Status no portal do cliente */}
           {!naoEnviaCliente && checklistItem?.id && (
             <StatusPortalCliente checklistId={checklistItem.id} />
@@ -1205,7 +1252,7 @@ function ModalDetalheObrigacao({
           )}
 
           {/* Empty state quando não tem nada */}
-          {!checklistItem?.arquivoUrl && envios.length === 0 && (
+          {!checklistItem?.arquivoUrl && envios.length === 0 && loteItens.length === 0 && (
             <div className="rounded-lg border-2 border-dashed border-slate-200 dark:border-slate-700 p-6 text-center text-sm text-slate-500 dark:text-slate-400">
               Nenhum arquivo enviado ainda para esta competência.
             </div>

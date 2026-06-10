@@ -3754,6 +3754,39 @@ export async function upsertEmpresaObrigacaoConfig(payload: {
   return toEmpresaObrigacaoConfig(data as EmpresaObrigacaoConfigRow);
 }
 
+/**
+ * Itens de um lote de LIVROS FISCAIS (empresa + competência). Usado pra mostrar
+ * TODOS os livros do lote na tarefa (a célula do checklist guarda só 1 anexo, mas
+ * o lote tem vários). storagePath é path no bucket `documentos` — abre com
+ * getChecklistArquivoSignedUrl. Retorna [] se não houver lote (ou tabela ausente).
+ */
+export async function fetchLoteLivrosItens(
+  empresaId: UUID, mes: string,
+): Promise<Array<{ nomeArquivo: string; storagePath: string; tipoLivro: string | null }>> {
+  const { data: lote, error: loteErr } = await supabase
+    .from('lotes_livros_fiscais')
+    .select('id')
+    .eq('empresa_id', empresaId).eq('competencia', mes).eq('obrigacao', 'LIVROS FISCAIS')
+    .maybeSingle();
+  if (loteErr) {
+    if (hasMissingTable(loteErr)) return [];
+    throw loteErr;
+  }
+  const loteId = (lote as { id?: string } | null)?.id;
+  if (!loteId) return [];
+  const { data, error } = await supabase
+    .from('lotes_livros_fiscais_itens')
+    .select('nome_arquivo, storage_path, tipo_livro')
+    .eq('lote_id', loteId)
+    .order('adicionado_em', { ascending: true });
+  if (error) {
+    if (hasMissingTable(error)) return [];
+    throw error;
+  }
+  return ((data ?? []) as Array<{ nome_arquivo: string; storage_path: string; tipo_livro: string | null }>)
+    .map((r) => ({ nomeArquivo: r.nome_arquivo, storagePath: r.storage_path, tipoLivro: r.tipo_livro }));
+}
+
 function hasMissingTable(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
