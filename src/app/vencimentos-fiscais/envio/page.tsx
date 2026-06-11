@@ -32,6 +32,7 @@ import {
 import StatusPortalCliente from '@/app/vencimentos-fiscais/checklist/StatusPortalCliente';
 import { supabase } from '@/lib/supabase';
 import { formatBR } from '@/app/utils/date';
+import { avaliarJanelaCompetencia, competenciaEsperada } from '@/app/utils/competencia';
 import ModalBase from '@/app/components/ModalBase';
 import ModalMotivoReenvio from '@/app/components/ModalMotivoReenvio';
 import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
@@ -1482,7 +1483,13 @@ function ModalEnviarGuia({
   const bloqueios = resultado?.problemas.filter((p) => p.severidade === 'bloqueio') ?? [];
   const avisos = resultado?.problemas.filter((p) => p.severidade === 'aviso') ?? [];
   const valido = resultado?.valido ?? false;
-  const precisaForcar = !valido && bloqueios.length > 0;
+
+  // Janela de competência: só se envia o MÊS ANTERIOR (em junho, só maio). Fora
+  // da janela bloqueia — mas admin/gerente pode FORÇAR com motivo (atrasada
+  // legítima). Por isso entra no precisaForcar (que mostra a UI de forçar).
+  const janelaCompetencia = avaliarJanelaCompetencia(mes);
+  const foraDaJanela = janelaCompetencia !== 'ok';
+  const precisaForcar = (!valido && bloqueios.length > 0) || foraDaJanela;
 
   // Competência do PDF diferente do mês selecionado → BLOQUEIA o envio (a pedido).
   // A guia TEM que ser enviada no mês certo; senão marca o checklist no mês errado.
@@ -1509,14 +1516,15 @@ function ModalEnviarGuia({
     naoReconhecidos.length === 0 &&
     !algumAnalisando;
 
+  const forcado = podeForcar && motivoForcar.trim().length >= 10;
   const podeEnviar = aplicaNoChecklist && !competenciaDivergente && (isMulti
-    ? multiOk && emails.length > 0 && !enviando
+    ? multiOk && emails.length > 0 && !enviando && (!foraDaJanela || forcado)
     : !!arquivo &&
       !!resultado &&
       (naoEnviaCliente || emails.length > 0) &&
       !enviando &&
       !analisando &&
-      (valido || (precisaForcar && podeForcar && motivoForcar.trim().length >= 10)));
+      ((valido && !foraDaJanela) || (precisaForcar && forcado)));
 
   async function enviarMulti() {
     if (!multiOk) {
@@ -2069,8 +2077,37 @@ function ModalEnviarGuia({
             </div>
           )}
 
+          {/* Fora da janela de competência — só se envia o mês anterior */}
+          {resultado && foraDaJanela && !competenciaDivergente && (
+            <div className="rounded-lg bg-amber-50 border border-amber-300 p-3 text-xs text-amber-900 space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Fora da janela.</strong> A competência <strong>{formatComp(mes)}</strong>{' '}
+                  {janelaCompetencia === 'antiga' ? 'já passou' : 'ainda não fechou'} — agora só se envia{' '}
+                  <strong>{formatComp(competenciaEsperada())}</strong> (mês anterior).{' '}
+                  {podeForcar
+                    ? 'Se for uma guia atrasada legítima, descreva o motivo pra forçar (mín. 10 caracteres).'
+                    : 'Peça a um gerente pra enviar guia fora do mês.'}
+                </span>
+              </div>
+              {/* Campo de motivo só quando o ÚNICO bloqueio é a janela (sem erro de
+                  validação); se houver bloqueio de validação, o campo aparece no bloco
+                  vermelho acima e o mesmo motivo cobre os dois. */}
+              {podeForcar && bloqueios.length === 0 && (
+                <textarea
+                  value={motivoForcar}
+                  onChange={(e) => setMotivoForcar(e.target.value)}
+                  placeholder="Ex: guia de março atrasada — cliente entregou agora, conferi que está correta."
+                  className="w-full text-xs rounded-lg border border-amber-300 bg-white p-2 focus:ring-2 focus:ring-amber-400 outline-none"
+                  rows={2}
+                />
+              )}
+            </div>
+          )}
+
           {/* Sucesso */}
-          {resultado && valido && !competenciaDivergente && (
+          {resultado && valido && !competenciaDivergente && !foraDaJanela && (
             <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-900 flex items-center gap-2">
               <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
               <span><strong>Guia validada.</strong> Tudo confere — pode enviar.</span>

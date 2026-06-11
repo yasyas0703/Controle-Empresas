@@ -9,10 +9,16 @@ import {
   validarPdfNoServidor, carregarEmpresaCompleta, getSupabaseAdmin, isErroApi,
 } from '../_shared';
 import { ehObrigacaoSempreInterna } from '@/app/types';
+import { avaliarJanelaCompetencia, competenciaEsperada } from '@/app/utils/competencia';
 
 export const runtime = 'nodejs';
 
 const BUCKET = 'documentos';
+
+// checklistId é interpolado no src do pixel de tracking (HTML do e-mail).
+// Validar como UUID impede injeção de HTML/link via valor forjado (phishing
+// partindo do Gmail do escritório). Ver auditoria de segurança 2026-06-11.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function resolveBaseUrl(req: Request): string | null {
   // Host da requisição PRIMEIRO: o pixel precisa apontar pro domínio em que o
@@ -20,8 +26,13 @@ function resolveBaseUrl(req: Request): string | null {
   // num domínio antigo (ex: rename do projeto no Vercel), o pixel embute uma
   // URL morta (404) e o tracking de abertura para de funcionar silenciosamente.
   // A env vira só fallback pra chamadas sem host (server-to-server).
-  const proto = req.headers.get('x-forwarded-proto') ?? 'https';
-  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host');
+  // SEGURANÇA: proto/host vêm de headers controláveis pelo cliente e são
+  // interpolados no atributo src do pixel. Host com aspas/<> quebraria o
+  // atributo e injetaria HTML/link no e-mail. Validamos: proto só http|https,
+  // host só [a-zA-Z0-9.-:]. Inválido → cai no env (ou null).
+  const proto = req.headers.get('x-forwarded-proto') === 'http' ? 'http' : 'https';
+  const rawHost = req.headers.get('x-forwarded-host') ?? req.headers.get('host');
+  const host = rawHost && /^[a-zA-Z0-9.\-:]+$/.test(rawHost) ? rawHost : null;
   if (host) return `${proto}://${host}`;
   const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.trim();
   if (fromEnv) return fromEnv.replace(/\/+$/, '');
@@ -345,6 +356,28 @@ export async function POST(req: Request) {
       );
     }
 
+    // ─── 7.6 Janela de competência: só o MÊS ANTERIOR ──────────────────────
+    // Em junho, só se envia maio. Fora da janela é bloqueado — admin/gerente
+    // PODE forçar com motivo (>=10 chars) pra atrasada legítima. Espelha o front
+    // e a pendência do auto-envio. body.mes já foi confirmado == competência do PDF.
+    {
+      const janela = avaliarJanelaCompetencia(body.mes);
+      const podeForcarJanela = !!body.forcarEnvio && podeForcar && (body.motivoForcar?.trim().length ?? 0) >= 10;
+      if (janela !== 'ok' && !podeForcarJanela) {
+        const esperada = competenciaEsperada();
+        return NextResponse.json(
+          {
+            error: janela === 'antiga'
+              ? `Competência ${body.mes} é mais antiga que ${esperada} (mês anterior). Só admin/gerente pode enviar guia atrasada, com motivo.`
+              : `Competência ${body.mes} é do mês atual ou futuro. Agora só se envia ${esperada} (mês anterior).`,
+            code: 'fora_da_janela',
+            meta: { competencia: body.mes, esperada, janela },
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     // 8. Monta assunto/corpo (template genérico — checklist não tem template configurado)
     const empresaNome = empresa.razao_social || empresa.apelido || empresa.codigo;
     const competenciaLabel = formatComp(body.mes);
@@ -364,7 +397,7 @@ export async function POST(req: Request) {
     // checklistId — sem ele a rota de tracking não consegue achar o evento.
     const envioId = randomUUID();
     const baseUrl = resolveBaseUrl(req);
-    const pixelTag = (body.checklistId && baseUrl)
+    const pixelTag = (body.checklistId && UUID_RE.test(body.checklistId) && baseUrl)
       ? `<img src="${baseUrl}/api/checklist-fiscal/track-open/${body.checklistId}/${envioId}.gif" width="1" height="1" alt="" style="display:none;border:0;outline:none;text-decoration:none;" />`
       : '';
 

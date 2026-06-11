@@ -19,9 +19,9 @@
 
 import { NextResponse } from 'next/server';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { rateLimit, getClientIp } from '@/lib/rateLimit';
 import {
   validarPdfNoServidor, carregarEmpresaCompleta, getSupabaseAdmin, isErroApi, extrairTextoPdfServidor,
+  checkAutoEnvioRateLimit,
 } from '../_shared';
 import { extrairNomeArquivoDoCaminho } from '@/lib/parseNomeGuia';
 import {
@@ -39,6 +39,7 @@ import {
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
 import { ehObrigacaoSempreInterna } from '@/app/types';
+import { avaliarJanelaCompetencia, competenciaEsperada } from '@/app/utils/competencia';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -55,30 +56,9 @@ type StatusProcessamento =
   | 'aguardando_lote'                      // LIVROS FISCAIS — estagiado no lote, envia quando fechar
   | 'erro';
 
-// Quantos dias atrás é "competência antiga" — não envia automaticamente,
-// pede aprovação manual no painel. Evita mandar email "Sua guia de Março/2025"
-// pro cliente em Maio/2026 quando alguém sobe PDF retroativo na pasta.
-const MAX_DIAS_COMPETENCIA_AUTOMATICA = 60;
-
-function competenciaEhRecente(competencia: string): boolean {
-  const [y, m] = competencia.split('-').map(Number);
-  if (!y || !m) return false;
-  const fimDoMesCompetencia = new Date(Date.UTC(y, m, 0));
-  const hoje = new Date();
-  const diffDias = (hoje.getTime() - fimDoMesCompetencia.getTime()) / (1000 * 60 * 60 * 24);
-  return diffDias <= MAX_DIAS_COMPETENCIA_AUTOMATICA;
-}
-
-// Competência à frente do mês corrente. As guias costumam ser do mês anterior;
-// uma competência no futuro quase sempre é PDF do mês errado na pasta.
-function competenciaEhFutura(competencia: string): boolean {
-  const [y, m] = competencia.split('-').map(Number);
-  if (!y || !m) return false;
-  const hoje = new Date();
-  const atualYM = hoje.getUTCFullYear() * 12 + hoje.getUTCMonth(); // mês corrente (0-based)
-  const compYM = y * 12 + (m - 1);
-  return compYM > atualYM;
-}
+// Janela de competência: só se envia automaticamente a competência do MÊS
+// ANTERIOR (fecha-se o mês anterior no mês atual). Fora da janela vai pra
+// pendência. Lógica compartilhada em utils/competencia.ts (vale auto + manual).
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -278,34 +258,28 @@ export async function POST(req: Request) {
     );
   }
 
-  // Rate limit defensivo contra runaway watcher. Gmail API tem hard cap de
-  // ~500 envios/dia por conta — se o daemon entrar em loop (bug, FS event
-  // duplicado, ataque) e mandar 1000 requests em 1min, queima a quota
-  // inteira da conta ghost e bloqueia também os envios manuais.
-  // Limites:
-  //   - 20 req/min por IP: cobre fluxo normal (1 req a cada 3s é muito).
-  //   - 300 req/h por IP: cobre mês inteiro em lote (~1000 PDFs em ~3h).
-  const clientIp = getClientIp(req);
-  const limitMin = rateLimit(`auto-enviar:min:${clientIp}`, 20, 60_000);
-  if (!limitMin.ok) {
-    return NextResponse.json(
-      { status: 'erro', detalhes: { motivo: 'Muitas requisições no último minuto. Watcher pode estar em loop.' } },
-      { status: 429 },
-    );
-  }
-  const limitHora = rateLimit(`auto-enviar:hora:${clientIp}`, 300, 60 * 60_000);
-  if (!limitHora.ok) {
-    return NextResponse.json(
-      { status: 'erro', detalhes: { motivo: 'Muitas requisições na última hora. Quota diária do Gmail em risco.' } },
-      { status: 429 },
-    );
-  }
-
   const ghostUserId = process.env.GHOST_USER_ID;
   if (!ghostUserId) {
     return NextResponse.json(
       { status: 'erro', detalhes: { motivo: 'GHOST_USER_ID não configurado no servidor' } },
       { status: 500 },
+    );
+  }
+  const admin = getSupabaseAdmin();
+
+  // Rate limit defensivo contra runaway watcher. Gmail API tem hard cap de
+  // ~500 envios/dia por conta — se o daemon entrar em loop (bug, FS event
+  // duplicado, ataque) e mandar 1000 requests em 1min, queima a quota inteira
+  // da conta ghost e bloqueia também os envios manuais.
+  // Chave FIXA = ghost (único remetente), DB-backed (global entre instâncias),
+  // NÃO o IP: X-Forwarded-For é forjável (rotacionar zeraria o contador) e o Map
+  // em memória não é compartilhado no serverless. Limites: 20/min (fluxo normal
+  // é 1 req a cada ~3s) e 300/h (~1000 PDFs do mês em lote levam ~3h).
+  const rl = await checkAutoEnvioRateLimit(admin, ghostUserId);
+  if (isErroApi(rl)) {
+    return NextResponse.json(
+      { status: 'erro', detalhes: { motivo: rl.error } },
+      { status: rl.status },
     );
   }
 
@@ -359,8 +333,6 @@ export async function POST(req: Request) {
     );
   }
   const hashArquivo = hashCalculado;
-
-  const admin = getSupabaseAdmin();
 
   // 4. Idempotência por HASH (conteúdo). Como agora todas as guias caem na mesma
   // pasta de entrada e o arquivo é movido após processar, o caminho não é estável
@@ -595,24 +567,28 @@ export async function POST(req: Request) {
     return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'validacao_falhou', bloqueios: validacao.meta?.bloqueios } });
   }
 
-  // 11. Safeguard de competência: nem no futuro, nem muito antiga.
-  if (competenciaEhFutura(competencia)) {
+  // 11. Janela de competência: só envia automaticamente a do MÊS ANTERIOR.
+  //   - 'adiantada' (mês atual ou futuro, ainda não fechou) → pendência de correção.
+  //   - 'antiga'    (mais velha que o mês anterior) → pendência APROVÁVEL no painel.
+  const janela = avaliarJanelaCompetencia(competencia);
+  const esperada = competenciaEsperada();
+  if (janela === 'adiantada') {
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,
       empresaId: empresa.id, empresaNomePasta: null,
       tipoProblema: 'competencia_futura',
-      detalhes: { motivo: `Competência ${competencia} está no futuro. As guias costumam ser do mês anterior — confira se o PDF é o certo.` },
+      detalhes: { motivo: `Competência ${competencia} é do mês atual ou futuro (ainda não fechou). Agora só se envia a competência ${esperada}. Confira se o PDF é o certo.` },
       competenciaParseada: competencia, obrigacaoParseada: obrigacao,
     });
     await registrarProcessado(admin, {
       caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
       nomeArquivo, status: 'pendente_correcao',
-      detalhes: { tipoProblema: 'competencia_futura' },
+      detalhes: { tipoProblema: 'competencia_futura', esperada },
     });
-    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'competencia_futura' } });
+    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'competencia_futura', esperada } });
   }
 
-  if (!competenciaEhRecente(competencia)) {
+  if (janela === 'antiga') {
     const upPend = await subirPendente(admin, fileBuffer, nomeCanonico);
     const pathPendente = 'path' in upPend ? upPend.path : null;
     await registrarProblema(admin, {
@@ -620,8 +596,8 @@ export async function POST(req: Request) {
       empresaId: empresa.id, empresaNomePasta: null,
       tipoProblema: 'competencia_antiga',
       detalhes: {
-        motivo: `Competência ${competencia} tem mais de ${MAX_DIAS_COMPETENCIA_AUTOMATICA} dias. Aprove no painel se realmente quiser enviar.`,
-        diasLimite: MAX_DIAS_COMPETENCIA_AUTOMATICA,
+        motivo: `Competência ${competencia} é mais antiga que a esperada (${esperada} — mês anterior). Aprove no painel se realmente quiser enviar.`,
+        esperada,
         empresa: empresa.razao_social || empresa.apelido,
       },
       competenciaParseada: competencia, obrigacaoParseada: obrigacao,
@@ -631,7 +607,7 @@ export async function POST(req: Request) {
       nomeArquivo, status: 'pendente_aprovacao_competencia_antiga',
       detalhes: {
         motivo: 'competencia_antiga',
-        diasLimite: MAX_DIAS_COMPETENCIA_AUTOMATICA,
+        esperada,
         // Path pra rota /aprovar-e-enviar baixar e reenviar depois.
         arquivo_pendente_path: pathPendente,
         codigos_esperados_snapshot: config.codigos ?? [],
@@ -640,7 +616,7 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({
       status: 'pendente_aprovacao_competencia_antiga',
-      detalhes: { motivo: `Competência ${competencia} > ${MAX_DIAS_COMPETENCIA_AUTOMATICA} dias atrás. Aprove no painel /vencimentos-fiscais/auto-problemas.` },
+      detalhes: { motivo: `Competência ${competencia} é mais antiga que ${esperada} (mês anterior). Aprove no painel /vencimentos-fiscais/auto-problemas.` },
     });
   }
 
