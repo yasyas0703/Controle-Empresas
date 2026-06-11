@@ -5,7 +5,7 @@ REM ============================================================
 REM
 REM  Como testar:
 REM   1. Coloque uma ou mais guias (PDF) dentro da pasta:
-REM        T:\Fiscal\EMPRESA\1-GUIAS A ENVIAR
+REM        T:\Fiscal\1-GUIAS A ENVIAR
 REM   2. De 2 cliques neste arquivo.
 REM   3. Olhe os logs no terminal preto.
 REM
@@ -30,7 +30,7 @@ cd /d "%~dp0.."
 echo.
 echo ============================================================
 echo  WATCHER - TESTE REAL (envio liberado)
-echo  Pasta: T:\Fiscal\EMPRESA\1-GUIAS A ENVIAR   ^|  Limite: 5
+echo  Pasta: T:\Fiscal\1-GUIAS A ENVIAR   ^|  Limite: 5
 echo  URL: https://controle-empresas.vercel.app
 echo.
 echo  Coloque as guias na pasta ANTES de continuar.

@@ -11,7 +11,7 @@ loga, **nenhuma guia é processada**. Movendo pro servidor, isso acaba.
 
 ## O que o watcher faz (resumo)
 
-1. Observa a pasta `...\Fiscal\EMPRESA\1-GUIAS A ENVIAR` (PDFs de guias).
+1. Observa a pasta `...\Fiscal\1-GUIAS A ENVIAR` (PDFs de guias — irmã da pasta EMPRESA, não filha).
 2. Para cada PDF novo, manda pro sistema na nuvem (HTTPS) que identifica empresa
    + obrigação + competência, valida e **envia o email pro cliente**.
 3. Move o PDF processado pra pasta da empresa; o que não dá pra resolver vai pra

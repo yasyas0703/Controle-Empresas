@@ -1,4 +1,4 @@
-// Daemon local que observa a pasta ÚNICA T:/Fiscal/EMPRESA/1-GUIAS A ENVIAR/
+// Daemon local que observa a pasta ÚNICA T:/Fiscal/1-GUIAS A ENVIAR/
 // e dispara POST pra /api/checklist-fiscal/auto-enviar quando detecta PDFs novos.
 //
 // O servidor identifica empresa/obrigação/competência pelo CONTEÚDO do PDF (OCR)
@@ -21,7 +21,7 @@
 //   - Pra cada PDF novo: calcula SHA-256, faz POST multipart pra API
 //   - APÓS a resposta, MOVE o arquivo:
 //       enviado/interno_marcado_feito → T:/Fiscal/EMPRESA/<EMPRESA>/<REGIME>/<ANO>/
-//       qualquer outro status        → T:/Fiscal/EMPRESA/1-GUIAS A ENVIAR/_PENDENTES/
+//       qualquer outro status        → T:/Fiscal/1-GUIAS A ENVIAR/_PENDENTES/
 //   - State local em scripts/.watcher-state.json evita re-POST; o servidor também
 //     faz idempotência por hash (defesa em profundidade).
 //   - Retry com backoff exponencial (1s, 4s, 16s) em falha de rede
@@ -53,9 +53,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 //   FISCAL_ROOT=\\NOME-DO-SERVIDOR\Compartilhamento\Fiscal\EMPRESA
 // No PC da usuária (com T: mapeado) o default abaixo continua valendo.
 const T_ROOT = process.env.FISCAL_ROOT || 'T:\\Fiscal\\EMPRESA';
-// Nome da pasta única de entrada (também é o que ignoramos ao resolver empresa).
+// Pasta de ENTRADA (onde o pessoal solta os PDFs). Desde 2026-06 fica FORA da
+// raiz das empresas: T:\Fiscal\1-GUIAS A ENVIAR (irmã de EMPRESA, não filha) —
+// a usuária moveu pra facilitar o acesso. Default: <pai do T_ROOT>\1-GUIAS A
+// ENVIAR, que funciona igual no T: mapeado e no UNC do servidor. Se um dia
+// mudar de novo, dá pra apontar direto com a env PASTA_GUIAS_ENVIAR.
 const NOME_PASTA_ENTRADA = '1-GUIAS A ENVIAR';
-const PASTA_ENTRADA = resolve(T_ROOT, NOME_PASTA_ENTRADA);
+const PASTA_ENTRADA = process.env.PASTA_GUIAS_ENVIAR || resolve(dirname(T_ROOT), NOME_PASTA_ENTRADA);
 const PASTA_PENDENTES = resolve(PASTA_ENTRADA, '_PENDENTES');
 
 // Interessa: PDF na pasta de entrada que NÃO esteja numa subpasta "_" (ex: _PENDENTES).
@@ -109,7 +113,7 @@ function loadEnv() {
     }
   }
   // process.env vence (.env.local é só conveniência de dev).
-  for (const k of ['AUTO_ENVIO_TOKEN', 'NEXT_PUBLIC_APP_URL', 'FISCAL_ROOT']) {
+  for (const k of ['AUTO_ENVIO_TOKEN', 'NEXT_PUBLIC_APP_URL', 'FISCAL_ROOT', 'PASTA_GUIAS_ENVIAR']) {
     if (process.env[k]) env[k] = process.env[k];
   }
   return env;

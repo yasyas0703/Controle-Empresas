@@ -4,7 +4,7 @@ REM  DRY RUN - pasta unica (zero risco, NAO envia email)
 REM ============================================================
 REM
 REM  Roda o watcher em modo simulacao:
-REM   - Observa a pasta T:\Fiscal\EMPRESA\1-GUIAS A ENVIAR
+REM   - Observa a pasta T:\Fiscal\1-GUIAS A ENVIAR
 REM   - Limita a 5 PDFs (--limit 5)
 REM   - Sai sozinho (--once)
 REM   - MODO --dry-run: NAO chama a API, NAO move, so loga
@@ -18,7 +18,7 @@ cd /d "%~dp0.."
 echo.
 echo ============================================================
 echo  WATCHER - DRY RUN (sem envio, sem mover)
-echo  Pasta: T:\Fiscal\EMPRESA\1-GUIAS A ENVIAR  ^|  Limite: 5
+echo  Pasta: T:\Fiscal\1-GUIAS A ENVIAR  ^|  Limite: 5
 echo ============================================================
 echo.
 
