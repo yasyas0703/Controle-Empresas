@@ -48,10 +48,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       .eq('id', documentoId)
       .maybeSingle();
     if (!doc) return NextResponse.json({ error: 'Guia não encontrada' }, { status: 404 });
-    if (doc.removido_em) {
-      return NextResponse.json({ error: 'Guia removida.' }, { status: 410 });
-    }
 
+    // Checa o DONO antes de revelar qualquer estado da guia. 403 (não é sua) ou
+    // 410 (removida) antes disso deixariam o cliente distinguir "existe" de "não
+    // existe" sondando UUIDs (oráculo de existência). Não-dono recebe o MESMO
+    // 404 do not-found acima.
     const { data: clienteRow } = await admin
       .from('clientes_portal')
       .select('id')
@@ -60,7 +61,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       .eq('ativo', true)
       .maybeSingle();
     if (!clienteRow) {
-      return NextResponse.json({ error: 'Acesso não autorizado' }, { status: 403 });
+      return NextResponse.json({ error: 'Guia não encontrada' }, { status: 404 });
+    }
+    if (doc.removido_em) {
+      return NextResponse.json({ error: 'Guia removida.' }, { status: 410 });
     }
 
     const novoValor = body.acao === 'marcar' ? new Date().toISOString() : null;

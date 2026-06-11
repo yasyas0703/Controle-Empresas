@@ -33,11 +33,22 @@ export async function POST(req: Request) {
     const userId = authData.user.id;
 
     const admin = getSupabaseAdmin();
-    await admin
-      .from('portal_push_subscriptions')
-      .delete()
-      .eq('cliente_id', userId)
-      .eq('endpoint', body.endpoint);
+    // BUG anterior: filtrava cliente_id = userId (auth_user_id), mas cliente_id
+    // é o clientes_portal.id — nunca casava, então o unsubscribe deletava 0
+    // linhas (o cliente continuava recebendo push). Resolve as linhas de cliente
+    // do user (pode ter várias em multi-empresa) e deleta por elas + endpoint.
+    const { data: clienteRows } = await admin
+      .from('clientes_portal')
+      .select('id')
+      .eq('auth_user_id', userId);
+    const clienteIds = (clienteRows ?? []).map((r) => r.id);
+    if (clienteIds.length > 0) {
+      await admin
+        .from('portal_push_subscriptions')
+        .delete()
+        .in('cliente_id', clienteIds)
+        .eq('endpoint', body.endpoint);
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {

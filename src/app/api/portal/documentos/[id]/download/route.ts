@@ -44,11 +44,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       .eq('id', documentoId)
       .maybeSingle();
     if (!doc) return NextResponse.json({ error: 'Guia não encontrada' }, { status: 404 });
-    if (doc.removido_em) {
-      return NextResponse.json({ error: 'Esta guia foi removida pelo escritório.' }, { status: 410 });
-    }
 
-    // 3. Valida que o user tem acesso ativo à empresa deste documento
+    // 3. Valida que o user tem acesso ativo à empresa deste documento.
+    // Checa o DONO antes de revelar qualquer estado: 403 (não é sua) ou 410
+    // (removida) antes disso deixariam sondar a existência da guia por UUID
+    // (oráculo). Não-dono recebe o MESMO 404 do not-found acima.
     const { data: clienteRow } = await admin
       .from('clientes_portal')
       .select('id')
@@ -57,7 +57,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       .eq('ativo', true)
       .maybeSingle();
     if (!clienteRow) {
-      return NextResponse.json({ error: 'Acesso não autorizado' }, { status: 403 });
+      return NextResponse.json({ error: 'Guia não encontrada' }, { status: 404 });
+    }
+    if (doc.removido_em) {
+      return NextResponse.json({ error: 'Esta guia foi removida pelo escritório.' }, { status: 410 });
     }
 
     // 4. Gera signed URL com download forçado (Content-Disposition: attachment)
