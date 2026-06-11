@@ -116,6 +116,23 @@ function encontrarInscricaoEstadual(texto: string, ieEmpresa: string): string | 
  * "Período de Apuração", "Mês Ano de Referência" etc. Retorna 'YYYY-MM' ou null.
  */
 function extrairCompetencia(texto: string): string | null {
+  const mkComp = (mes: number, ano: number): string | null =>
+    (mes >= 1 && mes <= 12 && ano >= 2000 && ano <= 2100)
+      ? `${ano}-${String(mes).padStart(2, '0')}` : null;
+
+  // PRIORIDADE: "Período de Apuração" com DATA COMPLETA (DD/MM/AAAA). Caso dos
+  // DARF TRIMESTRAIS (IRPJ/CSLL Lucro Presumido): o período vem como data (fim do
+  // trimestre, ex. 30/06/2026 = junho), e o "PA 02/2026" mais abaixo é o NÚMERO do
+  // trimestre — NÃO é fevereiro. Lê o MÊS (grupo do meio). Se vier como intervalo
+  // "DD/MM/AAAA a DD/MM/AAAA", usa o mês FINAL (fim do período de apuração).
+  const intervalo = texto.match(/per[ií]odo\s*de\s*apura[çc][aã]o[^\d]{0,40}\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\s*a\s*\d{1,2}[\/\-.](\d{1,2})[\/\-.](\d{4})/i);
+  if (intervalo) { const c = mkComp(Number(intervalo[1]), Number(intervalo[2])); if (c) return c; }
+  const dataCompleta = texto.match(/per[ií]odo\s*de\s*apura[çc][aã]o[^\d]{0,40}\d{1,2}[\/\-.](\d{1,2})[\/\-.](\d{4})/i);
+  if (dataCompleta) { const c = mkComp(Number(dataCompleta[1]), Number(dataCompleta[2])); if (c) return c; }
+
+  // Cascata MM/AAAA (guias mensais). Mantida intacta — o `\bpa\b` cobre guias
+  // compactas "PA MM/AAAA"; aqui ele só é alcançado quando NÃO houve data completa
+  // de período de apuração acima (então não pega o nº do trimestre).
   const padroes: RegExp[] = [
     /per[ií]odo\s*de\s*apura[çc][aã]o[^\d]{0,40}(\d{1,2})[\/\-.](\d{4})/i,
     /compet[eê]ncia[^\d]{0,40}(\d{1,2})[\/\-.](\d{4})/i,
@@ -126,11 +143,8 @@ function extrairCompetencia(texto: string): string | null {
   for (const re of padroes) {
     const m = texto.match(re);
     if (m) {
-      const mes = Number(m[1]);
-      const ano = Number(m[2]);
-      if (mes >= 1 && mes <= 12 && ano >= 2000 && ano <= 2100) {
-        return `${ano}-${String(mes).padStart(2, '0')}`;
-      }
+      const c = mkComp(Number(m[1]), Number(m[2]));
+      if (c) return c;
     }
   }
   return null;
