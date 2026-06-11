@@ -5,38 +5,26 @@
 // admin/gerente, só quando há pendências, é dispensável (reaparece se o número
 // mudar), e atualiza sozinho a cada 60s. Link direto pro painel de resolução.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, X } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import { useSistema } from '@/app/context/SistemaContext';
 
 const DISMISS_KEY = 'alerta-guias-pendentes-dispensado-total';
 
-export default function AlertaGuiasPendentes() {
-  const { canManage, authReady } = useSistema();
-  const [problemas, setProblemas] = useState(0);
-  const [pendencias, setPendencias] = useState(0);
-  const [dispensadoNoTotal, setDispensadoNoTotal] = useState<number | null>(null);
-  const [carregado, setCarregado] = useState(false);
+// ⚠️ MODO TESTE (PROVISÓRIO — espelha ALERTA_TESTE_SOMENTE_USER_ID em
+// src/lib/alertasAutoEnvio.ts): enquanto o auto-envio está em teste, o alerta
+// aparece SÓ pro usuário Testes (admin@), pra não assustar a equipe com
+// pendências do teste. Coloque `null` pra voltar ao normal (admin/gerente).
+const ALERTA_TESTE_SOMENTE_EMAIL: string | null = 'admin@triarcontabilidade.com.br';
 
-  const carregar = useCallback(async () => {
-    try {
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-      const res = await fetch('/api/admin/guias-auto/contagem', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) return;
-      const j = await res.json();
-      setProblemas(Number(j.problemasPendentes) || 0);
-      setPendencias(Number(j.pendenciasAprovacao) || 0);
-      setCarregado(true);
-    } catch {
-      // silencioso — alerta não pode quebrar o app
-    }
-  }, []);
+export default function AlertaGuiasPendentes() {
+  // Contagem vem do poll compartilhado do SistemaContext (visibility-gated) —
+  // este componente não faz mais fetch próprio.
+  const { canManage, authReady, guiasAutoContagem, currentUser } = useSistema();
+  const problemas = guiasAutoContagem.problemasPendentes;
+  const pendencias = guiasAutoContagem.pendenciasAprovacao;
+  const [dispensadoNoTotal, setDispensadoNoTotal] = useState<number | null>(null);
 
   // Restaura a dispensa da sessão.
   useEffect(() => {
@@ -48,16 +36,10 @@ export default function AlertaGuiasPendentes() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!authReady || !canManage) return;
-    carregar();
-    const id = setInterval(carregar, 60_000);
-    return () => clearInterval(id);
-  }, [authReady, canManage, carregar]);
-
   const total = problemas + pendencias;
 
-  if (!authReady || !canManage || !carregado || total === 0) return null;
+  if (!authReady || !canManage || total === 0) return null;
+  if (ALERTA_TESTE_SOMENTE_EMAIL && currentUser?.email?.toLowerCase() !== ALERTA_TESTE_SOMENTE_EMAIL) return null;
   // Dispensado pra ESTE total exato — se aparecer/sumir guia, o número muda e o alerta volta.
   if (dispensadoNoTotal === total) return null;
 

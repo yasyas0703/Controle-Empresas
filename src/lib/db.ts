@@ -1638,6 +1638,25 @@ export async function purgeLixeiraOlderThan(days: number) {
   if (error) throw error;
 }
 
+// ─── Manutenção (gate de UX) ────────────────────────────────
+
+// Flag de manutenção lida client-side DIRETO do Supabase pra não bater na Vercel:
+// o AppShell pollava /api/admin/manutencao a cada 5s, a MAIOR fonte de invocação
+// de função do projeto. A escrita continua via /api/admin/manutencao (service-role).
+//
+// REQUISITO: a linha chave='manutencao' de `configuracoes` precisa ser legível
+// pelo role authenticated (RLS). Se a leitura falhar/voltar vazia, assumimos
+// "fora de manutenção" — nunca derruba o app.
+export async function fetchManutencaoAtiva(): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('configuracoes')
+    .select('valor')
+    .eq('chave', 'manutencao')
+    .maybeSingle();
+  if (error) return false;
+  return data?.valor === 'true';
+}
+
 // ─── Notificações ───────────────────────────────────────────
 
 export async function fetchNotificacoes(currentUserId?: UUID | null): Promise<Notificacao[]> {
@@ -1870,6 +1889,15 @@ export interface ObrigacaoOverride {
   habilitadaPorId?: UUID | null;
   habilitadaPorNome?: string | null;
   habilitadaEm: string;
+  /**
+   * Vigência do override (YYYY-MM). Quando preenchida, `habilitada` só vale de
+   * vigenteDesde em diante; meses ANTERIORES usam `habilitadaAntes` (ou a regra
+   * automática, se null). Criado pra varredura de pastas de 2026-06 valer só de
+   * junho em diante sem reescrever a visão de maio. NULL = vale pra sempre
+   * (comportamento original).
+   */
+  vigenteDesde?: string | null;
+  habilitadaAntes?: boolean | null;
 }
 
 interface ObrigacaoOverrideRow {
@@ -1879,6 +1907,8 @@ interface ObrigacaoOverrideRow {
   habilitada_por_id: string | null;
   habilitada_por_nome: string | null;
   habilitada_em: string;
+  vigente_desde?: string | null;
+  habilitada_antes?: boolean | null;
 }
 
 function toObrigacaoOverride(row: ObrigacaoOverrideRow): ObrigacaoOverride {
@@ -1889,7 +1919,26 @@ function toObrigacaoOverride(row: ObrigacaoOverrideRow): ObrigacaoOverride {
     habilitadaPorId: row.habilitada_por_id,
     habilitadaPorNome: row.habilitada_por_nome,
     habilitadaEm: toIso(row.habilitada_em),
+    vigenteDesde: row.vigente_desde ?? null,
+    habilitadaAntes: row.habilitada_antes ?? null,
   };
+}
+
+/**
+ * Resolve o override pra um mês específico do checklist. Devolve:
+ *   true/false → estado forçado naquele mês;
+ *   null       → sem opinião (caller cai na regra automática por UF/cidade).
+ * Comparação lexicográfica funciona porque mes é sempre 'YYYY-MM'.
+ */
+export function overrideHabilitadaNoMes(
+  override: Pick<ObrigacaoOverride, 'habilitada' | 'vigenteDesde' | 'habilitadaAntes'> | undefined,
+  mes: string,
+): boolean | null {
+  if (!override) return null;
+  if (override.vigenteDesde && mes < override.vigenteDesde) {
+    return override.habilitadaAntes ?? null;
+  }
+  return override.habilitada;
 }
 
 export async function fetchObrigacoesOverrides(): Promise<ObrigacaoOverride[]> {
@@ -1925,12 +1974,28 @@ export async function setObrigacaoHabilitacao(payload: {
     habilitada_por_id: payload.porId ?? null,
     habilitada_por_nome: payload.porNome ?? null,
     habilitada_em: new Date().toISOString(),
+    // Toggle manual zera a vigência: a decisão humana vale pra TODOS os meses
+    // (sem isso, clicar numa célula de mês antigo "não fazia nada" visível,
+    // porque o valor novo só valeria de vigente_desde em diante).
+    vigente_desde: null as string | null,
+    habilitada_antes: null as boolean | null,
   };
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('empresa_obrigacoes_habilitadas')
     .upsert(row, { onConflict: 'empresa_id,obrigacao' })
     .select()
     .single();
+  if (error && hasMissingColumn(error, ['vigente_desde', 'habilitada_antes'])) {
+    // Migration da vigência ainda não rodou neste ambiente — segue sem as colunas.
+    const rowLegado: Partial<typeof row> = { ...row };
+    delete rowLegado.vigente_desde;
+    delete rowLegado.habilitada_antes;
+    ({ data, error } = await supabase
+      .from('empresa_obrigacoes_habilitadas')
+      .upsert(rowLegado, { onConflict: 'empresa_id,obrigacao' })
+      .select()
+      .single());
+  }
   if (error) throw error;
   // Sincronia checklist -> envio: o que está ATIVO no envio TEM que estar
   // habilitado no checklist. Logo, se a obrigação foi DESABILITADA no checklist,

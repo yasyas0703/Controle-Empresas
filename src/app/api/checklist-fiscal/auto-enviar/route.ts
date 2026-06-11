@@ -145,8 +145,11 @@ async function registrarProblema(
       { onConflict: 'caminho_servidor,hash_arquivo' },
     );
   if (upErr) {
+    // NÃO retorna: o sino tem que tocar MESMO se a tabela rejeitar a linha.
+    // Caso real (2026-06-11): um CHECK constraint antigo (chk_tipo_problema)
+    // rejeitava os tipos novos e o return daqui silenciava TUDO — nem painel,
+    // nem notificação. O alerta abaixo é a última linha de defesa.
     console.error('[auto-enviar] falha ao registrar problema:', upErr.message);
-    return;
   }
 
   if (ehNovo) {

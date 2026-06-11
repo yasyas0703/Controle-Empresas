@@ -79,9 +79,10 @@ function acharDeptosFiscais(deptos: DeptoRow[]): string[] {
 // enquanto o auto-envio está em teste, TODOS os alertas (sino + email) vão SÓ
 // pra esta usuária, pra não spammar a equipe. Coloque `null` pra voltar ao
 // normal (admins + gerentes do Fiscal + responsável da empresa).
-// Aponta pra YASMIN (quem opera/assiste o teste), não pro ghost admin@ (que só
-// ENVIA) — senão o alerta cai numa caixa que ninguém está olhando.
-const ALERTA_TESTE_SOMENTE_USER_ID: string | null = 'c68da688-cefc-4d1e-ae7c-9a753833968f'; // Yasmin
+// Aponta pro usuário "Testes" (admin@triarcontabilidade.com.br) — é nele que a
+// Yasmin fica logada durante os testes (pedido dela em 2026-06-11; antes
+// apontava pro usuário Yasmin e os avisos caíam na caixa errada).
+const ALERTA_TESTE_SOMENTE_USER_ID: string | null = '0dd329df-3ce7-403b-9bee-2768c33686a3'; // Testes (admin@)
 
 /**
  * Quem deve receber o alerta de uma guia travada:

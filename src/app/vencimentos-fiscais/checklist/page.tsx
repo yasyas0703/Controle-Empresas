@@ -151,11 +151,12 @@ export default function ChecklistFiscalPage() {
   const [loading, setLoading] = useState(true);
   const [savingKeys, setSavingKeys] = useState<Set<ChecklistKey>>(new Set());
 
-  // Overrides manuais: empresa+obrigação → habilitada (boolean).
-  // - true  = forçada habilitar (override quando regra não cobre)
-  // - false = forçada desabilitar (override pra desligar uma com regra)
-  // - sem entrada no Map = sem override, segue a regra automática
-  const [obrigacoesOverrides, setObrigacoesOverrides] = useState<Map<ChecklistKey, boolean>>(new Map());
+  // Overrides manuais: empresa+obrigação → override completo.
+  // - habilitada true/false = força o estado; sem entrada = regra automática.
+  // - vigenteDesde (YYYY-MM): o valor só vale daquele mês em diante; meses
+  //   anteriores usam habilitadaAntes (ou a regra). É o que faz a varredura de
+  //   pastas valer só de junho/2026 sem reescrever a visão de maio.
+  const [obrigacoesOverrides, setObrigacoesOverrides] = useState<Map<ChecklistKey, db.ObrigacaoOverride>>(new Map());
   const [togglingHabilitacao, setTogglingHabilitacao] = useState<Set<ChecklistKey>>(new Set());
 
   const [search, setSearch] = useState('');
@@ -309,11 +310,14 @@ export default function ChecklistFiscalPage() {
   }, [aba]);
 
   // Override manual sobrescreve a regra. Sem override → segue regra automática.
+  // Resolvido POR MÊS: override com vigência (ex: varredura de pastas, vigente
+  // de 2026-06 em diante) não muda a visão de meses anteriores.
   const aplicaObrigacao = useCallback((obrigacao: string, empresa: Empresa): boolean => {
     const override = obrigacoesOverrides.get(buildKey(empresa.id, obrigacao));
-    if (typeof override === 'boolean') return override;
+    const noMes = db.overrideHabilitadaNoMes(override, mes);
+    if (typeof noMes === 'boolean') return noMes;
     return aplicaPelaRegra(obrigacao, empresa);
-  }, [aplicaPelaRegra, obrigacoesOverrides]);
+  }, [aplicaPelaRegra, obrigacoesOverrides, mes]);
 
   // Para usuário comum: a aba é forçada conforme seu departamento.
   // Gerente/admin pode alternar livremente.
@@ -366,8 +370,8 @@ export default function ChecklistFiscalPage() {
     db.fetchObrigacoesOverrides()
       .then((lista) => {
         if (cancelado) return;
-        const m = new Map<ChecklistKey, boolean>();
-        for (const o of lista) m.set(buildKey(o.empresaId, o.obrigacao), o.habilitada);
+        const m = new Map<ChecklistKey, db.ObrigacaoOverride>();
+        for (const o of lista) m.set(buildKey(o.empresaId, o.obrigacao), o);
         setObrigacoesOverrides(m);
       })
       .catch((err) => {
@@ -383,16 +387,18 @@ export default function ChecklistFiscalPage() {
     if (togglingHabilitacao.has(key)) return;
     setTogglingHabilitacao((prev) => new Set(prev).add(key));
     try {
-      await db.setObrigacaoHabilitacao({
+      const salvo = await db.setObrigacaoHabilitacao({
         empresaId: empresa.id,
         obrigacao,
         habilitada,
         porId: currentUserId ?? undefined,
         porNome: currentUser?.nome ?? undefined,
       });
+      // O toggle manual zera a vigência no servidor — usa o registro devolvido
+      // pra manter o estado local idêntico ao banco.
       setObrigacoesOverrides((prev) => {
         const next = new Map(prev);
-        next.set(key, habilitada);
+        next.set(key, salvo);
         return next;
       });
     } catch (err) {

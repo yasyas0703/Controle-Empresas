@@ -340,6 +340,12 @@ interface SistemaContextValue extends SistemaState {
   protectedUserIds: string[];
   loading: boolean;
   authReady: boolean;
+  // Flag de manutenção (gate de UX) lida direto do Supabase — antes era um poll
+  // de 5s do AppShell na Vercel. Ver useEffect mais abaixo.
+  manutencao: boolean;
+  // Contagem compartilhada de guias-auto NÃO enviadas (problemas + pendências de
+  // aprovação). Um único poll aqui substitui os que existiam espalhados.
+  guiasAutoContagem: { problemasPendentes: number; pendenciasAprovacao: number };
   reloadData: () => Promise<void>;
 
   login: (email: string, senha: string) => Promise<boolean | 'rate_limited'>;
@@ -420,6 +426,11 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   const fiscalAlertQueueRef = useRef<Set<string>>(new Set());
 
   const [authReady, setAuthReady] = useState(false);
+  const [manutencao, setManutencao] = useState(false);
+  const [guiasAutoContagem, setGuiasAutoContagem] = useState<{ problemasPendentes: number; pendenciasAprovacao: number }>({
+    problemasPendentes: 0,
+    pendenciasAprovacao: 0,
+  });
 
   const loadForUser = useCallback(
     async (userId: UUID) => {
@@ -511,6 +522,44 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       setState((prev) => ({ ...prev, notificacoes: filtradas }));
     } catch (err) {
       console.error('Erro ao carregar notificações:', err);
+    }
+  }, []);
+
+  // Manutenção: lê a flag DIRETO do Supabase (não passa pela Vercel). Antes o
+  // AppShell pollava /api/admin/manutencao a cada 5s — maior fonte de invocação
+  // de função. Best-effort: se falhar, mantém o estado atual.
+  const loadManutencao = useCallback(async () => {
+    if (!stateRef.current.currentUserId) return;
+    try {
+      setManutencao(await db.fetchManutencaoAtiva());
+    } catch {
+      // silencioso — flag é só gate de UX, não pode derrubar o app
+    }
+  }, []);
+
+  // Contagem compartilhada de guias-auto NÃO enviadas. Único poll que substitui
+  // os que existiam no AlertaGuiasPendentes e no FiscalTabs. Usa o endpoint leve
+  // /contagem (head:true, só os números). Só roda pra gerente/admin.
+  const loadGuiasAutoContagem = useCallback(async () => {
+    const { currentUserId, usuarios } = stateRef.current;
+    if (!currentUserId) return;
+    const me = usuarios.find((u) => u.id === currentUserId);
+    const podeVer = me?.role === 'gerente' || me?.role === 'admin';
+    if (!podeVer) return;
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      if (!token) return;
+      const res = await fetch('/api/admin/guias-auto/contagem', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const j = await res.json();
+      setGuiasAutoContagem({
+        problemasPendentes: Number(j.problemasPendentes) || 0,
+        pendenciasAprovacao: Number(j.pendenciasAprovacao) || 0,
+      });
+    } catch {
+      // best-effort — badge/alerta só não atualiza
     }
   }, []);
   // -- Load all data from Supabase --
@@ -649,6 +698,35 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [state.currentUserId, loadNotificacoes]);
+
+  // Manutenção + contagem de guias-auto: leitura inicial no mount, refresh a
+  // cada 60s SÓ com a aba visível, e refresh ao voltar o foco. Mesmo padrão do
+  // poll de notificações acima — pausa quando a aba está escondida pra não gerar
+  // tráfego em abas esquecidas abertas. (loadGuiasAutoContagem se auto-limita a
+  // gerente/admin internamente.)
+  useEffect(() => {
+    if (!state.currentUserId) return;
+
+    const refresh = () => {
+      loadManutencao();
+      loadGuiasAutoContagem();
+    };
+    refresh();
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refresh();
+    }, 60_000);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [state.currentUserId, loadManutencao, loadGuiasAutoContagem]);
 
   const fetchPrivileges = useCallback(async (token: string) => {
     try {
@@ -1818,6 +1896,8 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     protectedUserIds: privileges.protectedUserIds,
     loading,
     authReady,
+    manutencao,
+    guiasAutoContagem,
     reloadData,
     login,
     logout,

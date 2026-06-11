@@ -403,8 +403,15 @@ const fila = [];
 let falhasRedeSeguidas = 0;
 const MAX_FALHAS_REDE_SEGUIDAS = 5;
 
+// "Houve atividade" desde o último fecharLotes confirmado. Vira true sempre que
+// um arquivo entra na fila (novo ou re-tentativa). O timer de fecharLotes só
+// POSTa na Vercel quando isto está true — antes ele batia a cada 60s no vazio,
+// 1440 invocações/dia mesmo sem nenhum lote aberto.
+let houveAtividade = false;
+
 function enfileirar(caminho) {
   if (fila.includes(caminho)) return;
+  houveAtividade = true;
   fila.push(caminho);
   drenarFila();
 }
@@ -437,7 +444,11 @@ async function fecharLotes() {
       if (j && (j.enviados || j.parciais || j.falhas)) {
         log.info(`Lotes de livros: ${j.enviados ?? 0} enviado(s), ${j.parciais ?? 0} parcial(is), ${j.falhas ?? 0} falha(s).`);
       }
+      // Confirmou a passada. Zera a flag, MAS se algum lote falhou no envio
+      // (fica 'aberto' pra retentar), mantém ligada pro próximo ciclo retentar.
+      houveAtividade = !!(j && j.falhas > 0);
     }
+    // Em erro HTTP / exceção: não mexe na flag — tenta de novo no próximo ciclo.
   } catch {
     // best-effort — silencioso
   } finally {
@@ -688,9 +699,10 @@ function iniciar() {
   // Varre arquivamentos presos (PDF aberto na hora do envio) a cada 45s.
   if (!ONCE) setInterval(reprocessarArquivamentosPresos, 45_000);
 
-  // Fecha lotes de livros maduros por DEBOUNCE (empresa que tem só 3 livros e
-  // parou de mandar) a cada 60s — além do disparo ao esvaziar a fila.
-  if (!ONCE) setInterval(fecharLotes, 60_000);
+  // Rede de segurança: re-tenta fechar lotes a cada 60s, MAS só quando houve
+  // atividade recente (arquivo processado) ou um lote falhou e ficou aberto pra
+  // retentar. Sem atividade, não POSTa — o disparo principal é ao esvaziar a fila.
+  if (!ONCE) setInterval(() => { if (houveAtividade) fecharLotes(); }, 60_000);
 
   const watcher = chokidar.watch(PASTA_ENTRADA, {
     persistent: true,

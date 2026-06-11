@@ -210,9 +210,20 @@ export default function AutoProblemasPage() {
   useEffect(() => {
     if (!authReady) return;
     carregar();
-    // Auto-refresh: enquanto a página tá aberta, atualiza a cada 30s
-    const interval = setInterval(carregar, 30_000);
-    return () => clearInterval(interval);
+    // Auto-refresh a cada 60s, mas só com a aba visível (pausa em abas escondidas)
+    // e refaz ao voltar o foco. Esta página exibe a lista completa, então mantém
+    // o /listar — o gate de visibilidade é o que corta o tráfego.
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') carregar();
+    }, 60_000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') carregar();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [authReady, carregar]);
 
   const executarAcao = useCallback(async (acao: 'marcar_resolvido' | 'ignorar_definitivo' | 'rejeitar_pendencia', id: string, comentarioInput?: string) => {

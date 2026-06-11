@@ -179,10 +179,23 @@ export default function DashboardPage() {
       /* silencioso — o card só some se não carregar */
     }
   }, [podeVerCardAuto]);
+  // Este card mostra a LISTA (detalhes das guias), então precisa do /listar — não
+  // dá pra trocar pela contagem compartilhada. Mas agora pausa quando a aba está
+  // escondida (visibilityState) e refaz ao voltar o foco, pra não pollar em abas
+  // esquecidas abertas.
   useEffect(() => {
     carregarAutoProblemas();
-    const interval = setInterval(carregarAutoProblemas, 60_000);
-    return () => clearInterval(interval);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') carregarAutoProblemas();
+    }, 60_000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') carregarAutoProblemas();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [carregarAutoProblemas]);
 
   const abrirHistoricoItem = useCallback((empresaId: string, itemId: string, tipo: 'Documento' | 'RET' | 'Fiscal') => {

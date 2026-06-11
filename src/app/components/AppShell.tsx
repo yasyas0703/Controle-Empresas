@@ -81,7 +81,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
 function AppShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { currentUser, canManage, canAdmin, isGhost, isPrivileged, logout, login, mostrarAlerta, empresas, notificacoes, marcarNotificacaoLida, marcarTodasLidas, limparNotificacoes, lixeira, authReady, departamentos } = useSistema();
+  const { currentUser, canManage, canAdmin, isGhost, isPrivileged, logout, login, mostrarAlerta, empresas, notificacoes, marcarNotificacaoLida, marcarTodasLidas, limparNotificacoes, lixeira, authReady, departamentos, manutencao } = useSistema();
   const [showLogin, setShowLogin] = useState(false);
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -89,7 +89,6 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   const [showNotifs, setShowNotifs] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [manutencao, setManutencao] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
@@ -131,18 +130,8 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   }, [showNotifs]);
 
   // isGhost e isPrivileged vêm do contexto (validados no servidor)
-
-  useEffect(() => {
-    const check = () => {
-      fetch('/api/admin/manutencao')
-        .then((r) => r.json())
-        .then((d) => setManutencao(!!d.ativo))
-        .catch(() => { });
-    };
-    check();
-    const interval = setInterval(check, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  // A flag de manutenção agora vem do SistemaContext (lida direto do Supabase,
+  // visibility-gated) — não pollamos mais /api/admin/manutencao a cada 5s.
 
   // Persiste estado da sidebar (desktop only)
   useEffect(() => {
