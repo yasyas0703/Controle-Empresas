@@ -127,6 +127,60 @@ export async function checkRateLimit(
   return { ok: true };
 }
 
+// Limites defensivos do AUTO-ENVIO — protegem a quota de ~500/dia do Gmail da
+// conta ghost contra um watcher em loop. Diferente do checkRateLimit por-usuário:
+// chave FIXA = ghost (o único remetente automático), DB-backed (compartilhado
+// entre instâncias serverless) e com DUAS janelas. NÃO usar IP: X-Forwarded-For
+// é forjável (rotacionar zera o contador) e o Map em memória do lib/rateLimit não
+// é global no serverless — ambos derrotavam o limite anterior.
+const AUTO_ENVIO_LIM_MIN = 20;
+const AUTO_ENVIO_LIM_HORA = 300;
+
+export async function checkAutoEnvioRateLimit(
+  admin: SupabaseClient,
+  ghostUserId: string,
+): Promise<{ ok: true } | ErroApi> {
+  const agora = Date.now();
+  const contarDesde = async (janelaSec: number): Promise<number | null> => {
+    const desde = new Date(agora - janelaSec * 1000).toISOString();
+    const { count, error } = await admin
+      .from('envios_rate_limit')
+      .select('id', { count: 'exact', head: true })
+      .eq('usuario_id', ghostUserId)
+      .gte('criado_em', desde);
+    if (error) {
+      // Falha de banco no rate limit não deve bloquear envio (best-effort).
+      console.error('[auto-envio rate_limit] falha ao contar:', error);
+      return null;
+    }
+    return count ?? 0;
+  };
+
+  const noMinuto = await contarDesde(60);
+  if (noMinuto !== null && noMinuto >= AUTO_ENVIO_LIM_MIN) {
+    return {
+      error: 'Muitas requisições no último minuto. Watcher pode estar em loop.',
+      status: 429,
+      code: 'rate_limit',
+    };
+  }
+  const naHora = await contarDesde(3600);
+  if (naHora !== null && naHora >= AUTO_ENVIO_LIM_HORA) {
+    return {
+      error: 'Muitas requisições na última hora. Quota diária do Gmail em risco.',
+      status: 429,
+      code: 'rate_limit',
+    };
+  }
+
+  // Registra a tentativa (best-effort — se falhar, não trava o envio)
+  await admin.from('envios_rate_limit').insert({ usuario_id: ghostUserId }).then(
+    () => undefined,
+    (err) => console.error('[auto-envio rate_limit] falha ao inserir:', err),
+  );
+  return { ok: true };
+}
+
 // ─── Guard de envio duplicado ───────────────────────────────────────────────
 /**
  * Checa se já houve um envio com sucesso pra essa empresa+mês+obrigação.
