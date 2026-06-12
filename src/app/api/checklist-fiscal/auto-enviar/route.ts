@@ -207,6 +207,34 @@ async function alertarGuiaTravada(
   });
 }
 
+/**
+ * A guia saiu com sucesso — qualquer problema ABERTO do MESMO arquivo está
+ * superado: resolve sozinho pro alerta sumir do painel sem clique manual
+ * (pedido da Yasmin 2026-06-12: "quando eu arrumar e enviar de novo, tem que
+ * sumir o alerta"). Casa por hash REAL (mesmo conteúdo, mesmo se renomeou) e
+ * pelo caminho (cobre os registros watcher-local de PDF inválido/preso, que
+ * usam hash sentinela). Best-effort: falha aqui não derruba o envio.
+ */
+async function resolverProblemasDoArquivo(
+  admin: SupabaseClient,
+  caminhoServidor: string,
+  hashArquivo: string,
+  statusFinal: string,
+): Promise<void> {
+  const patch = {
+    resolvido_em: new Date().toISOString(),
+    resolvido_por_id: null,
+    resolvido_por_nome: 'Sistema',
+    resolucao: `Arquivo reprocessado com sucesso (${statusFinal}) — alerta resolvido automaticamente.`,
+  };
+  const { error: e1 } = await admin.from('guias_auto_problemas')
+    .update(patch).is('resolvido_em', null).eq('hash_arquivo', hashArquivo);
+  if (e1) console.error('[auto-enviar] auto-resolver por hash falhou:', e1.message);
+  const { error: e2 } = await admin.from('guias_auto_problemas')
+    .update(patch).is('resolvido_em', null).eq('caminho_servidor', caminhoServidor);
+  if (e2) console.error('[auto-enviar] auto-resolver por caminho falhou:', e2.message);
+}
+
 async function registrarProcessado(
   admin: SupabaseClient,
   payload: {
@@ -465,6 +493,33 @@ export async function POST(req: Request) {
 
   // 8. Identifica a OBRIGAÇÃO pelo conteúdo + a COMPETÊNCIA.
   const identObr = identificarObrigacao(textoPdf, empresa, configs);
+
+  // 8a. Caso especial com diagnóstico exato: o perfil da guia BATEU, mas o
+  // código de receita do PDF diverge do cadastrado pra empresa. Sem isto, caía
+  // no genérico "tipo não reconhecido" e ninguém sabia o porquê (caso ELEMAR
+  // ICMS-ST 0220-4, 2026-06-12 — pedido da Yasmin: avisar especificando).
+  if (!identObr.obrigacao && identObr.codigoDivergente?.length) {
+    const d = identObr.codigoDivergente[0];
+    const motivo =
+      `A guia bate com o perfil de ${identObr.codigoDivergente.map((c) => c.obrigacao).join(' / ')}, ` +
+      `mas o código de receita não confere: o PDF traz ${d.codigoNaGuia ?? 'um código diferente'} ` +
+      `e o cadastro da empresa espera ${d.codigosEsperados.join(', ')}. ` +
+      'Corrija o código em Envio → Configurar Obrigações (ou confira se a guia é a certa) e jogue o arquivo de novo na pasta.';
+    await registrarProblema(admin, {
+      caminhoServidor, nomeArquivo, hashArquivo,
+      empresaId: empresa.id, empresaNomePasta: null,
+      tipoProblema: 'codigo_receita_divergente',
+      detalhes: { motivo, divergencias: identObr.codigoDivergente },
+      competenciaParseada: null, obrigacaoParseada: d.obrigacao,
+    });
+    await registrarProcessado(admin, {
+      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia: null, obrigacao: d.obrigacao,
+      nomeArquivo, status: 'pendente_correcao',
+      detalhes: { tipoProblema: 'codigo_receita_divergente', divergencias: identObr.codigoDivergente },
+    });
+    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'codigo_receita_divergente', motivo } });
+  }
+
   if (!identObr.obrigacao) {
     const tipoProblema = identObr.ambiguo ? 'obrigacao_ambigua' : 'obrigacao_nao_identificada';
     await registrarProblema(admin, {
@@ -637,6 +692,7 @@ export async function POST(req: Request) {
       nomeArquivo, status: 'interno_marcado_feito',
       detalhes: { motivo: 'Obrigação configurada como nao_envia_cliente — só marcou check' },
     });
+    await resolverProblemasDoArquivo(admin, caminhoServidor, hashArquivo, 'interno marcado feito');
     return NextResponse.json({
       status: 'interno_marcado_feito',
       detalhes: { empresa: empresa.codigo || empresa.razao_social, obrigacao, competencia },
@@ -688,6 +744,7 @@ export async function POST(req: Request) {
       nomeArquivo, status: 'aguardando_lote',
       detalhes: { motivo: r.status === 'ja_estagiado' ? 'Livro já estava no lote' : 'Livro estagiado — aguardando os demais do lote', tipoLivro, loteId: r.loteId },
     });
+    await resolverProblemasDoArquivo(admin, caminhoServidor, hashArquivo, 'estagiado no lote');
     // Gatilho de CAMINHO RÁPIDO: se este livro completou os 5 tipos conhecidos, o
     // lote fecha e envia AGORA (sem depender do watcher/cron). "Sempre 5":
     // fecharLotesMaduros só envia lote com os 5 tipos; incompleto fica aguardando.
@@ -760,6 +817,7 @@ export async function POST(req: Request) {
   }
 
   // 16. Sucesso
+  await resolverProblemasDoArquivo(admin, caminhoServidor, hashArquivo, 'enviado ao cliente');
   await registrarProcessado(admin, {
     caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao,
     nomeArquivo, status: 'enviado',

@@ -11,7 +11,7 @@ import { NextResponse } from 'next/server';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { getSupabaseAdmin, extrairTextoPdfServidor } from '../../checklist-fiscal/_shared';
 import { identificarEmpresa } from '../../checklist-fiscal/auto-enviar/_identificar';
-import { certidaoDoArquivo, resultadoDoTexto, emissaoDoTexto } from './_detectar';
+import { certidaoDoArquivo, tipoDoTexto, resultadoDoTexto, resultadoDoNome, emissaoDoTexto } from './_detectar';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
 
@@ -118,41 +118,54 @@ export async function POST(req: Request) {
     return NextResponse.json({ status: 'ja_processado', detalhes: { processadoEm: (jaProcessado as { processado_em?: string }).processado_em } });
   }
 
-  // 4. Certidão pelo nome do arquivo (+ dica de subpasta)
-  const det = certidaoDoArquivo(nomeArquivo, meta.subpasta);
+  // 4. Texto do PDF (base da identificação por conteúdo)
+  let texto = '';
+  try { texto = await extrairTextoPdfServidor(fileBuffer); } catch { texto = ''; }
+
+  // 5. Certidão: 1º pelo TOKEN do nome (formato antigo cnd-*), senão pelo TEXTO
+  //    (pastas renomeadas: "Certidão Negativa - CNPJ X.pdf", "HEDRONS P.E.N.pdf").
+  const det = certidaoDoArquivo(nomeArquivo, meta.subpasta) ?? tipoDoTexto(texto);
   if (!det) {
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo, empresaId: null,
       tipoProblema: 'certidao_desconhecida',
-      detalhes: { motivo: 'Não reconheci o tipo de certidão pelo nome do arquivo.', subpasta: meta.subpasta ?? null },
+      detalhes: { motivo: 'Não reconheci o tipo de certidão (nem pelo nome nem pelo texto do PDF).', subpasta: meta.subpasta ?? null },
       competenciaParseada: mes, certidaoParseada: null, resultadoParseado: null,
     });
     await registrarProcessado(admin, { caminhoServidor, hashArquivo, empresaId: null, competencia: mes, certidao: null, resultado: null, nomeArquivo, status: 'pendente_correcao', detalhes: { tipoProblema: 'certidao_desconhecida' } });
     return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'certidao_desconhecida' } });
   }
 
-  // 5. Texto do PDF
-  let texto = '';
-  try { texto = await extrairTextoPdfServidor(fileBuffer); } catch { texto = ''; }
-
-  // 6. Empresa (reusa o identificador do fiscal: CNPJ/IE forte, nome fraco)
+  // 6. Empresa: 1º pelo texto (CNPJ/IE forte, nome fraco). Fallback: CNPJ no NOME
+  //    do arquivo (formato novo "… - CNPJ 08876977000189.pdf").
   const { data: empresasRows } = await admin.from('empresas').select('*').is('desligada_em', null);
   const todasEmpresas = (empresasRows ?? []) as Empresa[];
   const identEmpresa = identificarEmpresa(texto, todasEmpresas);
-  if (!identEmpresa.empresa) {
+  let empresa = identEmpresa.empresa;
+  let tipoMatch: string | null = identEmpresa.tipoMatch;
+  let forte = identEmpresa.forte;
+  if (!empresa) {
+    const tokens = nomeArquivo.match(/\d[\d.\-/]{12,17}\d/g) ?? [];
+    let cnpjNome: string | null = null;
+    for (const tok of tokens) { const d = tok.replace(/\D/g, ''); if (d.length === 14) { cnpjNome = d; break; } }
+    if (cnpjNome) {
+      const achada = todasEmpresas.find((e) => (e.cnpj ?? '').replace(/\D/g, '') === cnpjNome);
+      if (achada) { empresa = achada; tipoMatch = 'cnpj_nome_arquivo'; forte = true; }
+    }
+  }
+  if (!empresa) {
     const tipoProblema = identEmpresa.ambiguo ? 'empresa_ambigua' : 'empresa_nao_encontrada';
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo, empresaId: null, tipoProblema,
-      detalhes: { motivo: identEmpresa.ambiguo ? 'Mais de uma empresa casou com o PDF.' : 'Nenhuma empresa reconhecida no PDF.', certidao: det.certidao },
+      detalhes: { motivo: identEmpresa.ambiguo ? 'Mais de uma empresa casou com o PDF.' : 'Nenhuma empresa reconhecida no PDF nem no nome.', certidao: det.certidao },
       competenciaParseada: mes, certidaoParseada: det.certidao, resultadoParseado: null,
     });
     await registrarProcessado(admin, { caminhoServidor, hashArquivo, empresaId: null, competencia: mes, certidao: det.certidao, resultado: null, nomeArquivo, status: 'pendente_correcao', detalhes: { tipoProblema } });
     return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema, certidao: det.certidao } });
   }
-  const empresa = identEmpresa.empresa;
 
-  // 7. Resultado + emissão (texto)
-  const resultado = resultadoDoTexto(texto);
+  // 7. Resultado: texto do PDF; reforço pelo nome do arquivo. Emissão do texto.
+  const resultado = resultadoDoTexto(texto) ?? resultadoDoNome(nomeArquivo);
   const emissao = emissaoDoTexto(texto);
 
   // 8. Upload do PDF (path determinístico por hash → idempotente)
@@ -193,7 +206,7 @@ export async function POST(req: Request) {
   await registrarProcessado(admin, {
     caminhoServidor, hashArquivo, empresaId: empresa.id, competencia: mes,
     certidao: det.certidao, resultado, nomeArquivo, status: 'registrado',
-    detalhes: { uf: det.uf, autoridade: det.autoridade, emissao, tipoMatch: identEmpresa.tipoMatch, forte: identEmpresa.forte },
+    detalhes: { uf: det.uf, autoridade: det.autoridade, emissao, tipoMatch, forte },
   });
   if (!resultado) {
     await registrarProblema(admin, {
@@ -212,6 +225,6 @@ export async function POST(req: Request) {
     resultado,
     emissao,
     mes,
-    matchFraco: !identEmpresa.forte,
+    matchFraco: !forte,
   });
 }

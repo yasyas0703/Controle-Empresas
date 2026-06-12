@@ -105,6 +105,28 @@ export function corCadastro(item: ChecklistCadastroItem | undefined): CorCadastr
   return 'vermelho';
 }
 
+/**
+ * Cor da célula POR RESULTADO (mais informativa que só "tem/falta"):
+ *   negativa  = verde   (tudo certo)
+ *   pen       = âmbar   (positiva c/ efeito de negativa — sai, mas atenção)
+ *   positiva  = vermelho (não sai pro cliente)
+ *   relatorio = azul    (só relatório, sem certidão classificada)
+ *   tem       = cinza   (tem certidão anexada mas sem resultado classificado)
+ *   falta     = neutro  (não tem nada)
+ * O resultado tem prioridade sobre tudo; sem resultado, cai na posse.
+ */
+export type CorCelulaCadastro = 'negativa' | 'pen' | 'positiva' | 'relatorio' | 'tem' | 'falta';
+
+export function corCelulaCadastro(item: ChecklistCadastroItem | undefined): CorCelulaCadastro {
+  const r = item?.resultado;
+  if (r === 'Negativa') return 'negativa';
+  if (r === 'PEN') return 'pen';
+  if (r === 'Positiva') return 'positiva';
+  if (item?.status === 'tem' || item?.arquivoUrl) return 'tem';
+  if (item?.status === 'relatorio' || item?.relatorioUrl || (item?.relatorioTexto && item.relatorioTexto.trim())) return 'relatorio';
+  return 'falta';
+}
+
 /** Chave do Map local da página: `${empresaId}|${certidao}`. */
 export function buildCadastroKey(empresaId: string, certidao: CadastroCertidao): string {
   return `${empresaId}|${certidao}`;

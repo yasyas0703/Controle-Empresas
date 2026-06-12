@@ -138,6 +138,11 @@ const TIPO_PROBLEMA_LABEL: Record<string, { label: string; comoResolver: string 
     comoResolver: 'Veja os detalhes técnicos abaixo. Se persistir, acione o suporte.',
   },
 
+  codigo_receita_divergente: {
+    label: 'Código de receita não bate com o cadastro',
+    comoResolver: 'O tipo da guia foi reconhecido, mas o código de receita do PDF é diferente do cadastrado pra essa obrigação nesta empresa (os dois códigos estão nos detalhes). Corrija em Envio → Configurar Obrigações (ou confira se a guia é a certa) e jogue o arquivo de novo na pasta — o alerta resolve sozinho quando a guia sair.',
+  },
+
   // ── Detectados pelo WATCHER (local, antes de chegar na API) ──
   pdf_invalido_local: {
     label: 'PDF inválido/cortado (não enviado)',

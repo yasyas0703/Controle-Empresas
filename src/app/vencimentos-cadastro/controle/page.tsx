@@ -18,8 +18,8 @@ import { sortByPtBr } from '@/lib/sort';
 import { getDepartamentoSlugsDoUsuario } from '@/app/utils/departamento';
 import { DepartamentoTabs, DEPARTAMENTO_CONFIG } from '@/app/components/DepartamentoPlaceholder';
 import {
-  celulasDaColuna, colunaDaCertidao, corCadastro, certidaoPodeEnviar, ufDaEmpresa,
-  resultadosPermitidos, buildCadastroKey, type CelulaCertidao,
+  celulasDaColuna, colunaDaCertidao, corCelulaCadastro, certidaoPodeEnviar, ufDaEmpresa,
+  resultadosPermitidos, buildCadastroKey, type CelulaCertidao, type CorCelulaCadastro,
 } from '@/app/utils/certidoes';
 import { useFileDropZone } from '@/app/hooks/useFileDropZone';
 import { formatBR } from '@/app/utils/date';
@@ -44,15 +44,24 @@ function monthLabel(mes: string): string {
   return parseMonth(mes).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 }
 
-// ── Cores das células ─────────────────────────────────────────────────────────
-// verde = tem certidão · vermelho = falta · azul = só relatório
-const COR_CLASSES: Record<'verde' | 'vermelho' | 'azul', { cell: string; dot: string; legenda: string }> = {
-  verde:    { cell: 'bg-emerald-50 border-emerald-300 hover:border-emerald-500 text-emerald-700', dot: 'bg-emerald-500', legenda: 'Tem certidão' },
-  vermelho: { cell: 'bg-red-50 border-red-300 hover:border-red-400 text-red-700',                 dot: 'bg-red-500',     legenda: 'Falta' },
-  azul:     { cell: 'bg-sky-50 border-sky-300 hover:border-sky-400 text-sky-700',                 dot: 'bg-sky-500',     legenda: 'Relatório' },
+// ── Cores das células — por RESULTADO ─────────────────────────────────────────
+// negativa=verde · pen=âmbar · positiva=vermelho · relatório=azul · tem=cinza · falta=neutro
+const CELL_STYLE: Record<CorCelulaCadastro, { cell: string; dot: string; legenda: string }> = {
+  negativa:  { cell: 'bg-emerald-50 border-emerald-300 hover:border-emerald-500 text-emerald-700', dot: 'bg-emerald-500', legenda: 'Negativa' },
+  pen:       { cell: 'bg-amber-50 border-amber-300 hover:border-amber-400 text-amber-700',         dot: 'bg-amber-500',   legenda: 'PEN' },
+  positiva:  { cell: 'bg-red-50 border-red-300 hover:border-red-400 text-red-700',                 dot: 'bg-red-500',     legenda: 'Positiva' },
+  relatorio: { cell: 'bg-sky-50 border-sky-300 hover:border-sky-400 text-sky-700',                 dot: 'bg-sky-500',     legenda: 'Relatório' },
+  tem:       { cell: 'bg-slate-50 border-slate-300 hover:border-slate-400 text-slate-600',         dot: 'bg-slate-400',   legenda: 'Sem classificar' },
+  falta:     { cell: 'bg-[var(--surface-2)] border-[var(--border)] hover:border-[var(--border-strong)] text-[var(--text-3)]', dot: 'bg-[var(--text-3)]', legenda: 'Falta' },
 };
 
 const RESULTADO_ABBR: Record<CadastroResultado, string> = { Negativa: 'Neg', PEN: 'PEN', Positiva: 'Pos' };
+
+function fmtCnpj(c?: string): string {
+  const d = (c ?? '').replace(/\D/g, '');
+  if (d.length !== 14) return c ?? '';
+  return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+}
 
 type CellTarget = { empresa: Empresa; certidao: CadastroCertidao; coluna: CadastroCertidaoColuna; subLabel?: string };
 
@@ -70,7 +79,7 @@ export default function ControleCadastroPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filtroUf, setFiltroUf] = useState('');
-  const [filtroStatus, setFiltroStatus] = useState<'todos' | 'tem' | 'falta' | 'relatorio'>('todos');
+  const [filtroStatus, setFiltroStatus] = useState<'todos' | 'negativa' | 'pen' | 'positiva' | 'falta'>('todos');
   const [paginaTamanho, setPaginaTamanho] = useState(50);
 
   // Modal da célula
@@ -381,10 +390,8 @@ export default function ControleCadastroPage() {
     if (filtroStatus !== 'todos') {
       list = list.filter((e) =>
         CADASTRO_CERTIDAO_COLUNAS.some((coluna) =>
-          celulasDaColuna(coluna, e).some((cel) => {
-            const it = items.get(buildCadastroKey(e.id, cel.certidao));
-            return corCadastro(it) === (filtroStatus === 'tem' ? 'verde' : filtroStatus === 'falta' ? 'vermelho' : 'azul');
-          })));
+          celulasDaColuna(coluna, e).some((cel) =>
+            corCelulaCadastro(items.get(buildCadastroKey(e.id, cel.certidao))) === filtroStatus)));
     }
     return sortByPtBr(list, (e) => e.apelido || e.razao_social || e.codigo || '');
   }, [empresas, search, filtroUf, filtroStatus, items]);
@@ -393,19 +400,22 @@ export default function ControleCadastroPage() {
 
   const visiveis = linhas.slice(0, paginaTamanho);
 
-  // Stats simples (sobre as células visíveis)
+  // Stats por resultado (sobre as células visíveis)
   const stats = useMemo(() => {
-    let tem = 0, falta = 0, rel = 0, total = 0;
+    let negativa = 0, pen = 0, positiva = 0, falta = 0, total = 0;
     for (const e of linhas) {
       for (const coluna of CADASTRO_CERTIDAO_COLUNAS) {
         for (const cel of celulasDaColuna(coluna, e)) {
           total++;
-          const cor = corCadastro(items.get(buildCadastroKey(e.id, cel.certidao)));
-          if (cor === 'verde') tem++; else if (cor === 'azul') rel++; else falta++;
+          const cor = corCelulaCadastro(items.get(buildCadastroKey(e.id, cel.certidao)));
+          if (cor === 'negativa') negativa++;
+          else if (cor === 'pen') pen++;
+          else if (cor === 'positiva') positiva++;
+          else if (cor === 'falta') falta++;
         }
       }
     }
-    return { tem, falta, rel, total };
+    return { negativa, pen, positiva, falta, total };
   }, [linhas, items]);
 
   // ── Guards (depois de todos os hooks) ───────────────────────────────────────
@@ -460,12 +470,13 @@ export default function ControleCadastroPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         {[
           { label: 'Empresas', valor: linhas.length, cor: 'text-[var(--text-1)]' },
-          { label: 'Com certidão', valor: stats.tem, cor: 'text-emerald-600' },
-          { label: 'Só relatório', valor: stats.rel, cor: 'text-sky-600' },
-          { label: 'Faltando', valor: stats.falta, cor: 'text-red-600' },
+          { label: 'Negativa', valor: stats.negativa, cor: 'text-emerald-600' },
+          { label: 'PEN', valor: stats.pen, cor: 'text-amber-600' },
+          { label: 'Positiva', valor: stats.positiva, cor: 'text-red-600' },
+          { label: 'Falta', valor: stats.falta, cor: 'text-[var(--text-3)]' },
         ].map((s) => (
           <div key={s.label} className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] p-3">
             <div className="text-xs text-[var(--text-3)]">{s.label}</div>
@@ -495,19 +506,20 @@ export default function ControleCadastroPage() {
           {ufOptions.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
         </select>
         <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as typeof filtroStatus)} className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-sm text-[var(--text-1)]">
-          <option value="todos">Todos os status</option>
-          <option value="tem">Tem certidão</option>
-          <option value="relatorio">Só relatório</option>
-          <option value="falta">Faltando</option>
+          <option value="todos">Todos os resultados</option>
+          <option value="negativa">Negativa</option>
+          <option value="pen">PEN</option>
+          <option value="positiva">Positiva</option>
+          <option value="falta">Falta</option>
         </select>
       </div>
 
       {/* Legenda */}
       <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-2)]">
-        {(['verde', 'azul', 'vermelho'] as const).map((c) => (
+        {(['negativa', 'pen', 'positiva', 'relatorio', 'falta'] as const).map((c) => (
           <span key={c} className="inline-flex items-center gap-1.5">
-            <span className={`h-2.5 w-2.5 rounded-full ${COR_CLASSES[c].dot}`} />
-            {COR_CLASSES[c].legenda}
+            <span className={`h-2.5 w-2.5 rounded-full ${CELL_STYLE[c].dot}`} />
+            {CELL_STYLE[c].legenda}
           </span>
         ))}
       </div>
@@ -535,11 +547,12 @@ export default function ControleCadastroPage() {
             <tbody>
               {visiveis.map((empresa) => (
                 <tr key={empresa.id} className="hover:bg-[var(--surface-2)]/40">
-                  <td className="sticky left-0 z-10 min-w-[220px] max-w-[260px] border-b border-r border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 align-top">
+                  <td className="sticky left-0 z-10 min-w-[240px] max-w-[280px] border-b border-r border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 align-top">
                     <div className="truncate font-semibold text-[var(--text-1)]">{empresa.apelido || empresa.razao_social || '—'}</div>
                     <div className="text-xs text-[var(--text-3)]">
                       {empresa.codigo}{empresa.estado ? ` · ${ufDaEmpresa(empresa)}` : ''}
                     </div>
+                    {empresa.cnpj && <div className="font-mono text-[11px] text-[var(--text-3)]">{fmtCnpj(empresa.cnpj)}</div>}
                   </td>
                   {CADASTRO_CERTIDAO_COLUNAS.map((coluna) => {
                     const celulas = celulasDaColuna(coluna, empresa);
@@ -622,8 +635,8 @@ function CelulaBtn({ empresa, coluna, cel, item, onClick }: {
   item: ChecklistCadastroItem | undefined; onClick: () => void;
 }) {
   void empresa; void coluna;
-  const cor = corCadastro(item);
-  const cls = COR_CLASSES[cor];
+  const cor = corCelulaCadastro(item);
+  const cls = CELL_STYLE[cor];
   const resultado = item?.resultado ?? null;
   return (
     <button
@@ -676,7 +689,7 @@ function CelulaModal(p: CelulaModalProps) {
   const fileRelRef = useRef<HTMLInputElement>(null);
   const coluna = colunaDaCertidao(target.certidao);
   const opcoesResultado = resultadosPermitidos(coluna);
-  const cor = corCadastro(item);
+  const cor = corCelulaCadastro(item);
   const podeEnviar = !!item?.arquivoUrl && certidaoPodeEnviar(coluna, item?.resultado);
   const jaEnviou = item?.enviosHistorico?.some((e) => e.sucesso);
   const titulo = `${CADASTRO_CERTIDAO_LABEL[coluna]}${target.subLabel ? ` — ${target.subLabel}` : ''}`;
@@ -691,8 +704,8 @@ function CelulaModal(p: CelulaModalProps) {
             <div className="text-base font-bold text-[var(--text-1)]">{titulo}</div>
           </div>
           <div className="flex items-center gap-2">
-            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${COR_CLASSES[cor].cell}`}>
-              <span className={`h-2 w-2 rounded-full ${COR_CLASSES[cor].dot}`} />{COR_CLASSES[cor].legenda}
+            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${CELL_STYLE[cor].cell}`}>
+              <span className={`h-2 w-2 rounded-full ${CELL_STYLE[cor].dot}`} />{CELL_STYLE[cor].legenda}
             </span>
             <button onClick={p.onClose} className="rounded-md p-1 text-[var(--text-3)] hover:bg-[var(--surface-3)] hover:text-[var(--text-1)]"><X size={18} /></button>
           </div>
@@ -732,17 +745,16 @@ function CelulaModal(p: CelulaModalProps) {
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--text-3)]">Status (cor) — opcional</div>
             <div className="grid grid-cols-3 gap-2">
-              {(['tem', 'relatorio', 'falta'] as const).map((s) => {
-                const cMap = { tem: 'verde', relatorio: 'azul', falta: 'vermelho' } as const;
+              {([['tem', 'Tem certidão'], ['relatorio', 'Relatório'], ['falta', 'Falta']] as const).map(([s, label]) => {
                 const ativo = item?.status === s;
                 return (
                   <button
                     key={s}
                     disabled={p.salvando}
                     onClick={() => p.onStatus(ativo ? null : s)}
-                    className={`rounded-md border px-2 py-1.5 text-xs font-semibold ${ativo ? COR_CLASSES[cMap[s]].cell : 'border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-2)] hover:bg-[var(--surface-3)]'}`}
+                    className={`rounded-md border px-2 py-1.5 text-xs font-semibold ${ativo ? CELL_STYLE[s].cell : 'border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-2)] hover:bg-[var(--surface-3)]'}`}
                   >
-                    {COR_CLASSES[cMap[s]].legenda}
+                    {label}
                   </button>
                 );
               })}

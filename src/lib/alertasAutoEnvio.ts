@@ -24,6 +24,7 @@ export const LABEL_TIPO_PROBLEMA: Record<string, string> = {
   competencia_antiga: 'Competência muito antiga (precisa aprovação)',
   obrigacao_nao_configurada: 'Obrigação não configurada pra empresa',
   obrigacao_inativa: 'Obrigação inativa pra empresa',
+  codigo_receita_divergente: 'Código de receita não bate com o cadastro',
   validacao_falhou: 'PDF não passou na validação',
   sem_emails: 'Empresa sem email de cliente cadastrado',
   gmail_nao_conectado: 'Gmail do sistema desconectado',
@@ -48,6 +49,7 @@ const TIPOS_BLOQUEIO = new Set([
   'erro',
   'pdf_invalido_local',
   'arquivo_preso_entrada',
+  'codigo_receita_divergente',
 ]);
 
 export function rotuloTipoProblema(tipo: string): string {

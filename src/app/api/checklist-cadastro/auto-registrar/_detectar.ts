@@ -54,6 +54,63 @@ export function certidaoDoArquivo(nomeArquivo: string, subpasta?: string): Detec
 }
 
 /**
+ * Identifica a certidão pelo TEXTO do PDF (assinatura do emissor). Usado quando
+ * o nome do arquivo não traz token — caso da pasta renomeada (ex.: "Certidão
+ * Negativa - CNPJ X.pdf", "HEDRONS P.E.N.pdf"). É a fonte mais confiável de TIPO.
+ */
+export function tipoDoTexto(texto: string): DeteccaoCertidao | null {
+  const t = norm(texto);
+  if (!t.trim()) return null;
+
+  // FGTS (Caixa / Fundo de Garantia)
+  if (/fundo de garantia|certificado de regularidade do fgts|regularidade do fgts/.test(t)) {
+    return { certidao: 'FGTS', uf: null, autoridade: 'fgts' };
+  }
+  // Trabalhista (Justiça do Trabalho / CNDT)
+  if (/justica do trabalho|debitos trabalhistas|devedores trabalhistas|tribunal superior do trabalho/.test(t)) {
+    return { certidao: 'TRABALHISTA', uf: null, autoridade: 'trabalhista' };
+  }
+  // Federal (Receita Federal / PGFN / Dívida Ativa da União)
+  if (/secretaria da receita federal|tributos federais|procuradoria-geral da fazenda nacional|divida ativa da uniao|\bpgfn\b|\brfb\b/.test(t)) {
+    return { certidao: 'FEDERAL', uf: null, autoridade: 'federal' };
+  }
+  // SP — Administrativa (Secretaria da Fazenda e Planejamento, débitos NÃO inscritos)
+  if (/fazenda e planejamento do estado\s+de\s+sao paulo|nao inscritos na divida ativa do estado de sao paulo/.test(t)) {
+    return { certidao: 'ESTADUAL_ADM', uf: 'SP', autoridade: 'sefazsp' };
+  }
+  // SP — Dívida Ativa (Procuradoria, débitos inscritos)
+  if (/procuradoria.{0,60}divida ativa|debitos inscritos[^]{0,60}divida ativa do estado de sao paulo|divida ativa do estado de sao paulo/.test(t)) {
+    return { certidao: 'ESTADUAL_DA', uf: 'SP', autoridade: 'debitsp' };
+  }
+  // Estadual MG
+  if (/secretaria de estado de fazenda de minas gerais|cdt\.fazenda\.mg|fazenda publica estadual e\/ou advocacia geral do estado/.test(t)) {
+    return { certidao: 'ESTADUAL', uf: 'MG', autoridade: 'sefazmg' };
+  }
+  // Estadual genérico (outros estados)
+  if (/secretaria de estado.{0,30}fazenda|fazenda publica estadual|secretaria.{0,20}fazenda.{0,20}estado|\bsefaz/.test(t)) {
+    return { certidao: 'ESTADUAL', uf: null, autoridade: 'estadual' };
+  }
+  // Municipal (Prefeitura / Município)
+  if (/prefeitura|municipio de|fazenda municipal|secretaria municipal/.test(t)) {
+    return { certidao: 'MUNICIPAL', uf: null, autoridade: 'municipal' };
+  }
+  return null;
+}
+
+/**
+ * Resultado lido do NOME do arquivo (reforço, quando o texto não classifica).
+ * Ex.: "Certidão Positiva com Efeitos de Negativa - CNPJ X" → PEN;
+ *      "UNICA NEGATIVA" → Negativa; "HEDRONS P.E.N" → PEN.
+ */
+export function resultadoDoNome(nomeArquivo: string): CadastroResultado | null {
+  const t = norm(nomeArquivo);
+  if (/efeito[s]?\s+de\s+negativa|positiva\s+com\s+efeito|\bp\.?e\.?n\b/.test(t)) return 'PEN';
+  if (/\bpositiva\b/.test(t)) return 'Positiva';
+  if (/\bnegativa\b/.test(t)) return 'Negativa';
+  return null;
+}
+
+/**
  * Classifica o resultado pelo texto do PDF. Ordem importa: PEN antes de
  * Positiva; Negativa antes de Positiva (textos negativos dizem "NÃO constam").
  */

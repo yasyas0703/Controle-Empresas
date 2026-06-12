@@ -166,7 +166,19 @@ export interface ResultadoIdentObrigacao {
   ambiguo: boolean;
   /** Lista de obrigações que passaram (pra log/painel quando ambíguo). */
   candidatos: string[];
+  /**
+   * Perfis que SÓ falharam porque o código de receita do PDF não bate com o
+   * cadastrado na config da empresa. Permite o painel dar o diagnóstico exato
+   * ("guia parece ICMS-ST, PDF traz 0220-4 mas o cadastro espera 0218-8") em
+   * vez do genérico "tipo de guia não reconhecido" — pedido da Yasmin
+   * 2026-06-12, depois do caso ELEMAR.
+   */
+  codigoDivergente?: Array<{ obrigacao: string; codigosEsperados: string[]; codigoNaGuia: string | null }>;
 }
+
+// Texto EXATO do bloqueio de código em validarGuia.ts — usado pra detectar o
+// caso "só falhou pelo código". Se mudar lá, mude aqui.
+const MOTIVO_BLOQUEIO_CODIGO = 'Código de receita não confere com o cadastro da empresa';
 
 /**
  * Descobre QUAL obrigação é a guia rodando validarGuia() de cada perfil conhecido
@@ -184,15 +196,36 @@ export function identificarObrigacao(
   if (!texto) return { obrigacao: null, ambiguo: false, candidatos: [] };
 
   const aprovados: Array<{ obrigacao: string; temCodigo: boolean }> = [];
+  // Quem falhou EXCLUSIVAMENTE pelo bloqueio de código de receita.
+  const falhouSoPorCodigo: Array<{ obrigacao: string; codigosEsperados: string[] }> = [];
   for (const obrigacao of obrigacoesComValidacao()) {
     const codigos = configs.get(obrigacao)?.codigos ?? [];
     const r = validarGuia(texto, empresa, obrigacao, codigos);
     if (r.valido && r.perfilUsado) {
       aprovados.push({ obrigacao, temCodigo: r.detectado.codigoReceitaEncontrado != null });
+      continue;
+    }
+    const bloqueios = r.problemas.filter((p) => p.severidade === 'bloqueio');
+    if (bloqueios.length > 0 && bloqueios.every((b) => b.motivo === MOTIVO_BLOQUEIO_CODIGO)) {
+      falhouSoPorCodigo.push({ obrigacao, codigosEsperados: codigos });
     }
   }
 
-  if (aprovados.length === 0) return { obrigacao: null, ambiguo: false, candidatos: [] };
+  if (aprovados.length === 0) {
+    if (falhouSoPorCodigo.length === 0) return { obrigacao: null, ambiguo: false, candidatos: [] };
+    // O perfil bateu, SÓ o código divergiu — devolve o diagnóstico exato.
+    // Revalida sem códigos só pra descobrir qual código a guia traz (preview
+    // pela lista global do perfil).
+    const codigoDivergente = falhouSoPorCodigo.map((f) => {
+      const semCodigo = validarGuia(texto, empresa, f.obrigacao, []);
+      return {
+        obrigacao: f.obrigacao,
+        codigosEsperados: f.codigosEsperados,
+        codigoNaGuia: semCodigo.detectado.codigoReceitaEncontrado ?? null,
+      };
+    });
+    return { obrigacao: null, ambiguo: false, candidatos: [], codigoDivergente };
+  }
   if (aprovados.length === 1) return { obrigacao: aprovados[0].obrigacao, ambiguo: false, candidatos: [aprovados[0].obrigacao] };
 
   // Mais de um passou — desempata por código de receita (sinal mais forte).
