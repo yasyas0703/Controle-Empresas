@@ -142,6 +142,17 @@ export function resultadoDoTexto(texto: string): CadastroResultado | null {
 }
 
 /**
+ * CNPJ base (raiz, 8 dígitos) do texto. Usado pra certidões que trazem só a raiz
+ * — ex.: SP Dívida Ativa: "CNPJ Base: 29.168.985". Retorna 8 dígitos ou null.
+ */
+export function cnpjBaseDoTexto(texto: string): string | null {
+  const t = norm(texto);
+  const m = t.match(/cnpj\s*base[: ]*([\d.\-/]{8,16})/);
+  if (m) { const d = m[1].replace(/\D/g, ''); if (d.length >= 8) return d.slice(0, 8); }
+  return null;
+}
+
+/**
  * Extrai a data de emissão do PDF (metadado). Best-effort: procura rótulos de
  * emissão/expedição e cai na 1ª data DD/MM/AAAA do texto. Retorna 'YYYY-MM-DD'.
  */

@@ -54,6 +54,6 @@ tsconfig.tsbuildinfo
 
 cadastro/
 scripts/.watcher-certidoes-state.json
-scripts/.watcher-certidoes.log
-scripts/.watcher-certidoes-run.log
+scripts/.watcher-certidoes*.log
+scripts/.watcher-rerun.log
 scripts/data/

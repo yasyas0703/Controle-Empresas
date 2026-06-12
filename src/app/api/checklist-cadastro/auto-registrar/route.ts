@@ -11,7 +11,8 @@ import { NextResponse } from 'next/server';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { getSupabaseAdmin, extrairTextoPdfServidor } from '../../checklist-fiscal/_shared';
 import { identificarEmpresa } from '../../checklist-fiscal/auto-enviar/_identificar';
-import { certidaoDoArquivo, tipoDoTexto, resultadoDoTexto, resultadoDoNome, emissaoDoTexto } from './_detectar';
+import { certidaoDoArquivo, tipoDoTexto, resultadoDoTexto, resultadoDoNome, emissaoDoTexto, cnpjBaseDoTexto } from './_detectar';
+import { ufDaEmpresa } from '@/app/utils/certidoes';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
 
@@ -151,6 +152,20 @@ export async function POST(req: Request) {
     if (cnpjNome) {
       const achada = todasEmpresas.find((e) => (e.cnpj ?? '').replace(/\D/g, '') === cnpjNome);
       if (achada) { empresa = achada; tipoMatch = 'cnpj_nome_arquivo'; forte = true; }
+    }
+  }
+  // Fallback 3: certidões com só o CNPJ BASE (ex.: Dívida Ativa SP). Casa pela
+  // raiz; se houver mais de um estabelecimento da mesma raiz, desempata pela UF
+  // da certidão (debitsp/sefazsp → SP). Só aceita se sobrar exatamente UMA.
+  if (!empresa && (det.certidao === 'ESTADUAL_DA' || det.certidao === 'ESTADUAL_ADM')) {
+    const base = cnpjBaseDoTexto(texto);
+    if (base) {
+      let cands = todasEmpresas.filter((e) => (e.cnpj ?? '').replace(/\D/g, '').slice(0, 8) === base);
+      if (det.uf && cands.length > 1) {
+        const porUf = cands.filter((e) => ufDaEmpresa(e) === det.uf);
+        if (porUf.length) cands = porUf;
+      }
+      if (cands.length === 1) { empresa = cands[0]; tipoMatch = 'cnpj_base_uf'; forte = false; }
     }
   }
   if (!empresa) {

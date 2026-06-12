@@ -134,8 +134,12 @@ const TAMANHO_MINIMO_PDF = 100;
 function validarPdfBuffer(buffer) {
   if (buffer.length < TAMANHO_MINIMO_PDF) return `arquivo muito pequeno (${buffer.length} bytes)`;
   if (buffer.toString('latin1', 0, 5) !== '%PDF-') return 'não começa com %PDF-';
-  const cauda = buffer.toString('latin1', Math.max(0, buffer.length - 1024));
-  if (!cauda.includes('%%EOF')) return 'sem %%EOF no fim (cópia incompleta?)';
+  // %%EOF pode NÃO estar nos últimos 1024 bytes: certidões assinadas (ex.: SP
+  // Administrativa, ~1MB) têm a assinatura digital DEPOIS do %%EOF. Procurar só
+  // na cauda dava falso "cópia incompleta" e pulava o arquivo. Varre o buffer
+  // inteiro (Buffer.includes é nativo/rápido) — um PDF truncado em cópia não tem
+  // %%EOF em lugar nenhum, então a proteção contra cópia incompleta continua.
+  if (!buffer.includes('%%EOF')) return 'sem %%EOF (cópia incompleta/PDF truncado?)';
   return null;
 }
 
