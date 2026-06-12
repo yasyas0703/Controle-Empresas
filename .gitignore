@@ -51,3 +51,5 @@ scripts/.watcher.log
 
 # TypeScript build cache (regenerado a cada build)
 tsconfig.tsbuildinfo
+
+cadastro/

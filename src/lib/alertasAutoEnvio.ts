@@ -30,6 +30,9 @@ export const LABEL_TIPO_PROBLEMA: Record<string, string> = {
   gmail_send_failed: 'Falha ao enviar pelo Gmail',
   storage_upload_failed: 'Falha ao subir o arquivo',
   erro: 'Erro inesperado no processamento',
+  // Detectados pelo WATCHER (local, antes de chegar na API) e reportados via heartbeat:
+  pdf_invalido_local: 'PDF inválido/cortado (não enviado)',
+  arquivo_preso_entrada: 'Arquivo parado na pasta de entrada',
 };
 
 /**
@@ -43,6 +46,8 @@ const TIPOS_BLOQUEIO = new Set([
   'storage_upload_failed',
   'validacao_falhou',
   'erro',
+  'pdf_invalido_local',
+  'arquivo_preso_entrada',
 ]);
 
 export function rotuloTipoProblema(tipo: string): string {

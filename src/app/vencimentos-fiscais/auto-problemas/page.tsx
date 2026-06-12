@@ -138,6 +138,16 @@ const TIPO_PROBLEMA_LABEL: Record<string, { label: string; comoResolver: string 
     comoResolver: 'Veja os detalhes técnicos abaixo. Se persistir, acione o suporte.',
   },
 
+  // ── Detectados pelo WATCHER (local, antes de chegar na API) ──
+  pdf_invalido_local: {
+    label: 'PDF inválido/cortado (não enviado)',
+    comoResolver: 'O arquivo está truncado ou corrompido (cópia incompleta?) — o watcher NÃO enviou e moveu pra _PENDENTES. Gere/baixe o PDF de novo e jogue na pasta de entrada.',
+  },
+  arquivo_preso_entrada: {
+    label: 'Arquivo parado na pasta de entrada',
+    comoResolver: 'O watcher não conseguiu processar (arquivo travado pra leitura ou falha de rede persistente). Veja o motivo nos detalhes — o arquivo continua em "1-GUIAS A ENVIAR".',
+  },
+
   // ── Compatibilidade com linhas antigas (pipeline por nome de arquivo) ──
   empresa_nao_encontrada: {
     label: 'Empresa não cadastrada',

@@ -427,7 +427,7 @@ function marcarInvalidoDefinitivo(caminho, motivo) {
   salvarStateDebounced();
   log.err(`${basename(caminho)}: ${motivo} — NÃO enviado (inválido após ${RETENTATIVA_ESPERAS.length} retentativas). Movendo pra _PENDENTES.`);
   moverParaPendentes(caminho);
-  if (!jaAlertado) alertarArquivoPreso(caminho, motivo);
+  if (!jaAlertado) alertarArquivoPreso(caminho, motivo, 'pdf_invalido_local');
 }
 
 // Fila de alertas de "arquivo preso" a entregar pro servidor. A entrega pega
@@ -435,9 +435,14 @@ function marcarInvalidoDefinitivo(caminho, motivo) {
 // notificação no sino via criarNotificacaoSistema — mesmo mecanismo das
 // pendências do auto-envio. Se a entrega falhar, fica na fila pro próximo
 // heartbeat; o state.alertadoPreso só é marcado APÓS entrega confirmada.
-const alertasPresos = []; // { caminho, nomeArquivo, motivo, minutosParado }
+const alertasPresos = []; // { caminho, nomeArquivo, motivo, minutosParado, tipo }
 
-function alertarArquivoPreso(caminho, motivo) {
+// tipo: 'pdf_invalido_local' (buffer inválido, nunca POSTado) ou
+//       'arquivo_preso_entrada' (parado >10min sem desfecho de envio).
+// O servidor usa isso pra registrar em guias_auto_problemas — assim o caso
+// aparece TAMBÉM no painel Pendências Auto, no banner e no dashboard, não só
+// no sino.
+function alertarArquivoPreso(caminho, motivo, tipo = 'arquivo_preso_entrada') {
   if (alertasPresos.some((a) => a.caminho === caminho)) return;
   const visto = primeiroVisto.get(caminho);
   alertasPresos.push({
@@ -445,8 +450,9 @@ function alertarArquivoPreso(caminho, motivo) {
     nomeArquivo: basename(caminho),
     motivo: String(motivo || 'motivo desconhecido').slice(0, 200),
     minutosParado: visto ? Math.max(1, Math.round((Date.now() - visto) / 60_000)) : null,
+    tipo,
   });
-  log.warn(`Alerta de arquivo preso enfileirado pro sino: ${basename(caminho)} (${motivo})`);
+  log.warn(`Alerta de arquivo preso enfileirado pro sino/painel: ${basename(caminho)} (${motivo})`);
   baterPonto(); // entrega imediata, best-effort
 }
 
@@ -799,7 +805,10 @@ async function baterPonto() {
         modo: ONCE ? 'once' : 'watch',
         pendentes: fila.length,
         arquivosPresos: alertasSnapshot.length
-          ? alertasSnapshot.map((a) => ({ nomeArquivo: a.nomeArquivo, motivo: a.motivo, minutosParado: a.minutosParado }))
+          ? alertasSnapshot.map((a) => ({
+            nomeArquivo: a.nomeArquivo, motivo: a.motivo, minutosParado: a.minutosParado,
+            tipo: a.tipo, caminho: a.caminho,
+          }))
           : undefined,
       }),
       signal: ac.signal,

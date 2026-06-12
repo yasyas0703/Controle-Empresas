@@ -66,6 +66,7 @@ export async function POST(req: Request) {
     : [];
   if (presosRaw.length > 0) {
     try {
+      const TIPOS_WATCHER = new Set(['pdf_invalido_local', 'arquivo_preso_entrada']);
       const presos = presosRaw.slice(0, 20).map((p) => {
         const o = (p && typeof p === 'object' ? p : {}) as Record<string, unknown>;
         return {
@@ -74,8 +75,38 @@ export async function POST(req: Request) {
           min: typeof o.minutosParado === 'number' && Number.isFinite(o.minutosParado)
             ? Math.round(o.minutosParado)
             : null,
+          tipo: typeof o.tipo === 'string' && TIPOS_WATCHER.has(o.tipo) ? o.tipo : 'arquivo_preso_entrada',
+          caminho: typeof o.caminho === 'string' ? o.caminho.slice(0, 500) : null,
         };
       });
+
+      // Registra cada um em guias_auto_problemas — é daí que o painel
+      // Pendências Auto, o banner do topo e o card do dashboard contam/listam.
+      // hash 'watcher-local' (o watcher pode nem ter conseguido ler o arquivo):
+      // com o UNIQUE(caminho, hash), vira no máximo 1 problema aberto por path;
+      // o upsert reabre (resolvido_em=null) se o mesmo arquivo travar de novo.
+      for (const p of presos) {
+        const { error: upErr } = await admin.from('guias_auto_problemas').upsert(
+          {
+            caminho_servidor: p.caminho ?? `watcher-local:${p.nome}`,
+            nome_arquivo: p.nome,
+            hash_arquivo: 'watcher-local',
+            empresa_id: null,
+            empresa_nome_pasta: null,
+            tipo_problema: p.tipo,
+            detalhes: { motivo: p.motivo, minutosParado: p.min, origem: 'watcher-local' },
+            competencia_parseada: null,
+            obrigacao_parseada: null,
+            resolvido_em: null,
+            resolvido_por_id: null,
+            resolvido_por_nome: null,
+            resolucao: null,
+          },
+          { onConflict: 'caminho_servidor,hash_arquivo' },
+        );
+        if (upErr) console.error('[heartbeat] falha ao registrar problema local:', upErr.message);
+      }
+
       const destinatarios = (await resolverDestinatariosFiscais(admin, null)).map((u) => u.id);
       const linhas = presos.map((p) => `"${p.nome}" — ${p.motivo}${p.min != null ? ` (parado há ~${p.min} min)` : ''}`);
       await criarNotificacaoSistema(admin, {
