@@ -112,9 +112,42 @@ export default function ModalHistoricoVencimento({
   };
 
   const salvar = async () => {
+    let historicoFinal = normalizarHistoricoVencimento(historico);
+
+    if (item?.tipo === 'RET') {
+      const hoje = new Date().toISOString().slice(0, 10);
+      const novosRegistros: HistoricoVencimentoItem[] = [];
+
+      if (novoVencimento !== item.vencimento) {
+        const anterior = item.vencimento ? formatBR(item.vencimento) : 'sem vencimento';
+        const proximo = novoVencimento ? formatBR(novoVencimento) : 'sem vencimento';
+        novosRegistros.push(criarHistoricoVencimentoItem({
+          titulo: novoVencimento ? `Vencimento atualizado para ${proximo}` : 'Vencimento removido',
+          descricao: `Antes: ${anterior}`,
+          dataEvento: hoje,
+          autorId: currentUser?.id ?? null,
+          autorNome: currentUser?.nome,
+        }));
+      }
+
+      if (novaRenovacao !== (item.ultimaRenovacao || '') && novaRenovacao) {
+        novosRegistros.push(criarHistoricoVencimentoItem({
+          titulo: 'Renovação registrada',
+          descricao: `Última renovação em ${formatBR(novaRenovacao)}`,
+          dataEvento: hoje,
+          autorId: currentUser?.id ?? null,
+          autorNome: currentUser?.nome,
+        }));
+      }
+
+      if (novosRegistros.length > 0) {
+        historicoFinal = normalizarHistoricoVencimento([...novosRegistros, ...historicoFinal]);
+      }
+    }
+
     await onSave({
       tagVencimento: limparTagVencimento(tagVencimento),
-      historicoVencimento: normalizarHistoricoVencimento(historico),
+      historicoVencimento: historicoFinal,
       // RET: manda o vencimento/renovação da seção "Atualizar vencimento".
       // O registro na linha do tempo é automático (atualizarEmpresa).
       ...(item?.tipo === 'RET' ? { vencimento: novoVencimento, ultimaRenovacao: novaRenovacao } : {}),

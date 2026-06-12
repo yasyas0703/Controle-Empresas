@@ -4,6 +4,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import type {
   DocumentoEmpresa,
   Empresa,
+  HistoricoVencimentoItem,
   LogEntry,
   Notificacao,
   RetItem,
@@ -45,6 +46,20 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 function hasOwnField<T extends object>(value: T, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function historicoContemEvento(historico: HistoricoVencimentoItem[], titulo: string, descricao?: string): boolean {
+  return historico.some((item) =>
+    item.titulo === titulo &&
+    (descricao === undefined || item.descricao === descricao)
+  );
+}
+
+function historicoContemRenovacao(historico: HistoricoVencimentoItem[], dataFormatada: string): boolean {
+  return historico.some((item) =>
+    item.titulo.startsWith('Renova') &&
+    item.descricao?.includes(dataFormatada)
+  );
 }
 
 type AutorHistorico = {
@@ -100,7 +115,8 @@ function enriquecerRetsComHistorico(retsAtuais: RetItem[], proximosRets: RetItem
     if (retAtual && ret.vencimento !== retAtual.vencimento) {
       const anterior = retAtual.vencimento ? formatBR(retAtual.vencimento) : 'sem vencimento';
       const proximo = ret.vencimento ? formatBR(ret.vencimento) : 'sem vencimento';
-      historico = normalizarHistoricoVencimento([
+      if (!historicoContemEvento(historico, ret.vencimento ? `Vencimento atualizado para ${proximo}` : 'Vencimento removido', `Antes: ${anterior}`)) {
+        historico = normalizarHistoricoVencimento([
         criarHistoricoVencimentoItem({
           titulo: ret.vencimento ? `Vencimento atualizado para ${proximo}` : 'Vencimento removido',
           descricao: `Antes: ${anterior}`,
@@ -110,10 +126,13 @@ function enriquecerRetsComHistorico(retsAtuais: RetItem[], proximosRets: RetItem
         }),
         ...historico,
       ]);
+      }
     }
 
     if (retAtual && ret.ultimaRenovacao !== retAtual.ultimaRenovacao && ret.ultimaRenovacao) {
-      historico = normalizarHistoricoVencimento([
+      const dataRenovacaoFormatada = formatBR(ret.ultimaRenovacao);
+      if (!historicoContemRenovacao(historico, dataRenovacaoFormatada)) {
+        historico = normalizarHistoricoVencimento([
         criarHistoricoVencimentoItem({
           titulo: 'Renovação registrada',
           descricao: `Última renovação em ${formatBR(ret.ultimaRenovacao)}`,
@@ -123,6 +142,8 @@ function enriquecerRetsComHistorico(retsAtuais: RetItem[], proximosRets: RetItem
         }),
         ...historico,
       ]);
+    }
+
     }
 
     // Status ativo/inativo
