@@ -11,6 +11,7 @@
 import { NextResponse } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { criarNotificacaoSistema, resolverDestinatariosFiscais } from '@/lib/alertasAutoEnvio';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -52,6 +53,46 @@ export async function POST(req: Request) {
   if (error) {
     console.error('[heartbeat] falha ao gravar:', error.message);
     return NextResponse.json({ ok: false, motivo: 'Falha ao gravar heartbeat' }, { status: 500 });
+  }
+
+  // Alertas de "arquivo preso na entrada" que o watcher carrega no heartbeat:
+  // arquivos que ele NÃO conseguiu enviar (PDF inválido/truncado, lock de
+  // leitura persistente, erro de rede contínuo). Cria a notificação no sino —
+  // mesmo mecanismo das pendências do auto-envio. O watcher deduplica por
+  // arquivo (só re-envia um alerta se a entrega falhar), então aqui é só
+  // sanitizar e relatar. Best-effort: falha aqui não derruba o heartbeat.
+  const presosRaw = meta && Array.isArray((meta as { arquivosPresos?: unknown }).arquivosPresos)
+    ? ((meta as { arquivosPresos: unknown[] }).arquivosPresos)
+    : [];
+  if (presosRaw.length > 0) {
+    try {
+      const presos = presosRaw.slice(0, 20).map((p) => {
+        const o = (p && typeof p === 'object' ? p : {}) as Record<string, unknown>;
+        return {
+          nome: typeof o.nomeArquivo === 'string' ? o.nomeArquivo.slice(0, 180) : 'arquivo',
+          motivo: typeof o.motivo === 'string' ? o.motivo.slice(0, 200) : 'motivo desconhecido',
+          min: typeof o.minutosParado === 'number' && Number.isFinite(o.minutosParado)
+            ? Math.round(o.minutosParado)
+            : null,
+        };
+      });
+      const destinatarios = (await resolverDestinatariosFiscais(admin, null)).map((u) => u.id);
+      const linhas = presos.map((p) => `"${p.nome}" — ${p.motivo}${p.min != null ? ` (parado há ~${p.min} min)` : ''}`);
+      await criarNotificacaoSistema(admin, {
+        titulo: presos.length === 1
+          ? 'Guia parada na pasta de entrada (não enviada)'
+          : `${presos.length} guias paradas na pasta de entrada (não enviadas)`,
+        mensagem:
+          `O watcher não conseguiu enviar: ${linhas.join('; ')}. ` +
+          'O arquivo continua em "1-GUIAS A ENVIAR" (ou foi pra _PENDENTES se o PDF é inválido). ' +
+          'Confira o arquivo e jogue uma versão válida na pasta pra reprocessar.',
+        tipo: 'erro',
+        empresaId: null,
+        destinatarios,
+      });
+    } catch (e) {
+      console.error('[heartbeat] falha ao alertar arquivos presos:', e);
+    }
   }
 
   return NextResponse.json({ ok: true, recebido_em: agora });

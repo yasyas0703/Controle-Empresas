@@ -18,6 +18,11 @@
 // O que faz:
 //   - chokidar olha a pasta de entrada com awaitWriteFinish (espera o arquivo
 //     terminar de copiar). Qualquer PDF na raiz da pasta vale.
+//   - Valida o buffer ANTES de enviar (tamanho mínimo, header %PDF-, trailer
+//     %%EOF) — PDF inválido/truncado NUNCA é POSTado; re-tenta com backoff
+//     (cópia em andamento) e, se persistir, _PENDENTES + alerta no sino.
+//   - Varredura da entrada a cada 45s re-enfileira o que ficou pra trás
+//     (erro de rede, leitura travada) e alerta arquivo parado >10min sem envio.
 //   - Pra cada PDF novo: calcula SHA-256, faz POST multipart pra API
 //   - APÓS a resposta, MOVE o arquivo:
 //       enviado/interno_marcado_feito → T:/Fiscal/EMPRESA/<EMPRESA>/<REGIME>/<ANO>/
@@ -363,29 +368,150 @@ async function moverConformeResultado(caminho, resultado) {
   return moverParaPendentes(caminho);
 }
 
-// Varredura periódica de "arquivamentos presos": arquivos que JÁ foram enviados
-// (checklist marcado, email enviado) mas ficaram na entrada porque o PDF estava
-// aberto na hora (EBUSY). O chokidar não re-emite evento pra um arquivo que
-// continua parado, então precisamos olhar ativamente. Re-enfileira só esses —
-// processarArquivo vê o state terminal e re-tenta SÓ a movimentação, nunca
-// reenvia.
-function reprocessarArquivamentosPresos() {
+// ═══════════════════════════════════════════════════════════════════════════
+// Validação local do PDF + retentativas + alerta de arquivo preso
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Status com desfecho TERMINAL — nunca re-POSTa (idempotência local).
+// Usado pelo processarArquivo e pela varredura de entrada.
+const SKIP_STATUSES = new Set(['enviado', 'interno_marcado_feito', 'ja_processado', 'duplicado_periodo', 'aguardando_lote']);
+
+// Valida o buffer JÁ LIDO (sem leitura extra de disco). Pega arquivo vazio,
+// não-PDF e PDF truncado por cópia incompleta (sem %%EOF no fim — writers de
+// PDF escrevem o trailer por último, então a cauda é o melhor detector barato
+// de truncagem). Retorna null se ok, ou uma string com o motivo.
+const TAMANHO_MINIMO_PDF = 100;
+function validarPdfBuffer(buffer) {
+  if (buffer.length < TAMANHO_MINIMO_PDF) return `arquivo muito pequeno (${buffer.length} bytes)`;
+  if (buffer.toString('latin1', 0, 5) !== '%PDF-') return 'não começa com %PDF- (não é PDF?)';
+  const cauda = buffer.toString('latin1', Math.max(0, buffer.length - 1024));
+  if (!cauda.includes('%%EOF')) return 'sem %%EOF no fim (cópia incompleta/PDF truncado?)';
+  return null;
+}
+
+// Retentativas por arquivo quando a LEITURA falha (lock/antivírus) ou o buffer
+// é inválido (provável cópia em andamento). Mesma filosofia do renomearComRetry
+// do arquivamento, mas assíncrona via fila: agenda re-enfileirar com backoff e
+// só desiste (com alerta) depois de esgotar as esperas.
+const RETENTATIVA_ESPERAS = [2000, 5000, 15000, 60000];
+const retentativas = new Map();      // caminho → nº de tentativas já feitas
+const ultimoMotivoLocal = new Map(); // caminho → último motivo de falha local (pro alerta)
+
+// Quando cada arquivo foi VISTO pela primeira vez nesta execução (pra idade do
+// alerta de preso e pra varredura não atropelar cópia em andamento).
+const primeiroVisto = new Map();
+
+function agendarRetentativa(caminho, motivo) {
+  ultimoMotivoLocal.set(caminho, motivo);
+  const n = (retentativas.get(caminho) ?? 0) + 1;
+  if (n > RETENTATIVA_ESPERAS.length) {
+    retentativas.delete(caminho);
+    marcarInvalidoDefinitivo(caminho, motivo);
+    return;
+  }
+  retentativas.set(caminho, n);
+  const espera = RETENTATIVA_ESPERAS[n - 1];
+  log.warn(`${basename(caminho)}: ${motivo} — retentativa ${n}/${RETENTATIVA_ESPERAS.length} em ${espera / 1000}s`);
+  setTimeout(() => enfileirar(caminho), espera);
+}
+
+// Esgotou as retentativas locais: NÃO envia (nunca POSTa PDF inválido), tira da
+// entrada (vai pra _PENDENTES, como toda pendência) e dispara alerta no sino —
+// uma vez só por arquivo (dedup via state.alertadoPreso, sobrevive a restart).
+function marcarInvalidoDefinitivo(caminho, motivo) {
+  const anterior = state.processados[caminho];
+  const jaAlertado = !!(anterior && anterior.status === 'invalido_local' && anterior.alertadoPreso);
+  state.processados[caminho] = {
+    hash: null, status: 'invalido_local', motivo, ultimaTentativa: ts(), alertadoPreso: jaAlertado,
+  };
+  salvarStateDebounced();
+  log.err(`${basename(caminho)}: ${motivo} — NÃO enviado (inválido após ${RETENTATIVA_ESPERAS.length} retentativas). Movendo pra _PENDENTES.`);
+  moverParaPendentes(caminho);
+  if (!jaAlertado) alertarArquivoPreso(caminho, motivo);
+}
+
+// Fila de alertas de "arquivo preso" a entregar pro servidor. A entrega pega
+// carona no heartbeat (baterPonto inclui no payload); o endpoint cria a
+// notificação no sino via criarNotificacaoSistema — mesmo mecanismo das
+// pendências do auto-envio. Se a entrega falhar, fica na fila pro próximo
+// heartbeat; o state.alertadoPreso só é marcado APÓS entrega confirmada.
+const alertasPresos = []; // { caminho, nomeArquivo, motivo, minutosParado }
+
+function alertarArquivoPreso(caminho, motivo) {
+  if (alertasPresos.some((a) => a.caminho === caminho)) return;
+  const visto = primeiroVisto.get(caminho);
+  alertasPresos.push({
+    caminho,
+    nomeArquivo: basename(caminho),
+    motivo: String(motivo || 'motivo desconhecido').slice(0, 200),
+    minutosParado: visto ? Math.max(1, Math.round((Date.now() - visto) / 60_000)) : null,
+  });
+  log.warn(`Alerta de arquivo preso enfileirado pro sino: ${basename(caminho)} (${motivo})`);
+  baterPonto(); // entrega imediata, best-effort
+}
+
+// Varredura periódica da pasta de ENTRADA. Cobre os buracos que o chokidar não
+// cobre (polling não re-emite 'add' pra arquivo parado):
+//   a) enviados com arquivamento preso (PDF aberto → EBUSY) — comportamento antigo;
+//   b) erro_rede / leitura falha / sem estado → re-enfileira o ciclo completo
+//      (antes só reprocessava no restart do processo);
+//   c) invalido_local → só insiste em tirar da entrada (não revalida nem realerta);
+//   d) qualquer arquivo NÃO enviado parado além do limite → alerta no sino.
+const LIMITE_ALERTA_PRESO_MS = 10 * 60_000;   // 10 min parado sem envio → alerta
+const IDADE_MINIMA_VARREDURA_MS = 2 * 60_000; // recém-chegado é do chokidar/awaitWriteFinish
+const REENFILEIRA_INTERVALO_MIN_MS = 3 * 60_000; // não martela retry de rede a cada varredura
+
+function varrerEntrada() {
   let entradas;
   try {
     entradas = readdirSync(PASTA_ENTRADA, { withFileTypes: true });
   } catch {
     return;
   }
+  const agora = Date.now();
+  const presentes = new Set();
   for (const d of entradas) {
     if (!d.isFile()) continue;
     const caminho = join(PASTA_ENTRADA, d.name);
     if (!pathInteressa(caminho)) continue;
+    presentes.add(caminho);
+    if (!primeiroVisto.has(caminho)) primeiroVisto.set(caminho, agora);
+    const visto = primeiroVisto.get(caminho);
     const st = state.processados[caminho];
-    if (st && st.arquivado === false && st.destino
-        && (st.status === 'enviado' || st.status === 'interno_marcado_feito')) {
-      enfileirar(caminho);
+
+    // Recém-visto: pode ser cópia em andamento — deixa o awaitWriteFinish cuidar.
+    if (agora - visto < IDADE_MINIMA_VARREDURA_MS) continue;
+    if (st && st.status === 'dry_run') continue;
+
+    if (st && SKIP_STATUSES.has(st.status)) {
+      // Desfecho terminal: só re-tenta a MOVIMENTAÇÃO presa (nunca reenvia).
+      if (st.arquivado === false && st.destino) enfileirar(caminho);
+      continue;
+    }
+
+    if (st && st.status === 'invalido_local') {
+      // Inválido definitivo que não saiu da entrada (estava aberto): insiste só no move.
+      moverParaPendentes(caminho);
+    } else {
+      // erro_rede, pendente_* que não saiu, leitura falha, sem estado: ciclo completo.
+      // Espaça as re-tentativas pra não martelar a API/disco a cada varredura.
+      const ultimaTentativaMs = st?.ultimaTentativa ? Date.parse(st.ultimaTentativa) : 0;
+      if (!st || !Number.isFinite(ultimaTentativaMs) || agora - ultimaTentativaMs > REENFILEIRA_INTERVALO_MIN_MS) {
+        enfileirar(caminho);
+      }
+    }
+
+    // Não enviado e parado além do limite → alerta (uma vez por arquivo).
+    if (agora - visto > LIMITE_ALERTA_PRESO_MS && !(st && st.alertadoPreso)) {
+      const motivo = ultimoMotivoLocal.get(caminho)
+        || st?.motivo
+        || (st?.status ? `status ${st.status}` : 'nunca foi processado');
+      alertarArquivoPreso(caminho, motivo);
     }
   }
+  // Higiene: esquece quem já saiu da entrada.
+  for (const k of primeiroVisto.keys()) if (!presentes.has(k)) primeiroVisto.delete(k);
+  for (const k of ultimoMotivoLocal.keys()) if (!presentes.has(k)) ultimoMotivoLocal.delete(k);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -410,6 +536,8 @@ const MAX_FALHAS_REDE_SEGUIDAS = 5;
 let houveAtividade = false;
 
 function enfileirar(caminho) {
+  // Marca a primeira vez que vimos o arquivo (base da idade pro alerta de preso).
+  if (!primeiroVisto.has(caminho)) primeiroVisto.set(caminho, Date.now());
   if (fila.includes(caminho)) return;
   houveAtividade = true;
   fila.push(caminho);
@@ -462,14 +590,35 @@ async function processarArquivo(caminho) {
     return;
   }
 
-  // 1. Lê arquivo + hash
+  // 1. Lê o arquivo. Falha de leitura NÃO descarta mais o arquivo:
+  //    - ENOENT = sumiu da entrada (movido/apagado) → nada a fazer;
+  //    - lock/qualquer outro erro → re-tenta com backoff (antivírus segurando,
+  //      cópia em andamento). Antes só logava e o arquivo virava órfão.
   let buffer;
   try {
     buffer = readFileSync(caminho);
   } catch (err) {
-    log.warn(`Não consegui ler ${basename(caminho)}: ${err.code} (provavelmente moveram/apagaram)`, { caminho });
+    if (err.code === 'ENOENT') {
+      log.info(`${basename(caminho)} sumiu da entrada antes de eu ler (movido/apagado).`);
+      retentativas.delete(caminho);
+      return;
+    }
+    agendarRetentativa(caminho, `não consegui ler (${err.code || err.message})`);
     return;
   }
+
+  // 1b. Valida o buffer JÁ LIDO antes de hash/POST. Inválido = provavelmente
+  //     cópia ainda em andamento → trata como "não pronto" e re-tenta com
+  //     backoff. PDF inválido/truncado NUNCA é POSTado; depois de esgotar as
+  //     retentativas vira invalido_local + _PENDENTES + alerta no sino.
+  const invalido = validarPdfBuffer(buffer);
+  if (invalido) {
+    agendarRetentativa(caminho, invalido);
+    return;
+  }
+  retentativas.delete(caminho);
+  ultimoMotivoLocal.delete(caminho);
+
   const hash = createHash('sha256').update(buffer).digest('hex');
 
   // 2. Já processado localmente? (idempotência rápida)
@@ -477,8 +626,8 @@ async function processarArquivo(caminho) {
   // que foram pra PENDÊNCIA (não reconhecida, config inativa, etc.) DEVEM ser
   // reprocessáveis: se a usuária corrige a causa e joga o arquivo de novo na
   // entrada, tem que tentar de novo. (erro_rede também reprocessa — a requisição
-  // nunca chegou no servidor.)
-  const SKIP_STATUSES = new Set(['enviado', 'interno_marcado_feito', 'ja_processado', 'duplicado_periodo', 'aguardando_lote']);
+  // nunca chegou no servidor.) SKIP_STATUSES é módulo-level (a varredura de
+  // entrada usa o mesmo conjunto).
   const stEntry = state.processados[caminho];
   if (stEntry && stEntry.hash === hash && SKIP_STATUSES.has(stEntry.status)) {
     // Já teve desfecho terminal — NUNCA reenvia. Mas se foi enviado e o
@@ -627,25 +776,50 @@ async function enviarParaApi(caminho, buffer, hash) {
 // Heartbeat: avisa o servidor que o watcher está vivo (dead-man switch). Se
 // parar de bater, o cron alerta "watcher parado". Best-effort — nunca derruba
 // o processo. Em dry-run não toca no servidor.
+//
+// Também é o CANAL DE ENTREGA dos alertas de arquivo preso: os itens de
+// alertasPresos vão no payload e o endpoint cria a notificação no sino
+// (criarNotificacaoSistema — mesmo mecanismo das pendências do auto-envio).
+// Só marca alertadoPreso no state DEPOIS que o servidor confirmou (res.ok);
+// se falhar, os itens ficam na fila pro próximo heartbeat.
+let batendoPonto = false;
 async function baterPonto() {
   if (DRY_RUN) return;
+  if (batendoPonto) return; // evita entrega dupla (interval + chamada imediata)
+  batendoPonto = true;
   const ac = new AbortController();
   const tid = setTimeout(() => ac.abort('timeout'), 15_000);
+  const alertasSnapshot = alertasPresos.slice(0, 20);
   try {
-    await fetch(HEARTBEAT_URL, {
+    const res = await fetch(HEARTBEAT_URL, {
       method: 'POST',
       headers: { 'X-Machine-Token': TOKEN, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         host: process.env.COMPUTERNAME || null,
         modo: ONCE ? 'once' : 'watch',
         pendentes: fila.length,
+        arquivosPresos: alertasSnapshot.length
+          ? alertasSnapshot.map((a) => ({ nomeArquivo: a.nomeArquivo, motivo: a.motivo, minutosParado: a.minutosParado }))
+          : undefined,
       }),
       signal: ac.signal,
     });
+    if (res.ok && alertasSnapshot.length) {
+      for (const a of alertasSnapshot) {
+        const idx = alertasPresos.indexOf(a);
+        if (idx >= 0) alertasPresos.splice(idx, 1);
+        const st = state.processados[a.caminho];
+        if (st) st.alertadoPreso = true;
+        else state.processados[a.caminho] = { status: 'sem_estado', alertadoPreso: true, ultimaTentativa: ts() };
+      }
+      salvarStateDebounced();
+      log.info(`Alerta de ${alertasSnapshot.length} arquivo(s) preso(s) entregue ao sino.`);
+    }
   } catch {
-    // silencioso — heartbeat é best-effort
+    // silencioso — heartbeat é best-effort; alertas ficam na fila
   } finally {
     clearTimeout(tid);
+    batendoPonto = false;
   }
 }
 
@@ -696,8 +870,10 @@ function iniciar() {
   baterPonto();
   if (!ONCE) setInterval(baterPonto, 5 * 60_000);
 
-  // Varre arquivamentos presos (PDF aberto na hora do envio) a cada 45s.
-  if (!ONCE) setInterval(reprocessarArquivamentosPresos, 45_000);
+  // Varre a pasta de ENTRADA a cada 45s: arquivamentos presos, erro_rede /
+  // leitura falha (re-enfileira), inválidos que não saíram, e alerta de
+  // arquivo parado >10min sem envio. Ver varrerEntrada.
+  if (!ONCE) setInterval(varrerEntrada, 45_000);
 
   // Rede de segurança: re-tenta fechar lotes a cada 60s, MAS só quando houve
   // atividade recente (arquivo processado) ou um lote falhou e ficou aberto pra
@@ -740,6 +916,9 @@ function iniciar() {
     if (!pathInteressa(caminho)) return;
     log.info(`Mudou: ${basename(caminho)}`);
     delete state.processados[caminho];
+    // Conteúdo novo = ciclo novo: zera o contador de retentativas locais.
+    retentativas.delete(caminho);
+    ultimoMotivoLocal.delete(caminho);
     enfileirar(caminho);
   });
 
