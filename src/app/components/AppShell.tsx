@@ -204,7 +204,10 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: forgotEmail.trim() }),
       });
-      if (!res.ok) throw new Error('Erro ao enviar código.');
+      const data = await res.json().catch(() => null);
+      if (!res.ok || data?.success === false) {
+        throw new Error(data?.message || 'Erro ao enviar código.');
+      }
       setForgotSent(true);
     } catch (err: unknown) {
       mostrarAlerta('Erro', getErrorMessage(err, 'Não foi possível enviar o código de recuperação.'), 'erro');

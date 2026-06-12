@@ -140,17 +140,36 @@ export async function POST(request: NextRequest) {
     const codeHash = hashCode(code);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-    await admin.from('email_verification_codes').insert({
+    const { data: insertedCode, error: insertError } = await admin.from('email_verification_codes').insert({
       user_id: user.id,
       code_hash: codeHash,
       expires_at: expiresAt,
       used: false,
       attempts: 0,
-    });
+    }).select('id').single();
+
+    if (insertError) {
+      console.error('Erro ao gravar codigo de verificacao:', insertError);
+      return NextResponse.json(
+        { success: false, message: 'Nao foi possivel gerar o codigo. Tente novamente.' },
+        { status: 500 }
+      );
+    }
 
     // Send email
     const { html, text } = buildPasswordResetEmail(code);
-    await sendEmail(normalizedEmail, 'Redefinição de Senha - Código de Verificação', html, text);
+    try {
+      await sendEmail(normalizedEmail, 'Redefinição de Senha - Código de Verificação', html, text);
+    } catch (emailError) {
+      if (insertedCode?.id) {
+        await admin.from('email_verification_codes').delete().eq('id', insertedCode.id);
+      }
+      console.error('Erro ao enviar codigo de verificacao:', emailError);
+      return NextResponse.json(
+        { success: false, message: 'Nao foi possivel enviar o codigo agora. Verifique a configuracao de email.' },
+        { status: 500 }
+      );
+    }
 
     return genericResponse;
   } catch (error) {
