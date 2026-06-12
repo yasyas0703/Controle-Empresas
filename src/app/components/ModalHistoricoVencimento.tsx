@@ -67,6 +67,16 @@ const TAG_COLOR_MAP: Record<TagCor, { bg: string; text: string; border: string }
   slate: { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300' },
 };
 
+function getDescricaoHistoricoParts(descricao?: string) {
+  const texto = descricao?.trim();
+  if (!texto) return { dataAnterior: null, texto: null };
+
+  const matchDataAnterior = texto.match(/^(?:Antes|Data anterior):\s*(.+)$/i);
+  if (matchDataAnterior) return { dataAnterior: matchDataAnterior[1], texto: null };
+
+  return { dataAnterior: null, texto };
+}
+
 export default function ModalHistoricoVencimento({
   open,
   item,
@@ -123,7 +133,7 @@ export default function ModalHistoricoVencimento({
         const proximo = novoVencimento ? formatBR(novoVencimento) : 'sem vencimento';
         novosRegistros.push(criarHistoricoVencimentoItem({
           titulo: novoVencimento ? `Vencimento atualizado para ${proximo}` : 'Vencimento removido',
-          descricao: `Antes: ${anterior}`,
+          descricao: `Data anterior: ${anterior}`,
           dataEvento: hoje,
           autorId: currentUser?.id ?? null,
           autorNome: currentUser?.nome,
@@ -368,8 +378,11 @@ export default function ModalHistoricoVencimento({
               </div>
             ) : (
               <div className="space-y-2">
-                {historico.map((itemHistorico) => (
-                  <div
+                {historico.map((itemHistorico) => {
+                  const descricaoParts = getDescricaoHistoricoParts(itemHistorico.descricao);
+
+                  return (
+                    <div
                     key={itemHistorico.id}
                     className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-3)] p-3"
                   >
@@ -395,11 +408,18 @@ export default function ModalHistoricoVencimento({
                         </button>
                       )}
                     </div>
-                    {itemHistorico.descricao && (
-                      <div className="mt-2 text-sm text-[var(--text-2)] whitespace-pre-wrap">{itemHistorico.descricao}</div>
+                    {descricaoParts.dataAnterior && (
+                      <div className="mt-2 inline-flex flex-wrap items-center gap-1.5 rounded-sm border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1 text-sm text-[var(--text-2)]">
+                        <span className="font-semibold text-[var(--text-3)]">Data anterior:</span>
+                        <span className="ct-num font-semibold text-[var(--text-1)]">{descricaoParts.dataAnterior}</span>
+                      </div>
+                    )}
+                    {descricaoParts.texto && (
+                      <div className="mt-2 text-sm text-[var(--text-2)] whitespace-pre-wrap">{descricaoParts.texto}</div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
