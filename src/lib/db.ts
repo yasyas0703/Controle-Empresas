@@ -15,6 +15,11 @@ import type {
   ObrigacaoTipoData,
   ChecklistEnvioEvento,
   ChecklistFiscalItem,
+  CadastroCertidao,
+  CadastroResultado,
+  CadastroStatus,
+  ChecklistCadastroItem,
+  EmpresaEmailTipo,
   ContaBancaria,
   ControleContabilExtrato,
   ControleContabilStatus,
@@ -2330,6 +2335,469 @@ export async function getChecklistArquivoSignedUrl(arquivoUrl: string): Promise<
   return getDocumentoSignedUrl(arquivoUrl);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Controle Cadastro — checklist mensal de certidões (espelho do fiscal)
+// ═══════════════════════════════════════════════════════════════════════════
+
+type ChecklistCadastroRow = {
+  id: string;
+  empresa_id: string;
+  certidao: string;
+  mes: string;
+  resultado: string | null;
+  status: string | null;
+  arquivo_url: string | null;
+  arquivo_nome: string | null;
+  arquivo_hash: string | null;
+  relatorio_url: string | null;
+  relatorio_nome: string | null;
+  relatorio_texto: string | null;
+  observacao: string | null;
+  emissao_em: string | null;
+  uf: string | null;
+  autoridade: string | null;
+  fonte: string | null;
+  concluido: boolean;
+  concluido_por_id: string | null;
+  concluido_por_nome: string | null;
+  concluido_em: string | null;
+  arquivo_historico: unknown;
+  envios_historico: unknown;
+  criado_em: string;
+  atualizado_em: string;
+};
+
+export function toChecklistCadastroItem(row: ChecklistCadastroRow): ChecklistCadastroItem {
+  const resultado = row.resultado === 'Negativa' || row.resultado === 'Positiva' || row.resultado === 'PEN'
+    ? (row.resultado as CadastroResultado)
+    : null;
+  const status = row.status === 'tem' || row.status === 'falta' || row.status === 'relatorio'
+    ? (row.status as CadastroStatus)
+    : null;
+  return {
+    id: row.id,
+    empresaId: row.empresa_id,
+    certidao: row.certidao as CadastroCertidao,
+    mes: row.mes,
+    resultado,
+    status,
+    arquivoUrl: row.arquivo_url ?? undefined,
+    arquivoNome: row.arquivo_nome ?? undefined,
+    arquivoHash: row.arquivo_hash ?? undefined,
+    relatorioUrl: row.relatorio_url ?? undefined,
+    relatorioNome: row.relatorio_nome ?? undefined,
+    relatorioTexto: row.relatorio_texto ?? undefined,
+    observacao: row.observacao ?? undefined,
+    emissaoEm: row.emissao_em ?? undefined,
+    uf: row.uf ?? undefined,
+    autoridade: row.autoridade ?? undefined,
+    fonte: row.fonte === 'watcher' || row.fonte === 'manual' ? row.fonte : undefined,
+    concluido: !!row.concluido,
+    concluidoPorId: row.concluido_por_id,
+    concluidoPorNome: row.concluido_por_nome ?? undefined,
+    concluidoEm: row.concluido_em ? toIso(row.concluido_em) : undefined,
+    arquivoHistorico: normalizarHistoricoVencimento(
+      Array.isArray(row.arquivo_historico) ? (row.arquivo_historico as HistoricoVencimentoItem[]) : []
+    ),
+    enviosHistorico: normalizarEnviosHistorico(row.envios_historico),
+    criadoEm: toIso(row.criado_em),
+    atualizadoEm: toIso(row.atualizado_em),
+  };
+}
+
+export async function fetchChecklistCadastroByMes(mes: string): Promise<ChecklistCadastroItem[]> {
+  const PAGE = 1000;
+  const todas: ChecklistCadastroRow[] = [];
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('checklist_cadastro')
+      .select('*')
+      .eq('mes', mes)
+      .order('empresa_id', { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      // Tabela só existe após rodar supabase-migration-checklist-cadastro.sql —
+      // sem ela a página de controle abre vazia em vez de quebrar.
+      if (hasMissingTable(error)) return [];
+      throw error;
+    }
+    const lote = (data ?? []) as ChecklistCadastroRow[];
+    todas.push(...lote);
+    if (lote.length < PAGE) break;
+    offset += PAGE;
+    if (offset > 100_000) break;
+  }
+  return todas.map((row) => toChecklistCadastroItem(row));
+}
+
+async function lerCadastroAtual(
+  empresaId: UUID,
+  certidao: CadastroCertidao,
+  mes: string,
+): Promise<ChecklistCadastroRow | null> {
+  const { data, error } = await supabase
+    .from('checklist_cadastro')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .eq('certidao', certidao)
+    .eq('mes', mes)
+    .maybeSingle();
+  if (error) throw error;
+  return (data ?? null) as ChecklistCadastroRow | null;
+}
+
+/**
+ * Upsert parcial de uma célula do checklist de certidões. Só grava os campos
+ * presentes no payload (chave + alterados) — não apaga arquivo/relatório/histórico
+ * que não foram tocados. onConflict (empresa_id, certidao, mes).
+ */
+export async function upsertChecklistCadastro(payload: {
+  empresaId: UUID;
+  certidao: CadastroCertidao;
+  mes: string;
+  resultado?: CadastroResultado | null;
+  status?: CadastroStatus | null;
+  observacao?: string | null;
+  relatorioTexto?: string | null;
+  uf?: string | null;
+  autoridade?: string | null;
+  emissaoEm?: string | null;
+  fonte?: 'watcher' | 'manual';
+}): Promise<ChecklistCadastroItem> {
+  const now = new Date().toISOString();
+  const row: Record<string, unknown> = {
+    empresa_id: payload.empresaId,
+    certidao: payload.certidao,
+    mes: payload.mes,
+    atualizado_em: now,
+  };
+  if (payload.resultado !== undefined) row.resultado = payload.resultado;
+  if (payload.status !== undefined) row.status = payload.status;
+  if (payload.observacao !== undefined) row.observacao = payload.observacao;
+  if (payload.relatorioTexto !== undefined) {
+    row.relatorio_texto = payload.relatorioTexto && payload.relatorioTexto.trim() ? payload.relatorioTexto.trim() : null;
+  }
+  if (payload.uf !== undefined) row.uf = payload.uf;
+  if (payload.autoridade !== undefined) row.autoridade = payload.autoridade;
+  if (payload.emissaoEm !== undefined) row.emissao_em = payload.emissaoEm;
+  if (payload.fonte !== undefined) row.fonte = payload.fonte;
+  const { data, error } = await supabase
+    .from('checklist_cadastro')
+    .upsert(row, { onConflict: 'empresa_id,certidao,mes' })
+    .select()
+    .single();
+  if (error) throw error;
+  return toChecklistCadastroItem(data as ChecklistCadastroRow);
+}
+
+const CADASTRO_ARQUIVO_MAX_SIZE = 10 * 1024 * 1024;
+const CADASTRO_ARQUIVO_EXT = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg', 'txt'];
+
+/**
+ * Anexa um arquivo numa célula de certidão. `slot='arquivo'` = a certidão (PDF)
+ * → cor verde; `slot='relatorio'` = o relatório → cor azul. Mantém o
+ * arquivo_historico compartilhado e apaga o arquivo antigo do mesmo slot.
+ */
+export async function uploadCadastroAnexo(
+  empresaId: UUID,
+  certidao: CadastroCertidao,
+  mes: string,
+  file: File,
+  slot: 'arquivo' | 'relatorio',
+  autor: AutorAcao,
+): Promise<{ url: string; nome: string; item: ChecklistCadastroItem }> {
+  const validacao = await validarUploadCompleto(file, {
+    maxSize: CADASTRO_ARQUIVO_MAX_SIZE,
+    allowExt: CADASTRO_ARQUIVO_EXT,
+  });
+  if (!validacao.ok) throw new Error(validacao.motivo);
+  const ext = (file.name.split('.').pop() ?? '').toLowerCase();
+  const certSlug = certidao.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const path = `empresas/${empresaId}/cadastro/${mes}/${certSlug}-${slot}-${newUUID()}.${ext}`;
+  const { error: upErr } = await supabase.storage.from('documentos').upload(path, file, { upsert: false });
+  if (upErr) {
+    if (upErr.message?.includes('Bucket not found')) throw new Error('Bucket "documentos" não existe no Supabase Storage.');
+    throw upErr;
+  }
+
+  const atual = await lerCadastroAtual(empresaId, certidao, mes);
+  const historicoAnterior = normalizarHistoricoVencimento(
+    Array.isArray(atual?.arquivo_historico) ? (atual!.arquivo_historico as HistoricoVencimentoItem[]) : []
+  );
+  const slotLabel = slot === 'arquivo' ? 'Certidão' : 'Relatório';
+  const arquivoAntigo = slot === 'arquivo' ? (atual?.arquivo_url ?? null) : (atual?.relatorio_url ?? null);
+  const tipoEvento: 'anexado' | 'substituido' = arquivoAntigo ? 'substituido' : 'anexado';
+  const historicoNovo = [novoEventoArquivo(tipoEvento, `${slotLabel}: ${file.name}`, autor), ...historicoAnterior];
+
+  const now = new Date().toISOString();
+  const row: Record<string, unknown> = {
+    empresa_id: empresaId,
+    certidao,
+    mes,
+    arquivo_historico: historicoNovo,
+    fonte: atual?.fonte ?? 'manual',
+    atualizado_em: now,
+  };
+  if (slot === 'arquivo') {
+    row.arquivo_url = path;
+    row.arquivo_nome = file.name;
+  } else {
+    row.relatorio_url = path;
+    row.relatorio_nome = file.name;
+  }
+
+  const { data, error } = await supabase
+    .from('checklist_cadastro')
+    .upsert(row, { onConflict: 'empresa_id,certidao,mes' })
+    .select()
+    .single();
+  if (error) {
+    await supabase.storage.from('documentos').remove([path]).catch(() => undefined);
+    throw error;
+  }
+  if (arquivoAntigo) {
+    await supabase.storage.from('documentos').remove([arquivoAntigo]).catch(() => undefined);
+  }
+  return { url: path, nome: file.name, item: toChecklistCadastroItem(data as ChecklistCadastroRow) };
+}
+
+export async function removeCadastroAnexo(
+  empresaId: UUID,
+  certidao: CadastroCertidao,
+  mes: string,
+  slot: 'arquivo' | 'relatorio',
+  autor: AutorAcao,
+): Promise<ChecklistCadastroItem> {
+  const atual = await lerCadastroAtual(empresaId, certidao, mes);
+  const historicoAnterior = normalizarHistoricoVencimento(
+    Array.isArray(atual?.arquivo_historico) ? (atual!.arquivo_historico as HistoricoVencimentoItem[]) : []
+  );
+  const url = slot === 'arquivo' ? (atual?.arquivo_url ?? null) : (atual?.relatorio_url ?? null);
+  const nome = slot === 'arquivo' ? (atual?.arquivo_nome ?? undefined) : (atual?.relatorio_nome ?? undefined);
+  if (url) await supabase.storage.from('documentos').remove([url]).catch(() => undefined);
+  const slotLabel = slot === 'arquivo' ? 'Certidão' : 'Relatório';
+  const historicoNovo = [novoEventoArquivo('removido', nome ? `${slotLabel}: ${nome}` : slotLabel, autor), ...historicoAnterior];
+
+  const now = new Date().toISOString();
+  const row: Record<string, unknown> = {
+    empresa_id: empresaId,
+    certidao,
+    mes,
+    arquivo_historico: historicoNovo,
+    atualizado_em: now,
+  };
+  if (slot === 'arquivo') {
+    row.arquivo_url = null;
+    row.arquivo_nome = null;
+    row.arquivo_hash = null;
+  } else {
+    row.relatorio_url = null;
+    row.relatorio_nome = null;
+  }
+  const { data, error } = await supabase
+    .from('checklist_cadastro')
+    .upsert(row, { onConflict: 'empresa_id,certidao,mes' })
+    .select()
+    .single();
+  if (error) throw error;
+  return toChecklistCadastroItem(data as ChecklistCadastroRow);
+}
+
+export async function getCadastroArquivoSignedUrl(arquivoUrl: string): Promise<string> {
+  return getDocumentoSignedUrl(arquivoUrl);
+}
+
+/** Snake_case do evento de envio (igual ao fiscal — pra alinhar o JSONB). */
+function persistirEnvioEventoCadastro(e: ChecklistEnvioEvento): Record<string, unknown> {
+  return {
+    id: e.id,
+    enviado_em: e.enviadoEm,
+    enviado_por_id: e.enviadoPorId ?? null,
+    enviado_por_nome: e.enviadoPorNome ?? null,
+    remetente_email: e.remetenteEmail ?? null,
+    destinatarios: e.destinatarios,
+    arquivo_nome: e.arquivoNome ?? null,
+    arquivo_storage_path: e.arquivoStoragePath ?? null,
+    motivo_reenvio: e.motivoReenvio ?? null,
+    sucesso: e.sucesso,
+    erro: e.erro ?? null,
+    gmail_message_id: e.gmailMessageId ?? null,
+    gmail_thread_id: e.gmailThreadId ?? null,
+    entrega_status: e.entregaStatus ?? (e.sucesso ? 'pendente' : null),
+    entrega_verificada_em: e.entregaVerificadaEm ?? null,
+    bounce_motivo: e.bounceMotivo ?? null,
+    bounce_destinatarios: e.bounceDestinatarios ?? null,
+    aberto_em: e.abertoEm ?? null,
+    aberto_em_ultimo: e.abertoEmUltimo ?? null,
+    aberturas: e.aberturas ?? 0,
+    aberto_user_agent: e.abertoUserAgent ?? null,
+    aberto_ip: e.abertoIp ?? null,
+  };
+}
+
+export interface RegistrarEnvioCadastroInput {
+  empresaId: UUID;
+  certidao: CadastroCertidao;
+  mes: string;
+  evento: Omit<ChecklistEnvioEvento, 'id'> & { id?: UUID };
+  marcarComoFeito?: boolean;
+  autor?: AutorAcao;
+}
+
+/** Adiciona evento ao envios_historico do checklist_cadastro (append, mais novo primeiro). */
+export async function registrarEnvioCadastro(input: RegistrarEnvioCadastroInput): Promise<ChecklistCadastroItem> {
+  const atual = await lerCadastroAtual(input.empresaId, input.certidao, input.mes);
+  const enviosAnteriores = normalizarEnviosHistorico(atual?.envios_historico ?? []);
+  const novoEvento: ChecklistEnvioEvento = { ...input.evento, id: input.evento.id ?? newUUID() };
+  const enviosNovos = [persistirEnvioEventoCadastro(novoEvento), ...enviosAnteriores.map(persistirEnvioEventoCadastro)];
+
+  const now = new Date().toISOString();
+  const deveMarcarFeito = input.marcarComoFeito === true && novoEvento.sucesso === true;
+  const row: Record<string, unknown> = {
+    empresa_id: input.empresaId,
+    certidao: input.certidao,
+    mes: input.mes,
+    envios_historico: enviosNovos,
+    atualizado_em: now,
+  };
+  if (deveMarcarFeito) {
+    row.concluido = true;
+    row.concluido_por_id = input.autor?.autorId ?? input.evento.enviadoPorId ?? null;
+    row.concluido_por_nome = input.autor?.autorNome ?? input.evento.enviadoPorNome ?? null;
+    row.concluido_em = now;
+  }
+  const { data, error } = await supabase
+    .from('checklist_cadastro')
+    .upsert(row, { onConflict: 'empresa_id,certidao,mes' })
+    .select()
+    .single();
+  if (error) throw error;
+  return toChecklistCadastroItem(data as ChecklistCadastroRow);
+}
+
+export async function removerEnvioCadastro(
+  empresaId: UUID,
+  certidao: CadastroCertidao,
+  mes: string,
+  envioId: UUID,
+): Promise<ChecklistCadastroItem> {
+  const atual = await lerCadastroAtual(empresaId, certidao, mes);
+  const restantes = normalizarEnviosHistorico(atual?.envios_historico ?? []).filter((e) => e.id !== envioId);
+  const { data, error } = await supabase
+    .from('checklist_cadastro')
+    .upsert(
+      {
+        empresa_id: empresaId,
+        certidao,
+        mes,
+        envios_historico: restantes.map(persistirEnvioEventoCadastro),
+        atualizado_em: new Date().toISOString(),
+      },
+      { onConflict: 'empresa_id,certidao,mes' },
+    )
+    .select()
+    .single();
+  if (error) throw error;
+  return toChecklistCadastroItem(data as ChecklistCadastroRow);
+}
+
+// ─── Controle Cadastro — envio da certidão por email (Gmail OAuth) ─────────
+
+export interface PrepararEnvioCadastroResultado {
+  ok: true;
+  remetenteEmail: string;
+  destinatarios: string[];
+}
+export interface PrepararEnvioCadastroFalha {
+  ok: false;
+  erro: 'gmail_nao_conectado' | 'sem_emails_cadastro';
+  mensagem: string;
+}
+
+/**
+ * Pré-requisitos pro envio da certidão: Gmail conectado + a empresa tem ao
+ * menos um e-mail tipo='cadastro' ativo. (Filtra o tipo na memória pra não
+ * quebrar antes da migration que cria a coluna.)
+ */
+export async function prepararEnvioCadastro(empresaId: UUID): Promise<PrepararEnvioCadastroResultado | PrepararEnvioCadastroFalha> {
+  const token = await getAccessToken();
+  const statusRes = await fetch('/api/auth/google/status', { headers: { Authorization: `Bearer ${token}` } });
+  const statusJson = await statusRes.json().catch(() => ({}));
+  if (!statusRes.ok || !statusJson?.connected || !statusJson?.email) {
+    return {
+      ok: false,
+      erro: 'gmail_nao_conectado',
+      mensagem: 'Gmail não conectado. Conecte sua conta Gmail na página de Obrigações antes de enviar certidões.',
+    };
+  }
+  const emails = await fetchEmpresaEmailsCliente(empresaId, 'cadastro');
+  const destinatarios = emails.filter((e) => e.ativo).map((e) => e.email).filter(Boolean);
+  if (destinatarios.length === 0) {
+    return {
+      ok: false,
+      erro: 'sem_emails_cadastro',
+      mensagem: 'Esta empresa não tem e-mail do CADASTRO cadastrado. Adicione um e-mail do tipo "Cadastro" na ficha da empresa antes de enviar.',
+    };
+  }
+  return { ok: true, remetenteEmail: statusJson.email as string, destinatarios };
+}
+
+export interface EnviarCadastroInput {
+  empresaId: UUID;
+  mes: string;
+  certidao: CadastroCertidao;
+  arquivoPath: string;
+  arquivoNome: string;
+  resultado?: CadastroResultado | null;
+  checklistId?: UUID;
+  confirmarReenvio?: boolean;
+  motivoReenvio?: string;
+}
+export interface EnviarCadastroResultado {
+  ok: true;
+  enviadoPara: string[];
+  de: string;
+  enviadoEm: string;
+  gmailMessageId?: string;
+  gmailThreadId?: string;
+  envioId?: UUID;
+  pixelEmbedado?: boolean;
+}
+export interface EnviarCadastroFalha {
+  ok: false;
+  mensagem: string;
+  code?: 'duplicado' | 'rate_limit' | 'permissao' | 'validacao_pdf' | 'certidao_positiva' | 'sem_emails_cadastro';
+  meta?: Record<string, unknown>;
+}
+
+/** Chama /api/checklist-cadastro/enviar (envia só pros e-mails tipo='cadastro'; bloqueia Positiva). */
+export async function enviarCadastro(input: EnviarCadastroInput): Promise<EnviarCadastroResultado | EnviarCadastroFalha> {
+  const token = await getAccessToken();
+  const res = await fetch('/api/checklist-cadastro/enviar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.ok) {
+    const mensagem = typeof json?.error === 'string' && json.error ? json.error : `Falha ao enviar (HTTP ${res.status}).`;
+    const code = typeof json?.code === 'string' ? (json.code as EnviarCadastroFalha['code']) : undefined;
+    const meta = json?.meta && typeof json.meta === 'object' ? (json.meta as Record<string, unknown>) : undefined;
+    return { ok: false, mensagem, code, meta };
+  }
+  return {
+    ok: true,
+    enviadoPara: Array.isArray(json.enviadoPara) ? json.enviadoPara : [],
+    de: typeof json.de === 'string' ? json.de : '',
+    enviadoEm: typeof json.enviadoEm === 'string' ? json.enviadoEm : new Date().toISOString(),
+    gmailMessageId: typeof json.gmailMessageId === 'string' ? json.gmailMessageId : undefined,
+    gmailThreadId: typeof json.gmailThreadId === 'string' ? json.gmailThreadId : undefined,
+    envioId: typeof json.envioId === 'string' ? json.envioId : undefined,
+    pixelEmbedado: json.pixelEmbedado === true,
+  };
+}
+
 // ─── Checklist Fiscal — envio do anexo por email (Gmail OAuth) ─────────────
 
 /** Erros previsíveis no preparo do envio. A UI mostra mensagem específica. */
@@ -3423,6 +3891,7 @@ type EmpresaEmailRow = {
   empresa_id: string;
   email: string;
   rotulo: string | null;
+  tipo: string | null;
   principal: boolean;
   ativo: boolean;
   criado_em: string;
@@ -3435,6 +3904,9 @@ function toEmpresaEmailCliente(row: EmpresaEmailRow): EmpresaEmailCliente {
     empresaId: row.empresa_id,
     email: row.email,
     rotulo: row.rotulo ?? undefined,
+    // Coluna `tipo` só existe após a migration supabase-migration-checklist-cadastro.sql.
+    // Sem ela, todo e-mail é tratado como 'fiscal' (comportamento original).
+    tipo: row.tipo === 'cadastro' ? 'cadastro' : 'fiscal',
     principal: row.principal,
     ativo: row.ativo,
     criadoEm: toIso(row.criado_em),
@@ -3442,7 +3914,15 @@ function toEmpresaEmailCliente(row: EmpresaEmailRow): EmpresaEmailCliente {
   };
 }
 
-export async function fetchEmpresaEmailsCliente(empresaId: UUID): Promise<EmpresaEmailCliente[]> {
+/**
+ * Lista os e-mails de uma empresa. Filtra por `tipo` (fiscal/cadastro) na
+ * memória — não no SQL — pra não quebrar em ambientes onde a coluna `tipo`
+ * ainda não foi criada (a migration trata como 'fiscal' por padrão).
+ */
+export async function fetchEmpresaEmailsCliente(
+  empresaId: UUID,
+  tipo?: EmpresaEmailTipo,
+): Promise<EmpresaEmailCliente[]> {
   const { data, error } = await supabase
     .from('empresa_emails_cliente')
     .select('*')
@@ -3450,46 +3930,67 @@ export async function fetchEmpresaEmailsCliente(empresaId: UUID): Promise<Empres
     .order('principal', { ascending: false })
     .order('criado_em', { ascending: true });
   if (error) throw error;
-  return (data ?? []).map((r) => toEmpresaEmailCliente(r as EmpresaEmailRow));
+  const lista = (data ?? []).map((r) => toEmpresaEmailCliente(r as EmpresaEmailRow));
+  return tipo ? lista.filter((e) => e.tipo === tipo) : lista;
 }
 
 export async function createEmpresaEmailCliente(payload: {
   empresaId: UUID;
   email: string;
   rotulo?: string;
+  tipo?: EmpresaEmailTipo;
   principal?: boolean;
 }): Promise<EmpresaEmailCliente> {
   const row = {
     empresa_id: payload.empresaId,
     email: payload.email.trim().toLowerCase(),
     rotulo: payload.rotulo?.trim() || null,
+    tipo: payload.tipo ?? 'fiscal',
     principal: payload.principal ?? false,
     ativo: true,
   };
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('empresa_emails_cliente')
     .insert(row)
     .select()
     .single();
+  // Fallback: coluna `tipo` ainda não existe (migration pendente) → insere sem ela.
+  if (error && hasMissingColumn(error, ['tipo'])) {
+    console.warn('[emails] coluna tipo ausente — rode supabase-migration-checklist-cadastro.sql. Inserindo sem tipo.');
+    const { tipo: _omit, ...semTipo } = row;
+    void _omit;
+    const retry = await supabase.from('empresa_emails_cliente').insert(semTipo).select().single();
+    data = retry.data;
+    error = retry.error;
+  }
   if (error) throw error;
   return toEmpresaEmailCliente(data as EmpresaEmailRow);
 }
 
 export async function updateEmpresaEmailCliente(
   id: UUID,
-  patch: Partial<Pick<EmpresaEmailCliente, 'email' | 'rotulo' | 'principal' | 'ativo'>>
+  patch: Partial<Pick<EmpresaEmailCliente, 'email' | 'rotulo' | 'tipo' | 'principal' | 'ativo'>>
 ): Promise<EmpresaEmailCliente> {
   const row: Record<string, unknown> = {};
   if (patch.email !== undefined) row.email = patch.email.trim().toLowerCase();
   if (patch.rotulo !== undefined) row.rotulo = patch.rotulo?.trim() || null;
+  if (patch.tipo !== undefined) row.tipo = patch.tipo;
   if (patch.principal !== undefined) row.principal = patch.principal;
   if (patch.ativo !== undefined) row.ativo = patch.ativo;
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('empresa_emails_cliente')
     .update(row)
     .eq('id', id)
     .select()
     .single();
+  if (error && hasMissingColumn(error, ['tipo'])) {
+    console.warn('[emails] coluna tipo ausente — rode supabase-migration-checklist-cadastro.sql. Salvando sem tipo.');
+    const { tipo: _omit, ...semTipo } = row;
+    void _omit;
+    const retry = await supabase.from('empresa_emails_cliente').update(semTipo).eq('id', id).select().single();
+    data = retry.data;
+    error = retry.error;
+  }
   if (error) throw error;
   return toEmpresaEmailCliente(data as EmpresaEmailRow);
 }

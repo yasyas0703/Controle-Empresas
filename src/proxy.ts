@@ -45,6 +45,11 @@ function isPublicPath(pathname: string): boolean {
   // Fecha os lotes de livros maduros — chamado pelo daemon a cada ciclo (X-Machine-Token).
   if (pathname === '/api/checklist-fiscal/auto-enviar/fechar-lotes') return true;
 
+  // Watcher de CERTIDÕES (scripts/watcher-certidoes.mjs) — POSTa cada PDF lido
+  // das pastas T:\...\CERTIDOES. Autentica por X-Machine-Token (env
+  // AUTO_ENVIO_TOKEN), sem cookie staff. Só REGISTRA (não envia e-mail).
+  if (pathname === '/api/checklist-cadastro/auto-registrar') return true;
+
   return false;
 }
 

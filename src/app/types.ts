@@ -223,6 +223,76 @@ export interface ChecklistFiscalItem {
   atualizadoEm: string;
 }
 
+// ─── Controle Cadastro — checklist mensal de certidões ──────────────────────
+// Espelha o checklist fiscal, mas pra certidões (FGTS, Trabalhista, Estadual,
+// Municipal, Federal). Ver src/app/utils/certidoes.ts pros helpers de domínio.
+
+/** Colunas visíveis do checklist, na ordem da tela. */
+export const CADASTRO_CERTIDAO_COLUNAS = ['FGTS', 'TRABALHISTA', 'ESTADUAL', 'MUNICIPAL', 'FEDERAL'] as const;
+export type CadastroCertidaoColuna = typeof CADASTRO_CERTIDAO_COLUNAS[number];
+
+/**
+ * Chave de certidão gravada no banco. As variantes de SP (Administrativa e
+ * Dívida Ativa) viram duas certidões dentro da coluna ESTADUAL; as demais UFs
+ * usam a chave única 'ESTADUAL'.
+ */
+export type CadastroCertidao =
+  | 'FGTS'
+  | 'TRABALHISTA'
+  | 'ESTADUAL'
+  | 'ESTADUAL_ADM'   // SP — débitos NÃO inscritos (Administrativa / SEFAZ)
+  | 'ESTADUAL_DA'    // SP — débitos inscritos em Dívida Ativa (PGE)
+  | 'MUNICIPAL'
+  | 'FEDERAL';
+
+/** Classificação lida do texto do PDF. Só Negativa e PEN são enviadas. */
+export type CadastroResultado = 'Negativa' | 'Positiva' | 'PEN';
+
+/** Status manual opcional. Quando ausente, a cor é derivada da presença de arquivo/relatório. */
+export type CadastroStatus = 'tem' | 'falta' | 'relatorio';
+
+export const CADASTRO_CERTIDAO_LABEL: Record<CadastroCertidaoColuna, string> = {
+  FGTS: 'FGTS',
+  TRABALHISTA: 'Trabalhista',
+  ESTADUAL: 'Estadual',
+  MUNICIPAL: 'Municipal',
+  FEDERAL: 'Federal',
+};
+
+export const CADASTRO_RESULTADO_LABEL: Record<CadastroResultado, string> = {
+  Negativa: 'Negativa',
+  Positiva: 'Positiva',
+  PEN: 'Positiva c/ efeito de negativa',
+};
+
+export interface ChecklistCadastroItem {
+  id: UUID;
+  empresaId: UUID;
+  certidao: CadastroCertidao;
+  mes: string; // 'YYYY-MM' (mês da pasta / run mensal)
+  resultado?: CadastroResultado | null;
+  status?: CadastroStatus | null;
+  arquivoUrl?: string;   // certidão (PDF) anexada → "tem guia" (verde)
+  arquivoNome?: string;
+  arquivoHash?: string;
+  relatorioUrl?: string; // relatório anexado → azul
+  relatorioNome?: string;
+  relatorioTexto?: string;
+  observacao?: string;
+  emissaoEm?: string;    // 'YYYY-MM-DD' — data de emissão lida do PDF (metadado)
+  uf?: string;           // UF detectada (estadual)
+  autoridade?: string;   // token do watcher (sefazmg, debitsp, federal, fgts...)
+  fonte?: 'watcher' | 'manual';
+  concluido: boolean;
+  concluidoPorId?: UUID | null;
+  concluidoPorNome?: string;
+  concluidoEm?: string;
+  arquivoHistorico?: HistoricoVencimentoItem[];
+  enviosHistorico?: ChecklistEnvioEvento[];
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
 export type ObrigacaoDepartamento = 'fiscal' | 'pessoal' | 'contabil' | 'cadastro';
 
 export type ObrigacaoEsfera = 'federal' | 'estadual' | 'municipal' | 'interna';
@@ -561,11 +631,21 @@ export interface EmpresaObrigacaoConfig {
 
 // ─── E-mails de destinatário do cliente ─────────────────────
 
+/**
+ * Tipo do e-mail de destinatário:
+ *   'fiscal'   = recebe guias fiscais (comportamento original / default)
+ *   'cadastro' = recebe certidões do Controle Cadastro
+ * Os e-mails legados são todos 'fiscal' (default da migration), então nenhum
+ * envio fiscal muda de comportamento.
+ */
+export type EmpresaEmailTipo = 'fiscal' | 'cadastro';
+
 export interface EmpresaEmailCliente {
   id: UUID;
   empresaId: UUID;
   email: string;
   rotulo?: string;
+  tipo: EmpresaEmailTipo;
   principal: boolean;
   ativo: boolean;
   criadoEm: string;

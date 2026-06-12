@@ -13,7 +13,7 @@ import {
   fetchEmpresaEmailsCliente,
   updateEmpresaEmailCliente,
 } from '@/lib/db';
-import type { Empresa, EmpresaEmailCliente, UUID } from '@/app/types';
+import type { Empresa, EmpresaEmailCliente, EmpresaEmailTipo, UUID } from '@/app/types';
 
 interface Props {
   isOpen: boolean;
@@ -25,10 +25,13 @@ interface Props {
 interface FormState {
   email: string;
   rotulo: string;
+  tipo: EmpresaEmailTipo;
   principal: boolean;
 }
 
-const EMPTY_FORM: FormState = { email: '', rotulo: '', principal: false };
+const EMPTY_FORM: FormState = { email: '', rotulo: '', tipo: 'fiscal', principal: false };
+
+const TIPO_LABEL: Record<EmpresaEmailTipo, string> = { fiscal: 'Fiscal', cadastro: 'Cadastro' };
 
 function isEmailValido(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
@@ -83,16 +86,16 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
         empresaId: empresa.id,
         email,
         rotulo: form.rotulo.trim() || undefined,
+        tipo: form.tipo,
         principal: form.principal,
       });
-      // Se marcou como principal, despromove os outros localmente (o banco aceita múltiplos
-      // mas convencionalmente só queremos 1 principal).
+      // Se marcou como principal, despromove os outros DO MESMO TIPO (cada tipo —
+      // fiscal/cadastro — tem o seu próprio principal).
       let nova = [...emails, novo];
       if (form.principal) {
-        nova = nova.map((e) => (e.id === novo.id ? e : { ...e, principal: false }));
-        // Persiste a despromoção dos outros
+        nova = nova.map((e) => (e.id === novo.id || e.tipo !== novo.tipo ? e : { ...e, principal: false }));
         await Promise.all(
-          emails.filter((e) => e.principal).map((e) =>
+          emails.filter((e) => e.principal && e.tipo === novo.tipo).map((e) =>
             updateEmpresaEmailCliente(e.id, { principal: false }).catch(console.error)
           )
         );
@@ -113,6 +116,7 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
     setEditForm({
       email: e.email,
       rotulo: e.rotulo ?? '',
+      tipo: e.tipo,
       principal: e.principal,
     });
   }
@@ -133,15 +137,16 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
       const atualizado = await updateEmpresaEmailCliente(item.id, {
         email,
         rotulo: editForm.rotulo.trim() || undefined,
+        tipo: editForm.tipo,
         principal: editForm.principal,
       });
       let nova = emails.map((e) => (e.id === item.id ? atualizado : e));
-      if (editForm.principal && !item.principal) {
-        // Despromove os outros
-        nova = nova.map((e) => (e.id === item.id ? e : { ...e, principal: false }));
+      if (editForm.principal) {
+        // Despromove os outros DO MESMO TIPO (principal é por tipo).
+        nova = nova.map((e) => (e.id === item.id || e.tipo !== atualizado.tipo ? e : { ...e, principal: false }));
         await Promise.all(
           emails
-            .filter((e) => e.id !== item.id && e.principal)
+            .filter((e) => e.id !== item.id && e.principal && e.tipo === atualizado.tipo)
             .map((e) => updateEmpresaEmailCliente(e.id, { principal: false }).catch(console.error))
         );
       }
@@ -244,16 +249,38 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
                   Adicionar
                 </button>
               </div>
-              <label className="mt-2 inline-flex items-center gap-2 cursor-pointer text-xs text-[var(--text-2)]">
-                <input
-                  type="checkbox"
-                  checked={form.principal}
-                  onChange={(e) => setForm({ ...form, principal: e.target.checked })}
-                  className="h-4 w-4 accent-[var(--brand)] cursor-pointer"
-                />
-                <Star size={13} className="text-[var(--warn)]" />
-                <span>Marcar como <strong className="font-semibold text-[var(--text-1)]">principal</strong> (será o destinatário primário)</span>
-              </label>
+              <div className="mt-2 flex flex-wrap items-center gap-4">
+                <label className="inline-flex items-center gap-2 text-xs text-[var(--text-2)]">
+                  <span className="font-semibold">Tipo:</span>
+                  <div className="inline-flex rounded-md border border-[var(--border)] overflow-hidden">
+                    {(['fiscal', 'cadastro'] as EmpresaEmailTipo[]).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setForm({ ...form, tipo: t })}
+                        className={`px-3 py-1 text-xs font-semibold transition-colors ${
+                          form.tipo === t ? 'bg-[var(--brand-soft)] text-[var(--brand-strong)]' : 'bg-[var(--surface-2)] text-[var(--text-2)] hover:bg-[var(--surface-3)]'
+                        }`}
+                      >
+                        {TIPO_LABEL[t]}
+                      </button>
+                    ))}
+                  </div>
+                </label>
+                <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-[var(--text-2)]">
+                  <input
+                    type="checkbox"
+                    checked={form.principal}
+                    onChange={(e) => setForm({ ...form, principal: e.target.checked })}
+                    className="h-4 w-4 accent-[var(--brand)] cursor-pointer"
+                  />
+                  <Star size={13} className="text-[var(--warn)]" />
+                  <span>Marcar como <strong className="font-semibold text-[var(--text-1)]">principal</strong> (do tipo)</span>
+                </label>
+              </div>
+              <p className="mt-2 text-[11px] text-[var(--text-3)]">
+                <strong>Fiscal</strong> recebe as guias. <strong>Cadastro</strong> recebe as certidões (Controle Cadastro).
+              </p>
             </div>
           )}
 
@@ -283,7 +310,7 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
                           type="email"
                           value={editForm.email}
                           onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                          className="ct-input sm:col-span-6"
+                          className="ct-input sm:col-span-4"
                         />
                         <input
                           type="text"
@@ -292,6 +319,14 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
                           placeholder="Rótulo"
                           className="ct-input sm:col-span-3"
                         />
+                        <select
+                          value={editForm.tipo}
+                          onChange={(e) => setEditForm({ ...editForm, tipo: e.target.value as EmpresaEmailTipo })}
+                          className="ct-input sm:col-span-2"
+                        >
+                          <option value="fiscal">Fiscal</option>
+                          <option value="cadastro">Cadastro</option>
+                        </select>
                         <label className="sm:col-span-2 inline-flex items-center gap-1 text-[11px] text-[var(--text-2)] cursor-pointer">
                           <input
                             type="checkbox"
@@ -299,7 +334,7 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
                             onChange={(e) => setEditForm({ ...editForm, principal: e.target.checked })}
                             className="h-3.5 w-3.5 accent-[var(--brand)]"
                           />
-                          <Star size={11} className="text-[var(--warn)]" /> Principal
+                          <Star size={11} className="text-[var(--warn)]" /> Princ.
                         </label>
                         <div className="sm:col-span-1 flex gap-1 justify-end">
                           <button
@@ -325,6 +360,11 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
                         <div className="flex-1 min-w-0">
                           <div className="ct-num text-sm text-gray-900 flex items-center gap-2 flex-wrap">
                             <span className="truncate">{item.email}</span>
+                            <span className={`inline-flex items-center text-[10px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 ${
+                              item.tipo === 'cadastro' ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700'
+                            }`}>
+                              {TIPO_LABEL[item.tipo]}
+                            </span>
                             {item.principal && (
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-[var(--warn-soft)] text-[var(--warn)] rounded px-1.5 py-0.5">
                                 <Star size={10} /> PRINCIPAL

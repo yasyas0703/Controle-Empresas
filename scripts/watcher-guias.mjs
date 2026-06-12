@@ -917,6 +917,18 @@ function iniciar() {
 
   watcher.on('add', (caminho) => {
     if (!pathInteressa(caminho)) return; // dupla checagem
+    // Arquivo REAPARECEU depois de marcado inválido (já tinha ido pra
+    // _PENDENTES e alguém jogou de novo): é ocorrência NOVA — zera o estado pra
+    // revalidar do zero e re-alertar se continuar quebrado. Sem isso, o dedup
+    // de alerta (alertadoPreso) silenciava a segunda jogada do mesmo arquivo.
+    const st = state.processados[caminho];
+    if (st && st.status === 'invalido_local') {
+      delete state.processados[caminho];
+      retentativas.delete(caminho);
+      ultimoMotivoLocal.delete(caminho);
+      primeiroVisto.set(caminho, Date.now());
+      salvarStateDebounced();
+    }
     totalDetectado++;
     enfileirar(caminho);
   });
