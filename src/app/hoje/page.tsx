@@ -32,6 +32,10 @@ interface ItemHoje {
   responsavelId: UUID | null;
 }
 
+function normalizarNomeObrigacao(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────
 
 export default function HojePage() {
@@ -62,7 +66,7 @@ export default function HojePage() {
   }, [currentUser?.departamentoId, fiscalSnDept]);
 
   // Resolve responsável fiscal de uma empresa olhando AMBAS as keys (fiscal e fiscal-sn).
-  const getResponsavelFiscal = (empresa: Empresa): UUID | null => {
+  const getResponsavelFiscal = React.useCallback((empresa: Empresa): UUID | null => {
     if (fiscalDept) {
       const u = empresa.responsaveis?.[fiscalDept.id];
       if (u) return u;
@@ -72,7 +76,7 @@ export default function HojePage() {
       if (u) return u;
     }
     return null;
-  };
+  }, [fiscalDept, fiscalSnDept]);
 
   // Set rápido pra checar se uma obrigação pertence à aba do usuário.
   // Quando apenasMinhas está desligado e o usuário é gerente, NÃO filtra por aba.
@@ -176,19 +180,14 @@ export default function HojePage() {
 
   // Decide se uma obrigação fiscal se aplica à empresa.
   // Override manual ganha; sem override, vê se aplica em Fiscal ou SN.
-  function obrigacaoAplica(empresa: Empresa, obrigacao: string): boolean {
+  const obrigacaoAplica = React.useCallback((empresa: Empresa, obrigacao: string): boolean => {
     const override = overrides.get(`${empresa.id}|${obrigacao}`);
     if (typeof override === 'boolean') return override;
     return (
       obrigacaoAplicaParaEmpresa(obrigacao, empresa.estado, empresa.cidade) ||
       obrigacaoSnAplicaParaEmpresa(obrigacao, empresa.estado, empresa.cidade)
     );
-  }
-
-  // Normaliza nome de obrigação pra comparar (case + acentos + espaços extras)
-  function normalizarNome(s: string): string {
-    return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
-  }
+  }, [overrides]);
 
   // Set rápido: "empresaId|obrigacaoNorm|mes" -> true se já resolvido
   // (qualquer marcação no checklist conta: ✓ verde "feito" OU X vermelho "não se aplica")
@@ -199,23 +198,23 @@ export default function HojePage() {
         i.concluido === true ||
         i.status === 'feito' ||
         i.status === 'sem_obrigacao';
-      if (resolvido) s.add(`${i.empresaId}|${normalizarNome(i.obrigacao)}|${i.mes}`);
+      if (resolvido) s.add(`${i.empresaId}|${normalizarNomeObrigacao(i.obrigacao)}|${i.mes}`);
     }
     return s;
   }, [checklistItems]);
 
-  function obrigacaoFiscalEstaFeita(empresaId: UUID, obrigacao: string, vencimentoIso: string): boolean {
+  const obrigacaoFiscalEstaFeita = React.useCallback((empresaId: UUID, obrigacao: string, vencimentoIso: string): boolean => {
     const v = new Date(vencimentoIso + 'T00:00:00');
     const mesmoMes = `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, '0')}`;
     const prev = new Date(v);
     prev.setMonth(prev.getMonth() - 1);
     const mesAnterior = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
-    const obrigNorm = normalizarNome(obrigacao);
+    const obrigNorm = normalizarNomeObrigacao(obrigacao);
     return (
       feitosSet.has(`${empresaId}|${obrigNorm}|${mesAnterior}`) ||
       feitosSet.has(`${empresaId}|${obrigNorm}|${mesmoMes}`)
     );
-  }
+  }, [feitosSet]);
 
   // Quando "apenas minhas" liga e o usuário não está logado, desliga (evita lista vazia confusa).
   const efetivoApenasMinhas = apenasMinhas && !!currentUserId;
@@ -266,6 +265,7 @@ export default function HojePage() {
       for (const emp of empresas) {
         if (emp.desligada_em) continue;
         for (const r of emp.rets ?? []) {
+          if (r.ativo === false) continue;
           if (!r.vencimento) continue;
           if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) continue;
           const d = daysUntil(r.vencimento);
@@ -316,7 +316,7 @@ export default function HojePage() {
     // Ordena: mais urgente primeiro (menor `dias`)
     filtrados.sort((a, b) => a.dias - b.dias);
     return filtrados;
-  }, [empresas, departamentos, tipos, dias, incluirVencidos, incluirFeitos, feitosSet, overrides, obrigacoesDaAba, fiscalDept, fiscalSnDept, canManage, efetivoApenasMinhas, currentUserId]);
+  }, [canManage, currentUserId, dias, efetivoApenasMinhas, empresas, getResponsavelFiscal, incluirFeitos, incluirVencidos, obrigacaoAplica, obrigacaoFiscalEstaFeita, obrigacoesDaAba, tipos]);
 
   // Agrupa por chave de dia
   const grupos = useMemo(() => {

@@ -151,6 +151,7 @@ export default function DashboardPage() {
     empresaNome: string;
     nome: string;
     vencimento: string;
+    ultimaRenovacao?: string;
     dias: number;
     tagVencimento?: string;
     historicoVencimento?: HistoricoVencimentoItem[];
@@ -239,6 +240,7 @@ export default function DashboardPage() {
         empresaNome: emp.razao_social || emp.apelido || '-',
         nome: `RET: ${ret.nome}`,
         vencimento: ret.vencimento,
+        ultimaRenovacao: ret.ultimaRenovacao,
         dias: dias ?? 0,
         tagVencimento: ret.tagVencimento,
         historicoVencimento: ret.historicoVencimento,
@@ -246,7 +248,7 @@ export default function DashboardPage() {
     }
   }, [empresas]);
 
-  const salvarHistorico = async (payload: { tagVencimento?: string; historicoVencimento: HistoricoVencimentoItem[] }) => {
+  const salvarHistorico = async (payload: { tagVencimento?: string; historicoVencimento: HistoricoVencimentoItem[]; vencimento?: string; ultimaRenovacao?: string }) => {
     if (!historicoModal) return;
     setSavingHistorico(true);
     try {
@@ -275,7 +277,13 @@ export default function DashboardPage() {
         }
         const rets = emp.rets.map((r) =>
           r.id === historicoModal.itemId
-            ? { ...r, tagVencimento: payload.tagVencimento, historicoVencimento: payload.historicoVencimento }
+            ? {
+              ...r,
+              tagVencimento: payload.tagVencimento,
+              historicoVencimento: payload.historicoVencimento,
+              ...(payload.vencimento !== undefined ? { vencimento: payload.vencimento } : {}),
+              ...(payload.ultimaRenovacao !== undefined ? { ultimaRenovacao: payload.ultimaRenovacao } : {}),
+            }
             : r
         );
         const ok = await atualizarEmpresa(emp.id, { rets, possuiRet: rets.length > 0 });
@@ -347,12 +355,13 @@ export default function DashboardPage() {
           if (!anyResp) return false;
         }
         if (statusVenc) {
+          const retsAtivos = e.rets.filter((r) => r.ativo !== false);
           const docItems = e.documentos.map((d) => d.validade);
-          const retItems = e.rets.filter((r) => !isRetRenovado(r.vencimento, r.ultimaRenovacao)).map((r) => r.vencimento);
+          const retItems = retsAtivos.filter((r) => !isRetRenovado(r.vencimento, r.ultimaRenovacao)).map((r) => r.vencimento);
           const allItems = [...docItems, ...retItems];
           const temVencido = allItems.some((v) => { const d = daysUntil(v); return d !== null && d < 0; });
           const temRisco = allItems.some((v) => { const d = daysUntil(v); return d !== null && d >= 0 && d <= limiares.atencao; });
-          const temRenovado = e.rets.some((r) => isRetRenovado(r.vencimento, r.ultimaRenovacao));
+          const temRenovado = retsAtivos.some((r) => isRetRenovado(r.vencimento, r.ultimaRenovacao));
           if (statusVenc === 'vencidos' && !temVencido) return false;
           if (statusVenc === 'risco' && !temRisco) return false;
           if (statusVenc === 'emdia' && (temVencido || temRisco)) return false;
@@ -362,14 +371,14 @@ export default function DashboardPage() {
       })
       .sort((a, b) => {
         if (sortBy === 'vencidos') {
-          const countV = (e: Empresa) => [...e.documentos.map((d) => d.validade), ...e.rets.filter((r) => !isRetRenovado(r.vencimento, r.ultimaRenovacao)).map((r) => r.vencimento)]
+          const countV = (e: Empresa) => [...e.documentos.map((d) => d.validade), ...e.rets.filter((r) => r.ativo !== false && !isRetRenovado(r.vencimento, r.ultimaRenovacao)).map((r) => r.vencimento)]
             .filter((v) => { const d = daysUntil(v); return d !== null && d < 0; }).length;
           return countV(b) - countV(a);
         }
         if (sortBy === 'proximo') {
           const nearest = (e: Empresa) => {
             let min: number | null = null;
-            for (const v of [...e.documentos.map((d) => d.validade), ...e.rets.filter((r) => !isRetRenovado(r.vencimento, r.ultimaRenovacao)).map((r) => r.vencimento)]) {
+            for (const v of [...e.documentos.map((d) => d.validade), ...e.rets.filter((r) => r.ativo !== false && !isRetRenovado(r.vencimento, r.ultimaRenovacao)).map((r) => r.vencimento)]) {
               const d = daysUntil(v);
               if (d !== null && (min === null || d < min)) min = d;
             }
@@ -433,6 +442,7 @@ export default function DashboardPage() {
       // RET: só pra fiscal/admin (vencimentos fiscais agora aparecem no card consolidado acima)
       if (podeVerFiscalERet) {
         for (const r of e.rets) {
+          if (r.ativo === false) continue;
           const dias = daysUntil(r.vencimento);
           const renovado = isRetRenovado(r.vencimento, r.ultimaRenovacao);
           if (dias !== null && dias <= limiares.proximo && !renovado) {
@@ -891,11 +901,11 @@ export default function DashboardPage() {
           const docsRisco = e.documentos.filter((d) => { const dias = daysUntil(d.validade); return dias !== null && dias >= 0 && dias <= limiares.atencao; }).length;
           const docsVencidos = e.documentos.filter((d) => { const dias = daysUntil(d.validade); return dias !== null && dias < 0; }).length;
           // RETs só pra fiscal/admin — quem não pode ver, conta como 0
-          const retsRisco = podeVerFiscalERet ? e.rets.filter((r) => { if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) return false; const dias = daysUntil(r.vencimento); return dias !== null && dias >= 0 && dias <= limiares.atencao; }).length : 0;
-          const retsVencidos = podeVerFiscalERet ? e.rets.filter((r) => { if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) return false; const dias = daysUntil(r.vencimento); return dias !== null && dias < 0; }).length : 0;
+          const retsRisco = podeVerFiscalERet ? e.rets.filter((r) => { if (r.ativo === false || isRetRenovado(r.vencimento, r.ultimaRenovacao)) return false; const dias = daysUntil(r.vencimento); return dias !== null && dias >= 0 && dias <= limiares.atencao; }).length : 0;
+          const retsVencidos = podeVerFiscalERet ? e.rets.filter((r) => { if (r.ativo === false || isRetRenovado(r.vencimento, r.ultimaRenovacao)) return false; const dias = daysUntil(r.vencimento); return dias !== null && dias < 0; }).length : 0;
           const totalRisco = docsRisco + retsRisco;
           const totalVencidos = docsVencidos + retsVencidos;
-          const totalRenovados = podeVerFiscalERet ? e.rets.filter((r) => isRetRenovado(r.vencimento, r.ultimaRenovacao)).length : 0;
+          const totalRenovados = podeVerFiscalERet ? e.rets.filter((r) => r.ativo !== false && isRetRenovado(r.vencimento, r.ultimaRenovacao)).length : 0;
           const proximoVencDias = (() => {
             let min: number | null = null;
             for (const d of e.documentos) {
@@ -903,6 +913,7 @@ export default function DashboardPage() {
               if (dias !== null && dias >= 0 && (min === null || dias < min)) min = dias;
             }
             for (const r of e.rets) {
+              if (r.ativo === false) continue;
               const dias = daysUntil(r.vencimento);
               if (dias !== null && dias >= 0 && (min === null || dias < min)) min = dias;
             }
@@ -995,7 +1006,10 @@ export default function DashboardPage() {
                           if (minDias === null || dias < minDias) { minDias = dias; minData = data ?? null; }
                         };
                         for (const d of e.documentos) considerar(daysUntil(d.validade), d.validade);
-                        for (const r of e.rets) considerar(daysUntil(r.vencimento), r.vencimento);
+                        for (const r of e.rets) {
+                          if (r.ativo === false) continue;
+                          considerar(daysUntil(r.vencimento), r.vencimento);
+                        }
                         return minData;
                       })();
                       return (

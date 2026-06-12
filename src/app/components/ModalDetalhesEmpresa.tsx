@@ -112,6 +112,7 @@ export default function ModalDetalhesEmpresa({
     tipo: 'Documento' | 'RET' | 'Fiscal';
     nome: string;
     vencimento: string;
+    ultimaRenovacao?: string;
     dias: number;
     statusLabel: string;
     statusClassName: string;
@@ -344,6 +345,7 @@ export default function ModalDetalhesEmpresa({
       tipo,
       nome: `RET: ${ret.nome}`,
       vencimento: ret.vencimento,
+      ultimaRenovacao: ret.ultimaRenovacao,
       dias: meta.dias,
       statusLabel: meta.statusLabel,
       statusClassName: meta.statusClassName,
@@ -352,7 +354,7 @@ export default function ModalDetalhesEmpresa({
     });
   }, [empresa]);
 
-  const salvarHistorico = useCallback(async (payload: { tagVencimento?: string; historicoVencimento: HistoricoVencimentoItem[] }) => {
+  const salvarHistorico = useCallback(async (payload: { tagVencimento?: string; historicoVencimento: HistoricoVencimentoItem[]; vencimento?: string; ultimaRenovacao?: string }) => {
     if (!historicoModal) return;
     setSavingHistorico(true);
     try {
@@ -371,7 +373,13 @@ export default function ModalDetalhesEmpresa({
       } else {
         const rets = empresa.rets.map((item) =>
           item.id === historicoModal.itemId
-            ? { ...item, tagVencimento: payload.tagVencimento, historicoVencimento: payload.historicoVencimento }
+            ? {
+              ...item,
+              tagVencimento: payload.tagVencimento,
+              historicoVencimento: payload.historicoVencimento,
+              ...(payload.vencimento !== undefined ? { vencimento: payload.vencimento } : {}),
+              ...(payload.ultimaRenovacao !== undefined ? { ultimaRenovacao: payload.ultimaRenovacao } : {}),
+            }
             : item
         );
         const ok = await atualizarEmpresa(empresa.id, { rets, possuiRet: rets.length > 0 });

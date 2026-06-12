@@ -48,6 +48,7 @@ export default function CalendarioPage() {
         }
       }
       for (const r of e.rets) {
+        if (r.ativo === false) continue;
         if (r.vencimento) {
           const renovado = isRetRenovado(r.vencimento, r.ultimaRenovacao);
           events.push({ date: r.vencimento, label: `RET: ${r.nome}${renovado ? ' (Renovado)' : ''}`, company: nome, companyId: e.id, kind: 'ret', dias: renovado ? null : daysUntil(r.vencimento), renovado });

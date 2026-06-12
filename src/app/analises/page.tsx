@@ -66,7 +66,7 @@ const donutColors = [
 ];
 
 export default function AnalisesPage() {
-  const { empresas, departamentos, usuarios, tags: tagsCadastradas } = useSistema();
+  const { empresas, departamentos, usuarios } = useSistema();
 
   const [limiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
 
@@ -141,12 +141,13 @@ export default function AnalisesPage() {
       if (filtroEstado && (e.estado || '') !== filtroEstado) return false;
       if (filtroTag && !(e.tags || []).includes(filtroTag)) return false;
       if (statusVenc) {
+        const retsAtivos = e.rets.filter((r) => r.ativo !== false);
         const docItems = e.documentos.map((d) => d.validade);
-        const retItemsNaoRenovados = e.rets.filter((r) => !isRetRenovado(r.vencimento, r.ultimaRenovacao));
+        const retItemsNaoRenovados = retsAtivos.filter((r) => !isRetRenovado(r.vencimento, r.ultimaRenovacao));
         const allItems = [...docItems, ...retItemsNaoRenovados.map((r) => r.vencimento)];
         const temVencido = allItems.some((v) => { const d = daysUntil(v); return d !== null && d < 0; });
         const temRisco = allItems.some((v) => { const d = daysUntil(v); return d !== null && d >= 0 && d <= limiares.atencao; });
-        const temRenovado = e.rets.some((r) => isRetRenovado(r.vencimento, r.ultimaRenovacao));
+        const temRenovado = retsAtivos.some((r) => isRetRenovado(r.vencimento, r.ultimaRenovacao));
         if (statusVenc === 'vencidos' && !temVencido) return false;
         if (statusVenc === 'risco' && !temRisco) return false;
         if (statusVenc === 'emdia' && (temVencido || temRisco)) return false;

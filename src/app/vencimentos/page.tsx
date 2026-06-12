@@ -27,6 +27,7 @@ interface VencimentoItem {
   tipo: 'Documento' | 'RET';
   nome: string;
   vencimento: string;
+  ultimaRenovacao?: string; // só RET — alimenta a seção "Atualizar vencimento" do modal
   dias: number;
   status: StatusVenc;
   tagVencimento?: string;
@@ -51,6 +52,8 @@ const statusConfig: Record<StatusVenc, { label: string; bg: string; text: string
   ok: { label: 'EM DIA', bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500', border: 'border-emerald-200' },
   renovado: { label: 'RENOVADO', bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-500', border: 'border-blue-200' },
 };
+
+const STATUS_RANK: Record<StatusVenc, number> = { vencido: 0, critico: 1, atencao: 2, proximo: 3, ok: 4, renovado: 5 };
 
 export default function VencimentosPage() {
   const { empresas, departamentos, usuarios, currentUserId, canManage, atualizarEmpresa, atualizarDocumento, mostrarAlerta } = useSistema();
@@ -100,6 +103,10 @@ export default function VencimentosPage() {
         });
       }
       for (const r of e.rets) {
+        // RET inativo não conta como vencimento (a pedido da Yasmin, 2026-06-12:
+        // ela inativa o RET antigo ao criar o novo — o antigo não pode seguir
+        // aparecendo como vencido aqui e no dashboard).
+        if (r.ativo === false) continue;
         const dias = daysUntil(r.vencimento);
         if (dias === null) continue;
         const renovado = isRetRenovado(r.vencimento, r.ultimaRenovacao);
@@ -111,6 +118,7 @@ export default function VencimentosPage() {
           tipo: 'RET',
           nome: r.nome,
           vencimento: r.vencimento,
+          ultimaRenovacao: r.ultimaRenovacao,
           dias,
           status: renovado ? 'renovado' : getStatus(dias, limiares),
           tagVencimento: r.tagVencimento,
@@ -219,7 +227,6 @@ export default function VencimentosPage() {
     piorStatus: StatusVenc;
     responsaveis: Record<string, string | null>;
   };
-  const STATUS_RANK: Record<StatusVenc, number> = { vencido: 0, critico: 1, atencao: 2, proximo: 3, ok: 4, renovado: 5 };
   const empresasAgrupadas: EmpresaGrupo[] = useMemo(() => {
     const mapa = new Map<UUID, EmpresaGrupo>();
     for (const item of filtered) {
@@ -302,7 +309,7 @@ export default function VencimentosPage() {
     return Object.values(item.responsaveis).some((uid) => uid === currentUserId);
   };
 
-  const salvarHistorico = async (payload: { tagVencimento?: string; historicoVencimento: HistoricoVencimentoItem[] }) => {
+  const salvarHistorico = async (payload: { tagVencimento?: string; historicoVencimento: HistoricoVencimentoItem[]; vencimento?: string; ultimaRenovacao?: string }) => {
     if (!historicoItem) return;
     setSavingHistorico(true);
     try {
@@ -317,7 +324,15 @@ export default function VencimentosPage() {
         }
         const rets = empresa.rets.map((ret) =>
           ret.id === historicoItem.itemId
-            ? { ...ret, tagVencimento: payload.tagVencimento, historicoVencimento: payload.historicoVencimento }
+            ? {
+              ...ret,
+              tagVencimento: payload.tagVencimento,
+              historicoVencimento: payload.historicoVencimento,
+              // Seção "Atualizar vencimento" do modal (atualizarEmpresa registra
+              // a mudança na linha do tempo automaticamente).
+              ...(payload.vencimento !== undefined ? { vencimento: payload.vencimento } : {}),
+              ...(payload.ultimaRenovacao !== undefined ? { ultimaRenovacao: payload.ultimaRenovacao } : {}),
+            }
             : ret
         );
         const ok = await atualizarEmpresa(empresa.id, { rets, possuiRet: rets.length > 0 });

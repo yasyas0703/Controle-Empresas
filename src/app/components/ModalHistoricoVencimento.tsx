@@ -21,6 +21,8 @@ type ItemModalHistorico = {
   statusClassName: string;
   tagVencimento?: string;
   historicoVencimento?: HistoricoVencimentoItem[];
+  /** Só pra RET — habilita a seção "Atualizar vencimento" com a renovação. */
+  ultimaRenovacao?: string;
 };
 
 interface ModalHistoricoVencimentoProps {
@@ -29,7 +31,18 @@ interface ModalHistoricoVencimentoProps {
   canEdit: boolean;
   saving?: boolean;
   onClose: () => void;
-  onSave: (payload: { tagVencimento?: string; historicoVencimento: HistoricoVencimentoItem[] }) => Promise<void> | void;
+  /**
+   * vencimento/ultimaRenovacao só vêm preenchidos quando o item é RET e o
+   * usuário mexeu na seção "Atualizar vencimento". Quem salva via
+   * atualizarEmpresa ganha o registro automático na linha do tempo
+   * ("Vencimento atualizado para X / Antes: Y") — não duplique aqui.
+   */
+  onSave: (payload: {
+    tagVencimento?: string;
+    historicoVencimento: HistoricoVencimentoItem[];
+    vencimento?: string;
+    ultimaRenovacao?: string;
+  }) => Promise<void> | void;
 }
 
 const TAGS_RAPIDAS_PADRAO = [
@@ -65,6 +78,12 @@ export default function ModalHistoricoVencimento({
   const { currentUser, tags: tagsCadastradas } = useSistema();
   const [tagVencimento, setTagVencimento] = useState(() => item?.tagVencimento || '');
   const [historico, setHistorico] = useState<HistoricoVencimentoItem[]>(() => normalizarHistoricoVencimento(item?.historicoVencimento));
+  // Atualização de vencimento (só RET): novo vencimento + data da renovação.
+  // Pedido da Yasmin (2026-06-12): "tinha esse RET, queria atualizar ele, só
+  // que não tem campo de atualizar, só de histórico". Ao salvar, o
+  // atualizarEmpresa registra a mudança na linha do tempo automaticamente.
+  const [novoVencimento, setNovoVencimento] = useState(() => item?.vencimento || '');
+  const [novaRenovacao, setNovaRenovacao] = useState(() => item?.ultimaRenovacao || '');
   const [confirmDeleteHistoricoId, setConfirmDeleteHistoricoId] = useState<string | null>(null);
   const [titulo, setTitulo] = useState('');
   const [descricao, setDescricao] = useState('');
@@ -96,6 +115,9 @@ export default function ModalHistoricoVencimento({
     await onSave({
       tagVencimento: limparTagVencimento(tagVencimento),
       historicoVencimento: normalizarHistoricoVencimento(historico),
+      // RET: manda o vencimento/renovação da seção "Atualizar vencimento".
+      // O registro na linha do tempo é automático (atualizarEmpresa).
+      ...(item?.tipo === 'RET' ? { vencimento: novoVencimento, ultimaRenovacao: novaRenovacao } : {}),
     });
   };
 
@@ -157,6 +179,42 @@ export default function ModalHistoricoVencimento({
               </span>
             </div>
           </div>
+
+          {/* Atualizar vencimento (só RET) — novo vencimento + data da renovação.
+              A mudança entra sozinha na linha do tempo ao salvar. */}
+          {item.tipo === 'RET' && (
+            <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <CalendarClock size={14} className="text-[var(--text-3)]" />
+                <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-3)]">Atualizar vencimento</div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-xs font-semibold text-[var(--text-2)]">Novo vencimento</span>
+                  <input
+                    type="date"
+                    value={novoVencimento}
+                    onChange={(e) => setNovoVencimento(e.target.value)}
+                    disabled={!canEdit || saving}
+                    className="ct-input mt-1 disabled:opacity-60"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-[var(--text-2)]">Última renovação</span>
+                  <input
+                    type="date"
+                    value={novaRenovacao}
+                    onChange={(e) => setNovaRenovacao(e.target.value)}
+                    disabled={!canEdit || saving}
+                    className="ct-input mt-1 disabled:opacity-60"
+                  />
+                </label>
+              </div>
+              <div className="mt-2 text-xs text-[var(--text-3)]">
+                Ao salvar, a atualização é registrada sozinha na linha do tempo (quem mudou, de quê pra quê).
+              </div>
+            </div>
+          )}
 
           {/* Tag */}
           <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] p-4">
