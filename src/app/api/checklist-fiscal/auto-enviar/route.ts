@@ -39,7 +39,7 @@ import {
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
 import { ehObrigacaoSempreInterna } from '@/app/types';
-import { avaliarJanelaCompetencia, competenciaEsperada } from '@/app/utils/competencia';
+import { avaliarJanelaCompetencia, competenciaEsperada, competenciaEfetiva } from '@/app/utils/competencia';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -547,9 +547,11 @@ export async function POST(req: Request) {
   // sem subtrair 1 (livro não tem "vencimento"). A cascata de guia jogava livros de
   // maio pra abril e rachava o lote em duas competências (nunca fechava). Ver
   // competenciaDeLivro em _identificar.ts.
+  // IRPJ/CSLL trimestral: a guia mostra o mês do FIM do trimestre (06 = 2º tri),
+  // mas é da leva do mês ANTERIOR (05) — competenciaEfetiva faz o recuo.
   const competencia = obrigacao === 'LIVROS FISCAIS'
     ? competenciaDeLivro(textoPdf)
-    : competenciaDoPdf(textoPdf);
+    : competenciaEfetiva(obrigacao, competenciaDoPdf(textoPdf));
   if (!competencia) {
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,

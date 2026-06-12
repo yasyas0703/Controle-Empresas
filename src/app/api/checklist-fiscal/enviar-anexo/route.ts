@@ -9,7 +9,7 @@ import {
   validarPdfNoServidor, carregarEmpresaCompleta, getSupabaseAdmin, isErroApi,
 } from '../_shared';
 import { ehObrigacaoSempreInterna } from '@/app/types';
-import { avaliarJanelaCompetencia, competenciaEsperada } from '@/app/utils/competencia';
+import { avaliarJanelaCompetencia, competenciaEsperada, competenciaEfetiva } from '@/app/utils/competencia';
 
 export const runtime = 'nodejs';
 
@@ -344,7 +344,9 @@ export async function POST(req: Request) {
     // errado. Espelha o bloqueio do front (envio manual no mês certo). Hard
     // block (não forçável): a correção é selecionar o mês certo. Defesa no
     // servidor cobre tanto a aba Envio quanto o Checklist Mensal (mesma rota).
-    const compDetectada = validacao.resultado.detectado.competencia;
+    // IRPJ/CSLL trimestral: o PDF mostra o mês do fim do trimestre, mas a guia é
+    // da leva do mês anterior — compara pela competência EFETIVA (06 → 05).
+    const compDetectada = competenciaEfetiva(body.obrigacao, validacao.resultado.detectado.competencia);
     if (compDetectada && compDetectada !== body.mes) {
       return NextResponse.json(
         {

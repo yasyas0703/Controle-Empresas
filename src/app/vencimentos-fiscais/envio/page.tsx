@@ -32,7 +32,7 @@ import {
 import StatusPortalCliente from '@/app/vencimentos-fiscais/checklist/StatusPortalCliente';
 import { supabase } from '@/lib/supabase';
 import { formatBR } from '@/app/utils/date';
-import { avaliarJanelaCompetencia, competenciaEsperada } from '@/app/utils/competencia';
+import { avaliarJanelaCompetencia, competenciaEsperada, competenciaEfetiva } from '@/app/utils/competencia';
 import ModalBase from '@/app/components/ModalBase';
 import ModalMotivoReenvio from '@/app/components/ModalMotivoReenvio';
 import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
@@ -1494,8 +1494,11 @@ function ModalEnviarGuia({
   // Competência do PDF diferente do mês selecionado → BLOQUEIA o envio (a pedido).
   // A guia TEM que ser enviada no mês certo; senão marca o checklist no mês errado.
   // Não é forçável: a correção é selecionar o mês certo (ou trocar o arquivo).
+  // IRPJ/CSLL trimestral: o PDF mostra o fim do trimestre (06 = 2º tri), mas a
+  // guia é da leva do mês anterior (05) — compara pela competência EFETIVA.
+  const competenciaDetectadaEfetiva = competenciaEfetiva(fiscal.nome, resultado?.detectado.competencia ?? null);
   const competenciaDivergente = !!(
-    resultado?.detectado.competencia && resultado.detectado.competencia !== mes
+    competenciaDetectadaEfetiva && competenciaDetectadaEfetiva !== mes
   );
 
   // ─── Validação multi (LIVROS FISCAIS) ──────────────────────────────────
@@ -2052,7 +2055,12 @@ function ModalEnviarGuia({
                 <PreviewLine label="Cidade" valor={resultado.detectado.cidadeEncontrada} />
                 <PreviewLine
                   label="Competência"
-                  valor={resultado.detectado.competencia ? formatComp(resultado.detectado.competencia) : null}
+                  valor={competenciaDetectadaEfetiva
+                    ? formatComp(competenciaDetectadaEfetiva)
+                      + (resultado.detectado.competencia !== competenciaDetectadaEfetiva
+                        ? ` (guia mostra ${formatComp(resultado.detectado.competencia!)} — trimestral)`
+                        : '')
+                    : null}
                   alerta={competenciaDivergente
                     ? `mês selecionado (${formatComp(mes)}) é diferente do detectado no PDF`
                     : undefined}
@@ -2069,9 +2077,9 @@ function ModalEnviarGuia({
               <ShieldAlert size={16} className="text-red-600 shrink-0 mt-0.5" />
               <span>
                 <strong>Mês errado.</strong> Este PDF é da competência{' '}
-                <strong>{resultado.detectado.competencia ? formatComp(resultado.detectado.competencia) : '—'}</strong>,
+                <strong>{competenciaDetectadaEfetiva ? formatComp(competenciaDetectadaEfetiva) : '—'}</strong>,
                 mas você selecionou <strong>{formatComp(mes)}</strong>. Selecione{' '}
-                {resultado.detectado.competencia ? formatComp(resultado.detectado.competencia) : 'o mês correto'}{' '}
+                {competenciaDetectadaEfetiva ? formatComp(competenciaDetectadaEfetiva) : 'o mês correto'}{' '}
                 lá em cima (ou confira se o arquivo é o certo) pra poder enviar.
               </span>
             </div>
