@@ -377,15 +377,17 @@ async function moverConformeResultado(caminho, resultado) {
 const SKIP_STATUSES = new Set(['enviado', 'interno_marcado_feito', 'ja_processado', 'duplicado_periodo', 'aguardando_lote']);
 
 // Valida o buffer JÁ LIDO (sem leitura extra de disco). Pega arquivo vazio,
-// não-PDF e PDF truncado por cópia incompleta (sem %%EOF no fim — writers de
-// PDF escrevem o trailer por último, então a cauda é o melhor detector barato
-// de truncagem). Retorna null se ok, ou uma string com o motivo.
+// não-PDF e PDF truncado por cópia incompleta (sem %%EOF — writers de PDF
+// escrevem o trailer por último, então a AUSÊNCIA TOTAL de %%EOF = arquivo
+// cortado no meio). A busca é no buffer INTEIRO, não só na cauda: a SEFAZ-MG
+// anexa ~14KB de dados DEPOIS do %%EOF nos DAEs, e a janela fixa de 1024 bytes
+// barrava guia VÁLIDA como truncada (caso real: DAEs da LIANE e da ELEMAR em
+// 2026-06-12). Retorna null se ok, ou uma string com o motivo.
 const TAMANHO_MINIMO_PDF = 100;
 function validarPdfBuffer(buffer) {
   if (buffer.length < TAMANHO_MINIMO_PDF) return `arquivo muito pequeno (${buffer.length} bytes)`;
   if (buffer.toString('latin1', 0, 5) !== '%PDF-') return 'não começa com %PDF- (não é PDF?)';
-  const cauda = buffer.toString('latin1', Math.max(0, buffer.length - 1024));
-  if (!cauda.includes('%%EOF')) return 'sem %%EOF no fim (cópia incompleta/PDF truncado?)';
+  if (!buffer.includes('%%EOF')) return 'sem %%EOF (cópia incompleta/PDF truncado?)';
   return null;
 }
 
