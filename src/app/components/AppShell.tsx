@@ -176,6 +176,8 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         if (dias !== null && dias < 0) count++;
       }
       for (const r of e.rets) {
+        // RET inativo não conta como vencido (substituído por outro RET).
+        if (r.ativo === false) continue;
         if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) continue;
         const dias = daysUntil(r.vencimento);
         if (dias !== null && dias < 0) count++;

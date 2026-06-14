@@ -122,44 +122,16 @@ export default function ModalHistoricoVencimento({
   };
 
   const salvar = async () => {
-    let historicoFinal = normalizarHistoricoVencimento(historico);
-
-    if (item?.tipo === 'RET') {
-      const hoje = new Date().toISOString().slice(0, 10);
-      const novosRegistros: HistoricoVencimentoItem[] = [];
-
-      if (novoVencimento !== item.vencimento) {
-        const anterior = item.vencimento ? formatBR(item.vencimento) : 'sem vencimento';
-        const proximo = novoVencimento ? formatBR(novoVencimento) : 'sem vencimento';
-        novosRegistros.push(criarHistoricoVencimentoItem({
-          titulo: novoVencimento ? `Vencimento atualizado para ${proximo}` : 'Vencimento removido',
-          descricao: `Data anterior: ${anterior}`,
-          dataEvento: hoje,
-          autorId: currentUser?.id ?? null,
-          autorNome: currentUser?.nome,
-        }));
-      }
-
-      if (novaRenovacao !== (item.ultimaRenovacao || '') && novaRenovacao) {
-        novosRegistros.push(criarHistoricoVencimentoItem({
-          titulo: 'Renovação registrada',
-          descricao: `Última renovação em ${formatBR(novaRenovacao)}`,
-          dataEvento: hoje,
-          autorId: currentUser?.id ?? null,
-          autorNome: currentUser?.nome,
-        }));
-      }
-
-      if (novosRegistros.length > 0) {
-        historicoFinal = normalizarHistoricoVencimento([...novosRegistros, ...historicoFinal]);
-      }
-    }
-
+    // NÃO criamos os registros de "Vencimento atualizado" / "Renovação" aqui:
+    // quem salva é o atualizarEmpresa (enriquecerRetsComHistorico no
+    // SistemaContext), que já gera esses eventos COM dedup. Duplicar aqui criava
+    // duas linhas (e com rótulo divergente "Data anterior:" vs "Antes:", que
+    // escapava do dedup). O modal só envia o estado novo; o histórico manual
+    // (andamentos digitados) continua vindo de `historico`.
     await onSave({
       tagVencimento: limparTagVencimento(tagVencimento),
-      historicoVencimento: historicoFinal,
+      historicoVencimento: normalizarHistoricoVencimento(historico),
       // RET: manda o vencimento/renovação da seção "Atualizar vencimento".
-      // O registro na linha do tempo é automático (atualizarEmpresa).
       ...(item?.tipo === 'RET' ? { vencimento: novoVencimento, ultimaRenovacao: novaRenovacao } : {}),
     });
   };
