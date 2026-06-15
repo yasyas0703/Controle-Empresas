@@ -106,18 +106,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ status: 'erro', detalhes: { motivo: 'Hash divergente' } }, { status: 400 });
   }
 
-  // 3. Idempotência por hash (status terminal 'registrado')
-  const { data: jaProcessado } = await admin
-    .from('certidoes_auto_processadas')
-    .select('id, status, processado_em')
-    .eq('hash_arquivo', hashArquivo)
-    .eq('status', 'registrado')
-    .order('processado_em', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (jaProcessado) {
-    return NextResponse.json({ status: 'ja_processado', detalhes: { processadoEm: (jaProcessado as { processado_em?: string }).processado_em } });
-  }
+  // 3. (Idempotência movida pra DEPOIS de identificar empresa+certidão — ver 7b.)
+  //    O dedup por hash sozinho pulava e deixava a célula SEM anexo quando o PDF
+  //    não estava lá (anexo removido, ou célula só com resultado da relação).
 
   // 4. Texto do PDF (base da identificação por conteúdo)
   let texto = '';
@@ -182,6 +173,23 @@ export async function POST(req: Request) {
   // 7. Resultado: texto do PDF; reforço pelo nome do arquivo. Emissão do texto.
   const resultado = resultadoDoTexto(texto) ?? resultadoDoNome(nomeArquivo);
   const emissao = emissaoDoTexto(texto);
+
+  // 7b. Idempotência ESPERTA: só pula se ESTA célula já tem ESTE mesmo arquivo
+  //     anexado (mesmo hash). Se a célula está SEM o PDF (anexo removido, ou só
+  //     tinha resultado da relação), NÃO pula — segue e re-anexa. Conserta o
+  //     "reconheceu mas não anexou".
+  const { data: cellAtual } = await admin
+    .from('checklist_cadastro')
+    .select('arquivo_url, arquivo_hash')
+    .eq('empresa_id', empresa.id).eq('certidao', det.certidao).eq('mes', mes)
+    .maybeSingle();
+  const jaAnexada = cellAtual
+    && (cellAtual as { arquivo_url?: string | null }).arquivo_url
+    && (cellAtual as { arquivo_hash?: string | null }).arquivo_hash === hashArquivo;
+  if (jaAnexada) {
+    await registrarProcessado(admin, { caminhoServidor, hashArquivo, empresaId: empresa.id, competencia: mes, certidao: det.certidao, resultado, nomeArquivo, status: 'ja_processado', detalhes: { motivo: 'célula já tem este arquivo anexado' } });
+    return NextResponse.json({ status: 'ja_processado', empresa: { id: empresa.id, nome: empresa.apelido || empresa.razao_social || empresa.codigo }, certidao: det.certidao });
+  }
 
   // 8. Upload do PDF (path determinístico por hash → idempotente)
   const certSlug = det.certidao.toLowerCase().replace(/[^a-z0-9]+/g, '-');
