@@ -1,11 +1,13 @@
 'use client';
 
 import React, { useMemo, useRef, useState, useEffect } from 'react';
-import { Loader2, Search, X, Plus, Trash2, Paperclip, AlertTriangle, CalendarClock, Eye, Download, Building2 } from 'lucide-react';
+import { Loader2, Search, X, Plus, Trash2, Paperclip, AlertTriangle, CalendarClock, Eye, Download, Building2, History } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
-import type { Empresa, FormaEnvio, RetItem, TagCor, TipoInscricao, UUID, VencimentoFiscal } from '@/app/types';
+import type { Empresa, FormaEnvio, HistoricoVencimentoItem, RetItem, TagCor, TipoInscricao, UUID, VencimentoFiscal } from '@/app/types';
 import { FORMAS_ENVIO } from '@/app/types';
+import { daysUntil } from '@/app/utils/date';
 import ModalBase from '@/app/components/ModalBase';
+import ModalHistoricoVencimento from '@/app/components/ModalHistoricoVencimento';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import FileDropLabel from '@/app/components/FileDropLabel';
 import { cepSchema, cpfSchema, cnpjSchema, detectTipoInscricao, detectTipoEstabelecimento, formatarDocumento } from '@/app/utils/validation';
@@ -30,6 +32,16 @@ interface ModalCadastrarEmpresaProps {
 function newId(): UUID {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
   return `id_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+}
+
+// Status (rótulo + cor) pro cabeçalho do modal de histórico do RET — mesma
+// escala dos outros lugares (vencido/crítico≤60/próximo≤90/em dia).
+function retHistoricoStatusMeta(dias: number | null) {
+  if (dias === null) return { dias: 0, statusLabel: 'SEM DATA', statusClassName: 'bg-slate-100 text-slate-700 border-slate-200' };
+  if (dias < 0) return { dias, statusLabel: 'VENCIDO', statusClassName: 'bg-red-50 text-red-700 border-red-200' };
+  if (dias <= 60) return { dias, statusLabel: 'CRITICO', statusClassName: 'bg-amber-50 text-amber-700 border-amber-200' };
+  if (dias <= 90) return { dias, statusLabel: 'PROXIMO', statusClassName: 'bg-green-50 text-green-700 border-green-200' };
+  return { dias, statusLabel: 'EM DIA', statusClassName: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
 }
 
 const TAG_COLORS: Record<TagCor, { bg: string; text: string; border: string }> = {
@@ -105,6 +117,8 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
   const [cnpjLookupError, setCnpjLookupError] = useState<string>('');
   const [cnpjTouched, setCnpjTouched] = useState(false);
   const [confirmDeleteRetId, setConfirmDeleteRetId] = useState<string | null>(null);
+  // Histórico de um RET aberto a partir do card de edição (id do RET no rascunho).
+  const [historicoRetId, setHistoricoRetId] = useState<string | null>(null);
   // Arquivos pendentes de upload para os vencimentos fiscais: { fiscalId -> File }
   const [fiscaisPendingFiles, setFiscaisPendingFiles] = useState<Record<string, File>>({});
   const [fiscalUploading, setFiscalUploading] = useState(false);
@@ -977,9 +991,19 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                   <div key={r.id} className="rounded-2xl border bg-white p-4">
                     <div className="flex items-center justify-between">
                       <div className="font-bold text-gray-900">RET {idx + 1}</div>
-                      <button type="button" onClick={() => setConfirmDeleteRetId(r.id)} className="rounded-xl border p-2 hover:bg-gray-50" title="Remover RET">
-                        <Trash2 className="text-red-600" size={18} />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setHistoricoRetId(r.id)}
+                          className="rounded-xl border p-2 hover:bg-slate-50"
+                          title="Histórico do RET (andamentos)"
+                        >
+                          <History className="text-slate-600" size={18} />
+                        </button>
+                        <button type="button" onClick={() => setConfirmDeleteRetId(r.id)} className="rounded-xl border p-2 hover:bg-gray-50" title="Remover RET">
+                          <Trash2 className="text-red-600" size={18} />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1440,8 +1464,8 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
             </div>
           )}
 
-          {/* Botões */}
-          <div className="flex gap-2 pt-6 border-t border-[var(--border-subtle)]">
+          {/* Botões — barra fixa no rodapé do modal pra não precisar scrollar até o fim pra salvar */}
+          <div className="flex gap-2 sticky bottom-0 z-10 -mx-4 sm:-mx-6 -mb-4 sm:-mb-6 px-4 sm:px-6 py-4 border-t border-[var(--border-subtle)] bg-[var(--surface-2)]">
             <button type="button" onClick={onClose} className="ct-btn-secondary flex-1">
               Cancelar
             </button>
@@ -1463,6 +1487,44 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
       onConfirm={() => { if (confirmDeleteRetId) removeRet(confirmDeleteRetId); setConfirmDeleteRetId(null); }}
       onCancel={() => setConfirmDeleteRetId(null)}
     />
+
+    {/* Histórico do RET dentro do formulário de edição. Atualiza o RASCUNHO
+        (updateRet); as mudanças só persistem quando o formulário é salvo. */}
+    {historicoRetId && (() => {
+      const r = (formData.rets ?? []).find((x) => x.id === historicoRetId);
+      if (!r) return null;
+      const meta = retHistoricoStatusMeta(daysUntil(r.vencimento));
+      return (
+        <ModalHistoricoVencimento
+          key={historicoRetId}
+          open
+          item={{
+            empresaCodigo: formData.codigo ?? '',
+            empresaNome: formData.razao_social || formData.apelido || 'Nova empresa',
+            tipo: 'RET',
+            nome: `RET: ${r.nome || '(sem nome)'}`,
+            vencimento: r.vencimento,
+            ultimaRenovacao: r.ultimaRenovacao,
+            dias: meta.dias,
+            statusLabel: meta.statusLabel,
+            statusClassName: meta.statusClassName,
+            tagVencimento: r.tagVencimento,
+            historicoVencimento: r.historicoVencimento,
+          }}
+          canEdit
+          onClose={() => setHistoricoRetId(null)}
+          onSave={(payload: { tagVencimento?: string; historicoVencimento: HistoricoVencimentoItem[]; vencimento?: string; ultimaRenovacao?: string }) => {
+            updateRet(historicoRetId, {
+              tagVencimento: payload.tagVencimento,
+              historicoVencimento: payload.historicoVencimento,
+              ...(payload.vencimento !== undefined ? { vencimento: payload.vencimento } : {}),
+              ...(payload.ultimaRenovacao !== undefined ? { ultimaRenovacao: payload.ultimaRenovacao } : {}),
+            });
+            setHistoricoRetId(null);
+          }}
+        />
+      );
+    })()}
     </>
   );
 }
