@@ -615,6 +615,15 @@ export default function ModalDetalhesEmpresa({
                           <div className="text-sm text-gray-600">Última renovação: {formatBR(r.ultimaRenovacao)}</div>
                         </div>
                         <div className="shrink-0 flex flex-col gap-2">
+                          {canEdit && (
+                            <button
+                              onClick={() => abrirHistorico('RET', r.id)}
+                              className="rounded-xl border border-blue-200 p-2 hover:bg-blue-50 transition"
+                              title="Atualizar vencimento / renovação"
+                            >
+                              <Pencil className="text-blue-600" size={18} />
+                            </button>
+                          )}
                           <button
                             onClick={() => abrirHistorico('RET', r.id)}
                             className="rounded-xl border p-2 hover:bg-slate-50 transition"
