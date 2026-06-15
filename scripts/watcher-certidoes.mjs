@@ -336,8 +336,10 @@ function cabecalho() {
   console.log('║  Watcher de Certidões — Controle Cadastro (somente leitura)  ║');
   console.log('╚══════════════════════════════════════════════════════════════╝');
   console.log('');
-  console.log(`  Mês alvo:    ${MES_ISO}  (pasta ${pastaDoMes(MES_ISO)})`);
-  console.log(`  Raiz:        ${CERTIDOES_ROOT}`);
+  console.log(`  ENTRADA:     ${join(CERTIDOES_ROOT, PASTA_ENTRADA)}`);
+  console.log(`  ${C.dim}             ↑ solte os PDFs AQUI${ONCE ? '' : ' (re-verificada a cada 60s)'}${C.reset}`);
+  if (!ONCE) console.log(`  ${C.dim}Pastas de mês (${pastaDoMes(MES_ISO)}) só são varridas no --once (carga histórica).${C.reset}`);
+  console.log(`  Competência: ${MES_ISO}  ${C.dim}(mês do run — o que entrar pela entrada cai aqui)${C.reset}`);
   console.log(`  API:         ${API_URL}`);
   console.log(`  Token:       ${TOKEN.slice(0, 8)}...${TOKEN.slice(-4)}`);
   console.log(`  State:       ${STATE_FILE}`);
