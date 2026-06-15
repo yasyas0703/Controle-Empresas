@@ -120,9 +120,18 @@ const log = {
 // ─── Alvos de leitura ─────────────────────────────────────────────────────────
 // Cada alvo é { dir, subpasta }. Os arquivos são lidos só desses diretórios
 // (não recursivo — as subpastas FGTS/TRABALHISTA são alvos próprios).
+// Pasta de ENTRADA (estilo fiscal): solta os PDFs aqui pra processar. Fica fora
+// do mês — a competência vira o MÊS DO RUN (mesIso). Pasta inexistente é ignorada.
+const PASTA_ENTRADA = '1- GUIAS A ENVIAR';
 function alvosDoMes(mesIso) {
   const pastaMes = join(CERTIDOES_ROOT, pastaDoMes(mesIso));
+  const entrada = join(CERTIDOES_ROOT, PASTA_ENTRADA);
   return [
+    // Entrada nova: flat (tipo detectado pelo texto) + subpastas opcionais.
+    { dir: entrada, subpasta: 'root' },
+    { dir: join(entrada, 'FGTS'), subpasta: 'FGTS' },
+    { dir: join(entrada, 'TRABALHISTA'), subpasta: 'TRABALHISTA' },
+    // Pastas por mês (carga histórica / organização antiga).
     { dir: pastaMes, subpasta: 'root' },
     { dir: join(pastaMes, 'FGTS'), subpasta: 'FGTS' },
     { dir: join(pastaMes, 'TRABALHISTA'), subpasta: 'TRABALHISTA' },

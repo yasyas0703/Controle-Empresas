@@ -39,7 +39,7 @@ echo.
 echo ============================================================
 echo  [%date% %time%] Iniciando watcher de CERTIDOES...
 echo  URL: https://controle-empresas.vercel.app
-echo  Pasta: T:\Office\PARCELAMENTOS\CERTIDOES
+echo  Entrada: T:\Office\PARCELAMENTOS\CERTIDOES\1- GUIAS A ENVIAR
 echo ============================================================
 echo.
 

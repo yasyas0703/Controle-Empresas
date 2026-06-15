@@ -6,9 +6,9 @@ REM
 REM  Este e o do dia a dia: processa o mes e SAI (--once).
 REM
 REM  Como usar:
-REM   1. Garanta que as certidoes do mes estao na pasta:
-REM        T:\Office\PARCELAMENTOS\CERTIDOES\<mes>
-REM      (+ subpastas FGTS, TRABALHISTA, cndmg)
+REM   1. Solte as certidoes na pasta de ENTRADA:
+REM        T:\Office\PARCELAMENTOS\CERTIDOES\1- GUIAS A ENVIAR
+REM      (pode jogar tudo junto - o tipo e descoberto pelo texto)
 REM   2. De 2 cliques neste arquivo.
 REM   3. Olhe os logs no terminal preto.
 REM
@@ -35,7 +35,7 @@ cd /d "%~dp0.."
 echo.
 echo ============================================================
 echo  CERTIDOES - RODAR (grava no sistema, NAO envia e-mail)
-echo  Pasta: T:\Office\PARCELAMENTOS\CERTIDOES
+echo  Entrada: T:\Office\PARCELAMENTOS\CERTIDOES\1- GUIAS A ENVIAR
 echo  URL: https://controle-empresas.vercel.app
 echo ============================================================
 echo.
