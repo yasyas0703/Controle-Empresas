@@ -13,6 +13,7 @@ import { getSupabaseAdmin, extrairTextoPdfServidor } from '../../checklist-fisca
 import { identificarEmpresa } from '../../checklist-fiscal/auto-enviar/_identificar';
 import { certidaoDoArquivo, tipoDoTexto, resultadoDoTexto, resultadoDoNome, emissaoDoTexto, cnpjBaseDoTexto, extrairDetalhesCertidao } from './_detectar';
 import { autoEnviarCertidao, type AutoEnvioResultado } from './_auto-enviar';
+import { resolveBaseUrl } from '../_pixel';
 import { ufDaEmpresa } from '@/app/utils/certidoes';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
@@ -182,7 +183,7 @@ export async function POST(req: Request) {
     const ghostId = process.env.GHOST_USER_ID;
     if (!ghostId) return { enviou: false, motivo: 'ghost_sem_gmail' };
     try {
-      return await autoEnviarCertidao(admin, { empresa, certidao: det.certidao, mes, resultado, arquivoNome: nomeArquivo, fileBuffer, ghostUserId: ghostId });
+      return await autoEnviarCertidao(admin, { empresa, certidao: det.certidao, mes, resultado, arquivoNome: nomeArquivo, fileBuffer, ghostUserId: ghostId, baseUrl: resolveBaseUrl(req) });
     } catch (e) { return { enviou: false, motivo: 'erro_envio', erro: e instanceof Error ? e.message : 'erro' }; }
   };
 

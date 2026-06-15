@@ -16,6 +16,7 @@ import {
 } from '../../checklist-fiscal/_shared';
 import { normalizarNomeDepartamento } from '@/app/utils/departamento';
 import { colunaDaCertidao, certidaoPodeEnviar } from '@/app/utils/certidoes';
+import { resolveBaseUrl, pixelTagCadastro } from '../_pixel';
 import { CADASTRO_CERTIDAO_LABEL } from '@/app/types';
 import type { CadastroCertidao, CadastroResultado } from '@/app/types';
 
@@ -283,7 +284,11 @@ export async function POST(req: Request) {
       `Segue em anexo a Certidão ${certLabel}${resultadoLabel ? ` (${resultadoLabel})` : ''}, referente a ${competenciaLabel}.\n\n` +
       `Qualquer dúvida, estamos à disposição.\n\nAtenciosamente.`;
     const escapeHtml = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
-    const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(bodyText)}</div>`;
+    // Pixel de visualização: gera o envioId AGORA (antes do e-mail) pra embedar no
+    // src e devolver o MESMO id — assim a rota de track-open acha o evento gravado.
+    const envioId = randomUUID();
+    const pixel = pixelTagCadastro(resolveBaseUrl(req), body.checklistId, envioId);
+    const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(bodyText)}</div>${pixel}`;
 
     // 9. Envia
     const oauth2 = getOAuthClient();
@@ -316,8 +321,8 @@ export async function POST(req: Request) {
       enviadoEm: nowIso,
       gmailMessageId,
       gmailThreadId,
-      envioId: randomUUID(),
-      pixelEmbedado: false,
+      envioId,
+      pixelEmbedado: pixel !== '',
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro inesperado';

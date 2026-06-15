@@ -922,6 +922,11 @@ function CelulaModal(p: CelulaModalProps) {
                           {formatBR(e.enviadoEm)} · {e.destinatarios.join(', ') || '—'}
                           {e.enviadoPorNome ? ` · ${e.enviadoPorNome}` : ''}
                         </div>
+                        {e.sucesso && (
+                          e.abertoEm
+                            ? <div className="inline-flex items-center gap-1 text-emerald-600"><Eye size={11} /> Visualizado {formatBR(e.abertoEm)}{typeof e.aberturas === 'number' && e.aberturas > 1 ? ` (${e.aberturas}×)` : ''}</div>
+                            : <div className="text-[var(--text-3)]">Não visualizado ainda</div>
+                        )}
                         {e.motivoReenvio && <div className="text-amber-700">Reenvio: {e.motivoReenvio}</div>}
                         {!e.sucesso && e.erro && <div className="text-red-500">{e.erro}</div>}
                       </div>

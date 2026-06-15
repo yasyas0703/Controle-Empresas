@@ -36,6 +36,7 @@ function isPublicPath(pathname: string): boolean {
   // Pixel de tracking de abertura de email — o proxy de imagens do Gmail
   // busca essa URL sem cookie. URL já é capability token (UUIDs).
   if (pathname.startsWith('/api/checklist-fiscal/track-open/')) return true;
+  if (pathname.startsWith('/api/checklist-cadastro/track-open/')) return true;
 
   // Endpoint chamado pelo daemon local que olha a pasta T:/Fiscal. Autentica
   // via header X-Machine-Token (env AUTO_ENVIO_TOKEN) — não usa cookie staff.

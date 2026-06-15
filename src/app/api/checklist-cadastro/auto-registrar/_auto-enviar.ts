@@ -10,6 +10,7 @@ import { google } from 'googleapis';
 import { randomUUID } from 'node:crypto';
 import { getOAuthClient, decryptToken } from '@/lib/googleOAuth';
 import { colunaDaCertidao, certidaoPodeEnviar } from '@/app/utils/certidoes';
+import { pixelTagCadastro } from '../_pixel';
 import { CADASTRO_CERTIDAO_LABEL } from '@/app/types';
 import type { CadastroCertidao, CadastroResultado, Empresa } from '@/app/types';
 
@@ -82,8 +83,9 @@ export async function autoEnviarCertidao(admin: Admin, params: {
   arquivoNome: string;
   fileBuffer: Buffer;
   ghostUserId: string;
+  baseUrl?: string | null;
 }): Promise<AutoEnvioResultado> {
-  const { empresa, certidao, mes, resultado, arquivoNome, fileBuffer, ghostUserId } = params;
+  const { empresa, certidao, mes, resultado, arquivoNome, fileBuffer, ghostUserId, baseUrl } = params;
   const coluna = colunaDaCertidao(certidao);
 
   // 1. Regra do escritório: só Negativa/PEN (Positiva nunca; FGTS/Trab só Negativa).
@@ -95,12 +97,14 @@ export async function autoEnviarCertidao(admin: Admin, params: {
   const emails = ((emailRows ?? []) as { email: string }[]).map((r) => r.email).filter(Boolean);
   if (!emails.length) return { enviou: false, motivo: 'sem_email_cadastro' };
 
-  // 3. Dedup: já enviada com sucesso nesse empresa+certidão+mês?
+  // 3. Dedup: já enviada com sucesso nesse empresa+certidão+mês? (pega o id da
+  //    célula tb — é o checklistId do pixel de visualização.)
   const { data: cell } = await admin.from('checklist_cadastro')
-    .select('envios_historico').eq('empresa_id', empresa.id).eq('certidao', certidao).eq('mes', mes).maybeSingle();
+    .select('id, envios_historico').eq('empresa_id', empresa.id).eq('certidao', certidao).eq('mes', mes).maybeSingle();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const enviosAnt = Array.isArray(cell?.envios_historico) ? (cell.envios_historico as any[]) : [];
   if (enviosAnt.some((e) => e && e.sucesso === true)) return { enviou: false, motivo: 'ja_enviada' };
+  const checklistId = (cell as { id?: string } | null)?.id;
 
   // 4. Token Gmail do GHOST.
   const { data: tokenRow } = await admin.from('usuario_gmail_tokens')
@@ -122,7 +126,10 @@ export async function autoEnviarCertidao(admin: Admin, params: {
     `Olá,\n\nSegue em anexo a Certidão ${certLabel}${resLabel ? ` (${resLabel})` : ''}, referente a ${compLabel}.\n\n` +
     `Qualquer dúvida, estamos à disposição.\n\nAtenciosamente.`;
   const escapeHtml = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
-  const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(bodyText)}</div>`;
+  // Pixel de visualização (mesmo id do evento gravado abaixo).
+  const envioId = randomUUID();
+  const pixel = pixelTagCadastro(baseUrl ?? null, checklistId, envioId);
+  const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(bodyText)}</div>${pixel}`;
 
   // 6. Envia via ghost.
   const oauth2 = getOAuthClient();
@@ -143,7 +150,7 @@ export async function autoEnviarCertidao(admin: Admin, params: {
   // 7. Registra o evento + marca concluído (append, mais novo primeiro).
   const nowIso = new Date().toISOString();
   const evento = {
-    id: randomUUID(), enviado_em: nowIso, enviado_por_id: ghostUserId, enviado_por_nome: 'Envio automático',
+    id: envioId, enviado_em: nowIso, enviado_por_id: ghostUserId, enviado_por_nome: 'Envio automático',
     remetente_email: from, destinatarios: emails, arquivo_nome: arquivoNome, sucesso: true,
     gmail_message_id: gmailMessageId ?? null, gmail_thread_id: gmailThreadId ?? null, entrega_status: 'pendente',
   };
