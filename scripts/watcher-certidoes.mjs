@@ -202,7 +202,9 @@ async function processarArquivo(caminho, subpasta) {
   const st = state.processados[caminho];
   if (st && st.hash === hash && SKIP_STATUSES.has(st.status)) return; // já registrado, conteúdo igual
 
-  log.step(`Processando ${subpasta}/${basename(caminho)} (${(buffer.length / 1024).toFixed(1)} KB)`);
+  // Mostra a ORIGEM real (entrada x pasta de mês) — "root" sozinho confundia.
+  const origem = caminho.includes(PASTA_ENTRADA) ? 'ENTRADA' : (subpasta === 'root' ? pastaDoMes(MES_ISO) : subpasta);
+  log.step(`Processando [${origem}] ${basename(caminho)} (${(buffer.length / 1024).toFixed(1)} KB)`);
   processedCount++;
 
   if (DRY_RUN) {
