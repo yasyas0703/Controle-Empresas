@@ -405,13 +405,15 @@ export default function ControleCadastroPage() {
 
   const linhas = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const qDig = q.replace(/\D/g, ''); // só compara CNPJ se a busca TEM dígitos —
+    // senão "".includes("") seria sempre true e não filtraria nada (bug do nome).
     let list = empresas.filter((e) => e.cadastrada !== false);
     if (q) {
       list = list.filter((e) =>
         (e.codigo ?? '').toLowerCase().includes(q) ||
         (e.razao_social ?? '').toLowerCase().includes(q) ||
         (e.apelido ?? '').toLowerCase().includes(q) ||
-        (e.cnpj ?? '').replace(/\D/g, '').includes(q.replace(/\D/g, '')));
+        (qDig.length > 0 && (e.cnpj ?? '').replace(/\D/g, '').includes(qDig)));
     }
     if (filtroUf) list = list.filter((e) => ufDaEmpresa(e) === filtroUf);
     if (filtroStatus !== 'todos') {
