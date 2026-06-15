@@ -25,7 +25,7 @@ import {
   resultadosPermitidos, buildCadastroKey, type CelulaCertidao, type CorCelulaCadastro,
 } from '@/app/utils/certidoes';
 import { useFileDropZone } from '@/app/hooks/useFileDropZone';
-import { formatBR } from '@/app/utils/date';
+import { formatBR, formatDateTimeBR } from '@/app/utils/date';
 
 // ── Mês ──────────────────────────────────────────────────────────────────────
 function monthKey(d: Date): string {
@@ -919,12 +919,12 @@ function CelulaModal(p: CelulaModalProps) {
                       {e.sucesso ? <MailCheck size={13} className="mt-0.5 shrink-0 text-emerald-600" /> : <MailX size={13} className="mt-0.5 shrink-0 text-red-500" />}
                       <div className="min-w-0">
                         <div className="text-[var(--text-2)]">
-                          {formatBR(e.enviadoEm)} · {e.destinatarios.join(', ') || '—'}
+                          {formatDateTimeBR(e.enviadoEm)} · {e.destinatarios.join(', ') || '—'}
                           {e.enviadoPorNome ? ` · ${e.enviadoPorNome}` : ''}
                         </div>
                         {e.sucesso && (
                           e.abertoEm
-                            ? <div className="inline-flex items-center gap-1 text-emerald-600"><Eye size={11} /> Visualizado {formatBR(e.abertoEm)}{typeof e.aberturas === 'number' && e.aberturas > 1 ? ` (${e.aberturas}×)` : ''}</div>
+                            ? <div className="inline-flex items-center gap-1 text-emerald-600"><Eye size={11} /> Visualizado {formatDateTimeBR(e.abertoEm)}{typeof e.aberturas === 'number' && e.aberturas > 1 ? ` (${e.aberturas}×)` : ''}</div>
                             : <div className="text-[var(--text-3)]">Não visualizado ainda</div>
                         )}
                         {e.motivoReenvio && <div className="text-amber-700">Reenvio: {e.motivoReenvio}</div>}

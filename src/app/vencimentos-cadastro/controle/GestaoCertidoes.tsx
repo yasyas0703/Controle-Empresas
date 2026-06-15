@@ -14,7 +14,7 @@ import type { ChecklistCadastroItem, Empresa, CadastroResultado } from '@/app/ty
 import { CADASTRO_CERTIDAO_COLUNAS, CADASTRO_CERTIDAO_LABEL } from '@/app/types';
 import type { CadastroCertidaoColuna } from '@/app/types';
 import * as db from '@/lib/db';
-import { daysUntil, formatBR } from '@/app/utils/date';
+import { daysUntil, formatBR, formatDateTimeBR } from '@/app/utils/date';
 import { colunaDaCertidao, ufDaEmpresa } from '@/app/utils/certidoes';
 
 // Faixas de alerta (sugeridas no levantamento: 30 / 15 / 7 dias).
@@ -349,7 +349,7 @@ export default function GestaoCertidoes() {
                     </td>
                     <td className="whitespace-nowrap border-b border-r border-[var(--border)] px-2.5 py-1.5 text-xs">
                       {l.enviadaEm ? (
-                        <span className="inline-flex items-center gap-1 text-emerald-600"><MailCheck size={13} /> {formatBR(l.enviadaEm)}</span>
+                        <span className="inline-flex items-center gap-1 text-emerald-600"><MailCheck size={13} /> {formatDateTimeBR(l.enviadaEm)}</span>
                       ) : <span className="text-[var(--text-3)]">não</span>}
                     </td>
                     <td className="whitespace-nowrap border-b border-r border-[var(--border)] px-2.5 py-1.5">

@@ -47,6 +47,16 @@ export function formatBR(dateStr?: string): string {
   return d.toLocaleDateString('pt-BR');
 }
 
+// "15/06/2026 13:18" — data + HORA (local). Aceita ISO datetime completo
+// (ex.: enviadoEm/abertoEm). NÃO usar parseISODate (que split('-') e quebra
+// num ISO com hora) — usa Date direto.
+export function formatDateTimeBR(value?: string): string {
+  if (!value) return '-';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '-';
+  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 const MESES_ABREV = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
 // "mar/2031" — usado quando a data exata importa menos que o mês/ano
