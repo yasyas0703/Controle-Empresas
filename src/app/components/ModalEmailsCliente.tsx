@@ -76,8 +76,10 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
       mostrarAlerta('Atenção', 'E-mail inválido.', 'aviso');
       return;
     }
-    if (emails.some((e) => e.email.toLowerCase() === email)) {
-      mostrarAlerta('Atenção', 'Este e-mail já está cadastrado.', 'aviso');
+    // Duplicado é por (e-mail + TIPO): o mesmo e-mail pode ser Fiscal E Cadastro
+    // (recebe guias e certidões). Só bloqueia se já existir no MESMO tipo.
+    if (emails.some((e) => e.email.toLowerCase() === email && e.tipo === form.tipo)) {
+      mostrarAlerta('Atenção', `Este e-mail já está cadastrado como ${TIPO_LABEL[form.tipo]}.`, 'aviso');
       return;
     }
     setSalvando(true);
