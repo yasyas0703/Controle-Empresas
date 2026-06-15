@@ -56,4 +56,5 @@ cadastro/
 scripts/.watcher-certidoes-state.json
 scripts/.watcher-certidoes*.log
 scripts/.watcher-rerun.log
+scripts/.backfill-gestao.log
 scripts/data/

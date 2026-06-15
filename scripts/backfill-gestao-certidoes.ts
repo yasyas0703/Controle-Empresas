@@ -63,6 +63,7 @@ interface Row {
   id: string; certidao: string; emissao_em: string | null; validade_em: string | null; arquivo_url: string | null;
 }
 
+void (async () => {
 // ─── carrega as certidões com PDF ───────────────────────────────────────────────
 const rows: Row[] = [];
 {
@@ -131,3 +132,4 @@ for (const [t, s] of Object.entries(porTipo).sort()) {
   console.log(`    ${t.padEnd(14)} ${String(s.comValidade).padStart(3)}/${String(s.total).padStart(3)}  ·  nº ${s.comNumero}  ·  cód ${s.comCodigo}`);
 }
 if (!APPLY) console.log('\n  DRY-RUN. Rode com --apply pra gravar.');
+})();
