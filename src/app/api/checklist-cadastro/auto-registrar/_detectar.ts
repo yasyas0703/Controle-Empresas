@@ -1,7 +1,10 @@
 // Detecção de certidão a partir do nome do arquivo + texto do PDF.
 // Puro (sem I/O) pra ser testável. Usado pela rota auto-registrar.
 
-import type { CadastroCertidao, CadastroResultado } from '@/app/types';
+// Import RELATIVO (não @/) de propósito: este módulo também é usado pelo
+// script de backfill via tsx (scripts/backfill-gestao-certidoes.ts), e o tsx
+// não resolve os paths do tsconfig.
+import type { CadastroCertidao, CadastroResultado } from '../../../types';
 
 function norm(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -139,6 +142,150 @@ export function resultadoDoTexto(texto: string): CadastroResultado | null {
   }
 
   return null;
+}
+
+// ─── Gestão de Certidões: validade, número, órgão, autenticidade ─────────────
+
+const DATA_RE = /(\d{2})\/(\d{2})\/(\d{4})/;
+
+function dataParaIso(m: RegExpMatchArray | null): string | null {
+  if (!m) return null;
+  const [, dd, mm, yyyy] = m;
+  const d = Number(dd), mo = Number(mm), y = Number(yyyy);
+  if (d < 1 || d > 31 || mo < 1 || mo > 12 || y < 2000 || y > 2100) return null;
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function somarDias(iso: string, dias: number): string {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+
+function somarMeses(iso: string, meses: number): string {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setMonth(d.getMonth() + meses);
+  return d.toISOString().slice(0, 10);
+}
+
+export interface DetalhesCertidao {
+  validadeEm: string | null;        // 'YYYY-MM-DD'
+  numeroCertidao: string | null;
+  orgaoEmissor: string | null;
+  codigoAutenticidade: string | null;
+  linkValidacao: string | null;
+}
+
+/**
+ * Extrai os campos da Gestão de Certidões do texto do PDF. Cada órgão usa
+ * rótulos diferentes (mapa levantado dos exemplos reais):
+ *   FEDERAL  "Válida até DD/MM/AAAA" · "Código de controle da certidão: X"
+ *   MG       "Data de emissão  Data de validade" (par de datas) · "Código de controle de autenticidade"
+ *   SP Adm   "Certidão nº X" · "Validade 6 (seis) meses, contados da expedição"
+ *   SP DA    "Certidão nº X" · "Validade 30 (TRINTA) dias, contados da emissão"
+ *   FGTS     "Validade: INÍCIO a FIM" (usa a data FINAL) · "Certificação Número: X"
+ *   CNDT     "Certidão nº: N/AAAA" · "Validade: DD/MM/AAAA - 180 dias"
+ * `emissaoIso` alimenta as validades relativas ("N dias/meses contados da emissão").
+ */
+export function extrairDetalhesCertidao(
+  texto: string,
+  certidao: CadastroCertidao,
+  emissaoIso: string | null,
+): DetalhesCertidao {
+  const t = norm(texto);
+  const out: DetalhesCertidao = {
+    validadeEm: null, numeroCertidao: null, orgaoEmissor: null,
+    codigoAutenticidade: null, linkValidacao: null,
+  };
+  if (!t.trim()) return out;
+
+  // ── Validade (ordem importa: intervalo > data explícita > relativa) ──
+  // FGTS / qualquer intervalo "X a Y" → a data FINAL é o vencimento.
+  const intervalo = t.match(/validade[: ]*\s*(\d{2}\/\d{2}\/\d{4})\s*a\s*(\d{2}\/\d{2}\/\d{4})/);
+  if (intervalo) out.validadeEm = dataParaIso(intervalo[2].match(DATA_RE));
+  // Federal: "válida até DD/MM/AAAA"
+  if (!out.validadeEm) {
+    const m = t.match(/valida\s+ate\s+(\d{2}\/\d{2}\/\d{4})/);
+    if (m) out.validadeEm = dataParaIso(m[1].match(DATA_RE));
+  }
+  // MG: rótulos "Data de emissão  Data de validade" seguidos do PAR de datas
+  // (emissão primeiro, validade depois). Cobre também a ordem rótulo→data→data.
+  if (!out.validadeEm) {
+    const par = t.match(/data de emissao\s+data de validade\s+(\d{2}\/\d{2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})/);
+    if (par) out.validadeEm = dataParaIso(par[2].match(DATA_RE));
+  }
+  // "data de validade" com uma data próxima (máx 30 chars entre rótulo e valor)
+  if (!out.validadeEm) {
+    const m = t.match(/data de validade[^0-9]{0,30}(\d{2}\/\d{2}\/\d{4})/);
+    if (m) out.validadeEm = dataParaIso(m[1].match(DATA_RE));
+  }
+  // CNDT e genéricos: "validade: DD/MM/AAAA" (o "- 180 dias" que segue é redundante)
+  if (!out.validadeEm) {
+    const m = t.match(/validade[: ]*\s*(\d{2}\/\d{2}\/\d{4})/);
+    if (m) out.validadeEm = dataParaIso(m[1].match(DATA_RE));
+  }
+  // Relativa: "validade 30 (trinta) dias" / "validade 6 (seis) meses" — soma na
+  // emissão. 1ª: ancorada no rótulo "validade" (layout 1 coluna, ex.: SP D.Ativa).
+  // 2ª (fallback): "N (palavra) dias/meses … contados" SEM o rótulo grudado —
+  // PDFs em 2 colunas (ex.: SP Administrativa) separam o rótulo do valor; o
+  // "(palavra)" + "contados" deixa o padrão específico o bastante.
+  if (!out.validadeEm && emissaoIso) {
+    const rel = t.match(/validade\s*(?:de\s*)?(\d{1,3})\s*(?:\([a-z\s]+\)\s*)?(dias?|mes(?:es)?)/)
+      ?? t.match(/(\d{1,3})\s*\([a-z\s]+\)\s*(dias?|mes(?:es)?)\b[^.]{0,40}contad/);
+    if (rel) {
+      const n = Number(rel[1]);
+      if (n > 0 && n <= 999) {
+        out.validadeEm = rel[2].startsWith('dia') ? somarDias(emissaoIso, n) : somarMeses(emissaoIso, n);
+      }
+    }
+  }
+  // Sanidade: validade tem que ser posterior à emissão (quando conhecida).
+  if (out.validadeEm && emissaoIso && out.validadeEm < emissaoIso) out.validadeEm = null;
+
+  // ── Número da certidão / certificação ──
+  // FGTS: "Certificação Número: 2026051316304920454701"
+  let num = t.match(/certificacao\s+numero[: ]*\s*(\d{6,})/)?.[1] ?? null;
+  // CNDT: "Certidão nº: 47941031/2026" · SP: "Certidão nº 26060476766-60" / "82432689"
+  if (!num) num = t.match(/certidao\s*n[o°º]?\s*[:.]?\s*([\d][\d.\-\/]{3,30}\d)/)?.[1] ?? null;
+  out.numeroCertidao = num;
+
+  // ── Código de controle / autenticidade ──
+  // Federal: "Código de controle da certidão: 86BE.9F84.FB44.9D42"
+  let cod = t.match(/codigo de controle da certidao[: ]*\s*([0-9a-f]{2,8}(?:[.\-][0-9a-f]{2,8}){2,})/)?.[1] ?? null;
+  // MG: "Código de controle de autenticidade CB19-7F00-44D0-..."
+  if (!cod) cod = t.match(/codigo de controle de autenticidade\s*[:\-]?\s*([0-9a-f]{4}(?:-[0-9a-f]{4}){3,})/)?.[1] ?? null;
+  if (!cod) cod = t.match(/codigo de (?:controle|autenticidade)[^0-9a-f]{0,15}([0-9a-f]{4}(?:[.\-][0-9a-f]{2,8}){2,})/)?.[1] ?? null;
+  out.codigoAutenticidade = cod ? cod.toUpperCase() : null;
+
+  // ── Órgão emissor + link de validação (por tipo / assinatura no texto) ──
+  if (certidao === 'FGTS') {
+    out.orgaoEmissor = 'Caixa Econômica Federal (CRF)';
+    out.linkValidacao = 'https://consulta-crf.caixa.gov.br';
+  } else if (certidao === 'TRABALHISTA') {
+    out.orgaoEmissor = 'Justiça do Trabalho (CNDT/TST)';
+    out.linkValidacao = 'http://www.tst.jus.br';
+  } else if (certidao === 'FEDERAL') {
+    out.orgaoEmissor = 'Receita Federal / PGFN';
+    out.linkValidacao = 'http://rfb.gov.br';
+  } else if (certidao === 'ESTADUAL_ADM') {
+    out.orgaoEmissor = 'SEFAZ/SP (Administrativa)';
+    out.linkValidacao = 'https://www.pfe.fazenda.sp.gov.br';
+  } else if (certidao === 'ESTADUAL_DA') {
+    out.orgaoEmissor = 'PGE/SP (Dívida Ativa)';
+    out.linkValidacao = 'https://www.dividaativa.pge.sp.gov.br';
+  } else if (certidao === 'MUNICIPAL') {
+    out.orgaoEmissor = 'Prefeitura Municipal';
+  } else if (/secretaria de estado de fazenda de minas gerais/.test(t)) {
+    out.orgaoEmissor = 'SEF/MG';
+    out.linkValidacao = 'https://cdt.fazenda.mg.gov.br';
+  } else if (certidao === 'ESTADUAL') {
+    out.orgaoEmissor = 'SEFAZ (Estadual)';
+  }
+  // Link explícito no texto, se houver, vence o default do tipo.
+  const link = t.match(/https?:\/\/[a-z0-9.\-\/_]+/)?.[0] ?? null;
+  if (link) out.linkValidacao = link;
+
+  return out;
 }
 
 /**

@@ -280,9 +280,15 @@ export interface ChecklistCadastroItem {
   relatorioTexto?: string;
   observacao?: string;
   emissaoEm?: string;    // 'YYYY-MM-DD' — data de emissão lida do PDF (metadado)
+  // ─── Gestão de Certidões (controle de vencimento) ───
+  validadeEm?: string;          // 'YYYY-MM-DD' — vencimento da certidão
+  numeroCertidao?: string;      // nº da certidão/certificação
+  orgaoEmissor?: string;        // Receita Federal/PGFN, SEF-MG, Caixa, TST...
+  codigoAutenticidade?: string; // código de controle/autenticidade
+  linkValidacao?: string;       // site de validação
   uf?: string;           // UF detectada (estadual)
   autoridade?: string;   // token do watcher (sefazmg, debitsp, federal, fgts...)
-  fonte?: 'watcher' | 'manual';
+  fonte?: 'watcher' | 'manual' | 'relacao';
   concluido: boolean;
   concluidoPorId?: UUID | null;
   concluidoPorNome?: string;

@@ -11,7 +11,7 @@ import { NextResponse } from 'next/server';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { getSupabaseAdmin, extrairTextoPdfServidor } from '../../checklist-fiscal/_shared';
 import { identificarEmpresa } from '../../checklist-fiscal/auto-enviar/_identificar';
-import { certidaoDoArquivo, tipoDoTexto, resultadoDoTexto, resultadoDoNome, emissaoDoTexto, cnpjBaseDoTexto } from './_detectar';
+import { certidaoDoArquivo, tipoDoTexto, resultadoDoTexto, resultadoDoNome, emissaoDoTexto, cnpjBaseDoTexto, extrairDetalhesCertidao } from './_detectar';
 import { ufDaEmpresa } from '@/app/utils/certidoes';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
@@ -209,9 +209,24 @@ export async function POST(req: Request) {
   };
   if (resultado) row.resultado = resultado;
   if (emissao) row.emissao_em = emissao;
-  const { error: upsertErr } = await admin
+  // Gestão de Certidões: validade/número/órgão/autenticidade lidos do texto.
+  const detalhes = extrairDetalhesCertidao(texto, det.certidao, emissao);
+  if (detalhes.validadeEm) row.validade_em = detalhes.validadeEm;
+  if (detalhes.numeroCertidao) row.numero_certidao = detalhes.numeroCertidao;
+  if (detalhes.orgaoEmissor) row.orgao_emissor = detalhes.orgaoEmissor;
+  if (detalhes.codigoAutenticidade) row.codigo_autenticidade = detalhes.codigoAutenticidade;
+  if (detalhes.linkValidacao) row.link_validacao = detalhes.linkValidacao;
+  let { error: upsertErr } = await admin
     .from('checklist_cadastro')
     .upsert(row, { onConflict: 'empresa_id,certidao,mes' });
+  // Fallback: migration da Gestão ainda não rodou (colunas novas ausentes) —
+  // grava sem elas pra não travar o watcher.
+  if (upsertErr && /validade_em|numero_certidao|orgao_emissor|codigo_autenticidade|link_validacao|column/i.test(upsertErr.message ?? '')) {
+    console.warn('[auto-registrar] colunas da Gestão ausentes — rode supabase-migration-gestao-certidoes.sql. Gravando sem elas.');
+    for (const k of ['validade_em', 'numero_certidao', 'orgao_emissor', 'codigo_autenticidade', 'link_validacao']) delete row[k];
+    const retry = await admin.from('checklist_cadastro').upsert(row, { onConflict: 'empresa_id,certidao,mes' });
+    upsertErr = retry.error;
+  }
   if (upsertErr) {
     await registrarProcessado(admin, { caminhoServidor, hashArquivo, empresaId: empresa.id, competencia: mes, certidao: det.certidao, resultado, nomeArquivo, status: 'erro', detalhes: { motivo: 'falha no upsert', erro: upsertErr.message } });
     return NextResponse.json({ status: 'erro', detalhes: { motivo: 'Falha ao gravar o checklist', erro: upsertErr.message } }, { status: 500 });

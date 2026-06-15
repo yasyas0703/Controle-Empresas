@@ -17,6 +17,7 @@ import { supabase } from '@/lib/supabase';
 import { sortByPtBr } from '@/lib/sort';
 import { getDepartamentoSlugsDoUsuario } from '@/app/utils/departamento';
 import { DepartamentoTabs, DEPARTAMENTO_CONFIG } from '@/app/components/DepartamentoPlaceholder';
+import GestaoCertidoes from './GestaoCertidoes';
 import {
   celulasDaColuna, colunaDaCertidao, corCelulaCadastro, certidaoPodeEnviar, ufDaEmpresa,
   resultadosPermitidos, buildCadastroKey, type CelulaCertidao, type CorCelulaCadastro,
@@ -74,6 +75,7 @@ export default function ControleCadastroPage() {
   const podeVer = !!currentUser && (canAdmin || isPrivileged
     || getDepartamentoSlugsDoUsuario(currentUser, departamentos).includes('cadastro'));
 
+  const [abaInterna, setAbaInterna] = useState<'checklist' | 'gestao'>('checklist');
   const [mes, setMes] = useState<string>(() => currentMonth());
   const [items, setItems] = useState<Map<string, ChecklistCadastroItem>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -438,6 +440,25 @@ export default function ControleCadastroPage() {
     <div className="space-y-4">
       <DepartamentoTabs tabs={DEPARTAMENTO_CONFIG.cadastro.tabs} />
 
+      {/* Sub-abas: Checklist Mensal | Gestão de Certidões */}
+      <div className="inline-flex rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] p-1">
+        {([['checklist', 'Checklist Mensal'], ['gestao', 'Gestão de Certidões']] as const).map(([k, label]) => (
+          <button
+            key={k}
+            onClick={() => setAbaInterna(k)}
+            className={`rounded-[var(--radius)] px-3 sm:px-4 py-1.5 text-sm font-semibold transition-colors ${
+              abaInterna === k ? 'bg-[var(--brand-soft)] text-[var(--brand-strong)]' : 'text-[var(--text-2)] hover:bg-[var(--surface-3)]'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {abaInterna === 'gestao' ? (
+        <GestaoCertidoes />
+      ) : (
+      <>
       {/* Cabeçalho */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
@@ -624,6 +645,8 @@ export default function ControleCadastroPage() {
           onEnviar={enviarAoCliente}
           onRemoverEnvio={removerEnvio}
         />
+      )}
+      </>
       )}
     </div>
   );

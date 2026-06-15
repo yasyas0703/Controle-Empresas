@@ -2354,6 +2354,13 @@ type ChecklistCadastroRow = {
   relatorio_texto: string | null;
   observacao: string | null;
   emissao_em: string | null;
+  // Campos da Gestão de Certidões — só existem após a migration
+  // supabase-migration-gestao-certidoes.sql (por isso opcionais).
+  validade_em?: string | null;
+  numero_certidao?: string | null;
+  orgao_emissor?: string | null;
+  codigo_autenticidade?: string | null;
+  link_validacao?: string | null;
   uf: string | null;
   autoridade: string | null;
   fonte: string | null;
@@ -2389,9 +2396,14 @@ export function toChecklistCadastroItem(row: ChecklistCadastroRow): ChecklistCad
     relatorioTexto: row.relatorio_texto ?? undefined,
     observacao: row.observacao ?? undefined,
     emissaoEm: row.emissao_em ?? undefined,
+    validadeEm: row.validade_em ?? undefined,
+    numeroCertidao: row.numero_certidao ?? undefined,
+    orgaoEmissor: row.orgao_emissor ?? undefined,
+    codigoAutenticidade: row.codigo_autenticidade ?? undefined,
+    linkValidacao: row.link_validacao ?? undefined,
     uf: row.uf ?? undefined,
     autoridade: row.autoridade ?? undefined,
-    fonte: row.fonte === 'watcher' || row.fonte === 'manual' ? row.fonte : undefined,
+    fonte: row.fonte === 'watcher' || row.fonte === 'manual' || row.fonte === 'relacao' ? row.fonte : undefined,
     concluido: !!row.concluido,
     concluidoPorId: row.concluido_por_id,
     concluidoPorNome: row.concluido_por_nome ?? undefined,
@@ -2419,6 +2431,35 @@ export async function fetchChecklistCadastroByMes(mes: string): Promise<Checklis
     if (error) {
       // Tabela só existe após rodar supabase-migration-checklist-cadastro.sql —
       // sem ela a página de controle abre vazia em vez de quebrar.
+      if (hasMissingTable(error)) return [];
+      throw error;
+    }
+    const lote = (data ?? []) as ChecklistCadastroRow[];
+    todas.push(...lote);
+    if (lote.length < PAGE) break;
+    offset += PAGE;
+    if (offset > 100_000) break;
+  }
+  return todas.map((row) => toChecklistCadastroItem(row));
+}
+
+/**
+ * Todas as certidões de todos os meses — usada pela aba Gestão de Certidões
+ * (controle de vencimento). Ordena do mês mais novo pro mais velho; a UI
+ * deduplica pra "mais recente por empresa × certidão" quando o toggle está on.
+ */
+export async function fetchChecklistCadastroTodos(): Promise<ChecklistCadastroItem[]> {
+  const PAGE = 1000;
+  const todas: ChecklistCadastroRow[] = [];
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('checklist_cadastro')
+      .select('*')
+      .order('mes', { ascending: false })
+      .order('empresa_id', { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) {
       if (hasMissingTable(error)) return [];
       throw error;
     }
