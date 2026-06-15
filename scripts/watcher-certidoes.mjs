@@ -120,18 +120,25 @@ const log = {
 // ─── Alvos de leitura ─────────────────────────────────────────────────────────
 // Cada alvo é { dir, subpasta }. Os arquivos são lidos só desses diretórios
 // (não recursivo — as subpastas FGTS/TRABALHISTA são alvos próprios).
-// Pasta de ENTRADA (estilo fiscal): solta os PDFs aqui pra processar. Fica fora
-// do mês — a competência vira o MÊS DO RUN (mesIso). Pasta inexistente é ignorada.
+// Pasta de ENTRADA (estilo fiscal): solta os PDFs aqui. A competência vira o
+// MÊS DO RUN (mesIso). Escaneada SEMPRE — inclusive no loop contínuo (60s).
+// É pequena (só os novos), então re-varrer é barato. Flat (tipo pelo texto) +
+// subpastas opcionais. Pasta inexistente é ignorada.
 const PASTA_ENTRADA = '1- GUIAS A ENVIAR';
-function alvosDoMes(mesIso) {
-  const pastaMes = join(CERTIDOES_ROOT, pastaDoMes(mesIso));
+function alvosEntrada() {
   const entrada = join(CERTIDOES_ROOT, PASTA_ENTRADA);
   return [
-    // Entrada nova: flat (tipo detectado pelo texto) + subpastas opcionais.
     { dir: entrada, subpasta: 'root' },
     { dir: join(entrada, 'FGTS'), subpasta: 'FGTS' },
     { dir: join(entrada, 'TRABALHISTA'), subpasta: 'TRABALHISTA' },
-    // Pastas por mês (carga histórica / organização antiga).
+  ];
+}
+// Pastas por mês (carga histórica). Varridas só no --once — re-ler ~1000 PDFs do
+// T: a cada 60s no loop contínuo seria pesado demais (cada arquivo é lido inteiro
+// pra calcular o hash). Por isso o contínuo observa só a entrada.
+function alvosMes(mesIso) {
+  const pastaMes = join(CERTIDOES_ROOT, pastaDoMes(mesIso));
+  return [
     { dir: pastaMes, subpasta: 'root' },
     { dir: join(pastaMes, 'FGTS'), subpasta: 'FGTS' },
     { dir: join(pastaMes, 'TRABALHISTA'), subpasta: 'TRABALHISTA' },
@@ -265,8 +272,9 @@ async function enviarParaApi(caminho, buffer, hash, subpasta) {
 }
 
 // ─── Varredura ─────────────────────────────────────────────────────────────────
-function scanAll() {
-  for (const alvo of alvosDoMes(MES_ISO)) {
+function scanAll(soEntrada = false) {
+  const alvos = soEntrada ? alvosEntrada() : [...alvosEntrada(), ...alvosMes(MES_ISO)];
+  for (const alvo of alvos) {
     let entradas;
     try { entradas = readdirSync(alvo.dir, { withFileTypes: true }); }
     catch { continue; } // pasta pode não existir nesse mês — tudo bem
@@ -307,7 +315,9 @@ function iniciar() {
   }
   log.info(`Watcher de certidões iniciado (mês ${MES_ISO}).`);
 
-  scanAll();
+  // --once varre tudo (entrada + pastas de mês). Contínuo observa SÓ a entrada
+  // (as pastas de mês são carga histórica; re-lê-las a cada 60s seria pesado).
+  scanAll(/* soEntrada */ !ONCE);
 
   if (ONCE) {
     const espera = setInterval(() => {
@@ -319,9 +329,9 @@ function iniciar() {
       }
     }, 500);
   } else {
-    // Re-varre a cada 60s (T: é drive de rede; polling é o mais confiável).
-    setInterval(scanAll, 60_000);
-    log.info('Modo "watch" ativo — re-varrendo as pastas a cada 60s.');
+    // Re-varre a entrada a cada 60s (T: é drive de rede; polling é o mais confiável).
+    setInterval(() => scanAll(true), 60_000);
+    log.info(`Modo "watch" ativo — observando ${PASTA_ENTRADA} a cada 60s. Vai colocando que ele vai pegando.`);
   }
 
   const shutdown = (sig) => { console.log(''); log.info(`${sig} recebido. Salvando state…`); salvarStateSync(); process.exit(0); };
