@@ -3,9 +3,10 @@
 // /api/checklist-cadastro/auto-registrar, que identifica empresa + certidão +
 // resultado e grava no checklist. NÃO envia e-mail (só cataloga).
 //
-// ⚠️ SOMENTE LEITURA: este watcher NUNCA move, renomeia ou apaga arquivos das
-//    pastas de origem. Ele só lê. A deduplicação é feita por hash no
-//    scripts/.watcher-certidoes-state.json (e no servidor, por hash).
+// ⚠️ PASTAS DE DADOS (mês, cndmg): SOMENTE LEITURA — nunca move/renomeia/apaga.
+//    ÚNICA exceção: a pasta de ENTRADA (1- GUIAS A ENVIAR) — o que já entrou no
+//    sistema é movido pra subpasta ENVIADOS, pra diferenciar do que falta.
+//    Deduplicação por hash no .watcher-certidoes-state.json (e no servidor).
 //
 // Pastas lidas (mês alvo MM.YYYY):
 //   T:\Office\PARCELAMENTOS\CERTIDOES\<MM.YYYY>            (raiz: estadual/federal)
@@ -22,7 +23,7 @@
 //   node scripts/watcher-certidoes.mjs --url https://controle-empresas.vercel.app
 
 import { Agent } from 'undici';
-import { readFileSync, writeFileSync, existsSync, appendFileSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, appendFileSync, readdirSync, renameSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { basename, resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -161,6 +162,29 @@ function validarPdfBuffer(buffer) {
 
 // Status terminais — não re-POSTa se o hash não mudou.
 const SKIP_STATUSES = new Set(['registrado', 'ja_processado']);
+// Status que significam "já entrou no sistema" — guia da ENTRADA vai pro ENVIADOS.
+const FEITO_STATUSES = new Set(['registrado', 'ja_processado', 'interno_marcado_feito']);
+
+// Depois que uma guia da ENTRADA já entrou no sistema, move pra subpasta ENVIADOS,
+// pra você diferenciar o que falta processar do que já foi. SÓ mexe em arquivos
+// da pasta de entrada — as pastas de DADOS (mês, cndmg) nunca são tocadas.
+// ENVIADOS não é re-escaneada (o scan da entrada lê só os arquivos da raiz dela).
+const PASTA_ENVIADOS = 'ENVIADOS';
+function moverParaEnviados(caminho) {
+  try {
+    const destinoDir = join(CERTIDOES_ROOT, PASTA_ENTRADA, PASTA_ENVIADOS);
+    mkdirSync(destinoDir, { recursive: true });
+    let destino = join(destinoDir, basename(caminho));
+    if (existsSync(destino)) destino = join(destinoDir, `${ts().replace(/[:.]/g, '-')}_${basename(caminho)}`);
+    renameSync(caminho, destino);
+    delete state.processados[caminho]; // saiu da entrada — libera a chave do state
+    salvarStateDebounced();
+    log.info(`→ ENVIADOS: ${basename(caminho)}`);
+  } catch (err) {
+    // arquivo aberto/lock — fica na entrada e tenta de novo na próxima varredura
+    log.warn(`não movi ${basename(caminho)} p/ ENVIADOS (${err.code || err.message}) — tento depois`);
+  }
+}
 
 // ─── Fila / processamento ─────────────────────────────────────────────────────
 let processando = false;
@@ -200,7 +224,11 @@ async function processarArquivo(caminho, subpasta) {
 
   const hash = createHash('sha256').update(buffer).digest('hex');
   const st = state.processados[caminho];
-  if (st && st.hash === hash && SKIP_STATUSES.has(st.status)) return; // já registrado, conteúdo igual
+  if (st && st.hash === hash && SKIP_STATUSES.has(st.status)) {
+    // Já está no sistema. Se veio da ENTRADA, garante que vai pro ENVIADOS.
+    if (!DRY_RUN && caminho.includes(PASTA_ENTRADA)) moverParaEnviados(caminho);
+    return;
+  }
 
   // Mostra a ORIGEM real (entrada x pasta de mês) — "root" sozinho confundia.
   const origem = caminho.includes(PASTA_ENTRADA) ? 'ENTRADA' : (subpasta === 'root' ? pastaDoMes(MES_ISO) : subpasta);
@@ -253,6 +281,12 @@ async function processarArquivo(caminho, subpasta) {
 
   state.processados[caminho] = { hash, status: resultado.status, ultimaTentativa: ts() };
   salvarStateDebounced();
+
+  // Guia da ENTRADA que já entrou no sistema → move pro ENVIADOS. Pendência
+  // (não reconhecida) FICA na entrada, pra você ver e resolver.
+  if (!DRY_RUN && caminho.includes(PASTA_ENTRADA) && FEITO_STATUSES.has(resultado.status)) {
+    moverParaEnviados(caminho);
+  }
 }
 
 async function enviarParaApi(caminho, buffer, hash, subpasta) {
@@ -304,7 +338,7 @@ function cabecalho() {
   if (DRY_RUN) console.log(`  ${C.amarelo}MODO DRY-RUN — não chama a API.${C.reset}`);
   if (Number.isFinite(LIMIT)) console.log(`  ${C.amarelo}LIMIT: ${LIMIT} arquivos${C.reset}`);
   if (ONCE) console.log(`  ${C.amarelo}ONCE: processa o que tem e sai${C.reset}`);
-  console.log(`  ${C.dim}SOMENTE LEITURA — nenhum arquivo é movido/renomeado/apagado.${C.reset}`);
+  console.log(`  ${C.dim}Pastas de dados: só leitura. Entrada: já-processados vão pra ENVIADOS.${C.reset}`);
   console.log('');
 }
 
