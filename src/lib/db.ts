@@ -2540,6 +2540,20 @@ const CADASTRO_ARQUIVO_EXT = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg',
  * → cor verde; `slot='relatorio'` = o relatório → cor azul. Mantém o
  * arquivo_historico compartilhado e apaga o arquivo antigo do mesmo slot.
  */
+/**
+ * Detalhes lidos do PDF no upload MANUAL (mesmo parser do watcher). resultado só
+ * é aplicado se a célula ainda não tem um (não sobrescreve escolha manual).
+ */
+export interface DetalhesUploadCadastro {
+  resultado?: CadastroResultado | null;
+  emissaoEm?: string | null;
+  validadeEm?: string | null;
+  numeroCertidao?: string | null;
+  orgaoEmissor?: string | null;
+  codigoAutenticidade?: string | null;
+  linkValidacao?: string | null;
+}
+
 export async function uploadCadastroAnexo(
   empresaId: UUID,
   certidao: CadastroCertidao,
@@ -2547,6 +2561,7 @@ export async function uploadCadastroAnexo(
   file: File,
   slot: 'arquivo' | 'relatorio',
   autor: AutorAcao,
+  detalhes?: DetalhesUploadCadastro,
 ): Promise<{ url: string; nome: string; item: ChecklistCadastroItem }> {
   const validacao = await validarUploadCompleto(file, {
     maxSize: CADASTRO_ARQUIVO_MAX_SIZE,
@@ -2580,19 +2595,40 @@ export async function uploadCadastroAnexo(
     fonte: atual?.fonte ?? 'manual',
     atualizado_em: now,
   };
+  // Chaves da migration da Gestão (podem não existir ainda) — separadas pra
+  // poder fazer fallback sem elas.
+  const chavesGestao = ['validade_em', 'numero_certidao', 'orgao_emissor', 'codigo_autenticidade', 'link_validacao'];
   if (slot === 'arquivo') {
     row.arquivo_url = path;
     row.arquivo_nome = file.name;
+    // Detalhes lidos do PDF (upload manual usa o mesmo parser do watcher).
+    if (detalhes) {
+      if (detalhes.emissaoEm) row.emissao_em = detalhes.emissaoEm;
+      if (detalhes.validadeEm) row.validade_em = detalhes.validadeEm;
+      if (detalhes.numeroCertidao) row.numero_certidao = detalhes.numeroCertidao;
+      if (detalhes.orgaoEmissor) row.orgao_emissor = detalhes.orgaoEmissor;
+      if (detalhes.codigoAutenticidade) row.codigo_autenticidade = detalhes.codigoAutenticidade;
+      if (detalhes.linkValidacao) row.link_validacao = detalhes.linkValidacao;
+      // resultado: só preenche se ainda não houver um (não sobrescreve manual).
+      if (detalhes.resultado && !atual?.resultado) row.resultado = detalhes.resultado;
+    }
   } else {
     row.relatorio_url = path;
     row.relatorio_nome = file.name;
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('checklist_cadastro')
     .upsert(row, { onConflict: 'empresa_id,certidao,mes' })
     .select()
     .single();
+  // Fallback: migration da Gestão ainda não rodou → regrava sem as colunas novas.
+  if (error && hasMissingColumn(error, chavesGestao)) {
+    console.warn('[cadastro] colunas da Gestão ausentes — rode supabase-migration-gestao-certidoes.sql. Salvando sem elas.');
+    for (const k of chavesGestao) delete row[k];
+    const retry = await supabase.from('checklist_cadastro').upsert(row, { onConflict: 'empresa_id,certidao,mes' }).select().single();
+    data = retry.data; error = retry.error;
+  }
   if (error) {
     await supabase.storage.from('documentos').remove([path]).catch(() => undefined);
     throw error;

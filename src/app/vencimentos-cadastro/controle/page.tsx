@@ -18,6 +18,8 @@ import { sortByPtBr } from '@/lib/sort';
 import { getDepartamentoSlugsDoUsuario } from '@/app/utils/departamento';
 import { DepartamentoTabs, DEPARTAMENTO_CONFIG } from '@/app/components/DepartamentoPlaceholder';
 import GestaoCertidoes from './GestaoCertidoes';
+import { extrairTextoPdf } from '@/app/utils/extrairTextoPdf';
+import { extrairDetalhesCertidao, emissaoDoTexto, resultadoDoTexto } from '@/app/api/checklist-cadastro/auto-registrar/_detectar';
 import {
   celulasDaColuna, colunaDaCertidao, corCelulaCadastro, certidaoPodeEnviar, ufDaEmpresa,
   resultadosPermitidos, buildCadastroKey, type CelulaCertidao, type CorCelulaCadastro,
@@ -243,12 +245,35 @@ export default function ControleCadastroPage() {
     if (!target) return;
     setSalvando(true);
     try {
+      // Upload manual de CERTIDÃO (slot 'arquivo') roda o MESMO parser do watcher:
+      // lê validade/número/órgão/código/resultado do texto do PDF. Best-effort —
+      // se a extração falhar (PDF escaneado), anexa mesmo assim sem os detalhes.
+      let detalhes: db.DetalhesUploadCadastro | undefined;
+      const ehPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      if (slot === 'arquivo' && ehPdf) {
+        try {
+          const { texto } = await extrairTextoPdf(file);
+          const emissao = emissaoDoTexto(texto);
+          const det = extrairDetalhesCertidao(texto, target.certidao, emissao);
+          detalhes = { ...det, emissaoEm: emissao, resultado: resultadoDoTexto(texto) };
+        } catch (e) {
+          console.warn('[cadastro] não extraí os detalhes do PDF (anexo segue):', e);
+        }
+      }
       const r = await db.uploadCadastroAnexo(
         target.empresa.id, target.certidao, mes, file, slot,
         { autorId: currentUserId, autorNome: currentUser?.nome },
+        detalhes,
       );
       patchItem(r.item);
-      mostrarAlerta('Anexado', slot === 'arquivo' ? 'Certidão anexada.' : 'Relatório anexado.', 'sucesso');
+      const venceu = slot === 'arquivo' && r.item.validadeEm;
+      mostrarAlerta(
+        'Anexado',
+        slot === 'arquivo'
+          ? (venceu ? `Certidão anexada. Validade lida: ${formatBR(r.item.validadeEm!)}.` : 'Certidão anexada.')
+          : 'Relatório anexado.',
+        'sucesso',
+      );
     } catch (err) {
       console.error(err);
       const msg = err instanceof Error ? err.message : 'Erro ao anexar';
