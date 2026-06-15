@@ -12,6 +12,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { getSupabaseAdmin, extrairTextoPdfServidor } from '../../checklist-fiscal/_shared';
 import { identificarEmpresa } from '../../checklist-fiscal/auto-enviar/_identificar';
 import { certidaoDoArquivo, tipoDoTexto, resultadoDoTexto, resultadoDoNome, emissaoDoTexto, cnpjBaseDoTexto, extrairDetalhesCertidao } from './_detectar';
+import { autoEnviarCertidao, type AutoEnvioResultado } from './_auto-enviar';
 import { ufDaEmpresa } from '@/app/utils/certidoes';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
@@ -90,7 +91,7 @@ export async function POST(req: Request) {
   if (!(file instanceof File) || typeof metaRaw !== 'string') {
     return NextResponse.json({ status: 'erro', detalhes: { motivo: 'Payload inválido (arquivo + meta)' } }, { status: 400 });
   }
-  let meta: { caminhoServidor?: string; hash?: string; mes?: string; subpasta?: string };
+  let meta: { caminhoServidor?: string; hash?: string; mes?: string; subpasta?: string; autoEnviar?: boolean };
   try { meta = JSON.parse(metaRaw); }
   catch { return NextResponse.json({ status: 'erro', detalhes: { motivo: 'meta não é JSON' } }, { status: 400 }); }
   if (!meta.caminhoServidor || !meta.mes || !/^\d{4}-\d{2}$/.test(meta.mes)) {
@@ -174,6 +175,17 @@ export async function POST(req: Request) {
   const resultado = resultadoDoTexto(texto) ?? resultadoDoNome(nomeArquivo);
   const emissao = emissaoDoTexto(texto);
 
+  // Auto-envio (opt-in via --auto-enviar). Best-effort — falha aqui NÃO reverte o
+  // registro/anexo. Travas (Positiva, e-mail de cadastro, dedup) ficam dentro.
+  const tentarAutoEnvio = async (): Promise<AutoEnvioResultado | undefined> => {
+    if (!meta.autoEnviar) return undefined;
+    const ghostId = process.env.GHOST_USER_ID;
+    if (!ghostId) return { enviou: false, motivo: 'ghost_sem_gmail' };
+    try {
+      return await autoEnviarCertidao(admin, { empresa, certidao: det.certidao, mes, resultado, arquivoNome: nomeArquivo, fileBuffer, ghostUserId: ghostId });
+    } catch (e) { return { enviou: false, motivo: 'erro_envio', erro: e instanceof Error ? e.message : 'erro' }; }
+  };
+
   // 7b. Idempotência ESPERTA: só pula se ESTA célula já tem ESTE mesmo arquivo
   //     anexado (mesmo hash). Se a célula está SEM o PDF (anexo removido, ou só
   //     tinha resultado da relação), NÃO pula — segue e re-anexa. Conserta o
@@ -188,7 +200,9 @@ export async function POST(req: Request) {
     && (cellAtual as { arquivo_hash?: string | null }).arquivo_hash === hashArquivo;
   if (jaAnexada) {
     await registrarProcessado(admin, { caminhoServidor, hashArquivo, empresaId: empresa.id, competencia: mes, certidao: det.certidao, resultado, nomeArquivo, status: 'ja_processado', detalhes: { motivo: 'célula já tem este arquivo anexado' } });
-    return NextResponse.json({ status: 'ja_processado', empresa: { id: empresa.id, nome: empresa.apelido || empresa.razao_social || empresa.codigo }, certidao: det.certidao });
+    // Mesmo já anexada, tenta enviar (o dedup interno evita reenvio).
+    const autoEnvio = await tentarAutoEnvio();
+    return NextResponse.json({ status: 'ja_processado', empresa: { id: empresa.id, nome: empresa.apelido || empresa.razao_social || empresa.codigo }, certidao: det.certidao, autoEnvio });
   }
 
   // 8. Upload do PDF (path determinístico por hash → idempotente)
@@ -255,6 +269,8 @@ export async function POST(req: Request) {
     });
   }
 
+  const autoEnvio = await tentarAutoEnvio();
+
   return NextResponse.json({
     status: 'registrado',
     empresa: { id: empresa.id, nome: empresa.apelido || empresa.razao_social || empresa.codigo },
@@ -264,5 +280,6 @@ export async function POST(req: Request) {
     emissao,
     mes,
     matchFraco: !forte,
+    autoEnvio,
   });
 }

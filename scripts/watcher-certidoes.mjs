@@ -39,6 +39,8 @@ const args = process.argv.slice(2);
 function argVal(flag) { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : null; }
 const DRY_RUN = args.includes('--dry-run');
 const ONCE = args.includes('--once');
+// Opt-in: além de catalogar, ENVIA a certidão pro e-mail de Cadastro (Negativa/PEN).
+const AUTO_ENVIAR = args.includes('--auto-enviar');
 const urlArg = argVal('--url');
 const LIMIT = (() => { const n = Number(argVal('--limit')); return Number.isFinite(n) && n > 0 ? n : Infinity; })();
 
@@ -268,15 +270,20 @@ async function processarArquivo(caminho, subpasta) {
 
   const cor = { registrado: C.verde, ja_processado: C.dim, pendente_correcao: C.amarelo, erro: C.vermelho }[resultado.status] || C.branco;
   const resumo = `${cor}${resultado.status}${C.reset} ${C.dim}|${C.reset} ${basename(caminho)}`;
+  // Auto-envio (quando --auto-enviar): mostra se mandou ou o motivo de não mandar.
+  const env = resultado.autoEnvio;
+  const envTxt = !env ? ''
+    : env.enviou ? ` ${C.verde}✉ enviado → ${(env.destinatarios || []).join(', ')}${C.reset}`
+    : ` ${C.dim}✉ não enviou (${env.motivo}${env.erro ? ': ' + env.erro : ''})${C.reset}`;
   if (resultado.status === 'registrado') {
     const extra = `${resultado.empresa?.nome ?? '?'} · ${resultado.certidao}${resultado.resultado ? ' · ' + resultado.resultado : ' · (sem resultado)'}${resultado.matchFraco ? ' · ⚠ match fraco' : ''}`;
-    log.ok(`${resumo} — ${extra}`, { resposta: resultado });
+    log.ok(`${resumo} — ${extra}${envTxt}`, { resposta: resultado });
   } else if (resultado.status === 'erro') {
     log.err(`${resumo} — ${JSON.stringify(resultado.detalhes ?? {})}`, { resposta: resultado });
   } else if (String(resultado.status).startsWith('pendente')) {
     log.warn(`${resumo} — ${JSON.stringify(resultado.detalhes ?? {})}`, { resposta: resultado });
   } else {
-    log.info(resumo, { resposta: resultado });
+    log.info(`${resumo}${envTxt}`, { resposta: resultado });
   }
 
   state.processados[caminho] = { hash, status: resultado.status, ultimaTentativa: ts() };
@@ -292,7 +299,7 @@ async function processarArquivo(caminho, subpasta) {
 async function enviarParaApi(caminho, buffer, hash, subpasta) {
   const form = new FormData();
   form.append('arquivo', new Blob([buffer], { type: 'application/pdf' }), basename(caminho));
-  form.append('meta', JSON.stringify({ caminhoServidor: caminho, hash, mes: MES_ISO, subpasta }));
+  form.append('meta', JSON.stringify({ caminhoServidor: caminho, hash, mes: MES_ISO, subpasta, autoEnviar: AUTO_ENVIAR }));
 
   const dispatcher = new Agent({ connect: { timeout: 30_000 }, keepAliveTimeout: 1, keepAliveMaxTimeout: 1, pipelining: 0 });
   const ac = new AbortController();
@@ -336,6 +343,7 @@ function cabecalho() {
   console.log(`  State:       ${STATE_FILE}`);
   console.log(`  Já no state: ${Object.keys(state.processados).length} arquivos`);
   if (DRY_RUN) console.log(`  ${C.amarelo}MODO DRY-RUN — não chama a API.${C.reset}`);
+  if (AUTO_ENVIAR) console.log(`  ${C.amarelo}⚠ AUTO-ENVIAR LIGADO — envia Negativa/PEN pro e-mail de Cadastro (conta ghost).${C.reset}`);
   if (Number.isFinite(LIMIT)) console.log(`  ${C.amarelo}LIMIT: ${LIMIT} arquivos${C.reset}`);
   if (ONCE) console.log(`  ${C.amarelo}ONCE: processa o que tem e sai${C.reset}`);
   console.log(`  ${C.dim}Pastas de dados: só leitura. Entrada: já-processados vão pra ENVIADOS.${C.reset}`);

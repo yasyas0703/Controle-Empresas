@@ -40,10 +40,14 @@ echo  URL: https://controle-empresas.vercel.app
 echo ============================================================
 echo.
 
+REM  --auto-enviar: ALÉM de catalogar, ENVIA Negativa/PEN pro e-mail de Cadastro
+REM  (conta ghost). Só pra empresa que TEM e-mail de cadastro; dedup evita reenvio.
+REM  Pra só catalogar (sem enviar), apague o --auto-enviar abaixo.
 node scripts\watcher-certidoes.mjs ^
   --url https://controle-empresas.vercel.app ^
   %MESARG% ^
-  --once
+  --once ^
+  --auto-enviar
 
 echo.
 echo ============================================================

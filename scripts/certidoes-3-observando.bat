@@ -43,7 +43,10 @@ echo  Entrada: T:\Office\PARCELAMENTOS\CERTIDOES\1- GUIAS A ENVIAR
 echo ============================================================
 echo.
 
-node scripts\watcher-certidoes.mjs --url https://controle-empresas.vercel.app %MESARG%
+REM  --auto-enviar: ALÉM de catalogar, ENVIA Negativa/PEN pro e-mail de Cadastro
+REM  (conta ghost). Só envia pra empresa que TEM e-mail de cadastro; dedup evita
+REM  reenvio. Pra DESLIGAR o envio (só catalogar), apague o --auto-enviar abaixo.
+node scripts\watcher-certidoes.mjs --url https://controle-empresas.vercel.app %MESARG% --auto-enviar
 
 echo.
 echo ============================================================
