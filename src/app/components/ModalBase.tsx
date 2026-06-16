@@ -41,7 +41,7 @@ export default function ModalBase({
       }}
     >
       <div className="absolute inset-0 bg-black/40" />
-      <div className={(dialogClassName ?? 'w-full max-w-2xl rounded-2xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto') + ' relative'}>
+      <div className={(dialogClassName ?? 'w-full max-w-2xl rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] shadow-[var(--shadow-pop)] max-h-[90vh] overflow-y-auto') + ' relative'}>
         {children}
       </div>
     </div>,

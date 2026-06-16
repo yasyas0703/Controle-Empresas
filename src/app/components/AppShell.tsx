@@ -445,8 +445,8 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   void userDepartamentoSlug;
 
   const notifPanel = (
-    <div className="overflow-hidden rounded-2xl bg-white shadow-2xl border border-gray-200">
-      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-cyan-50 to-teal-50">
+    <div className="overflow-hidden rounded-[var(--radius-md)] bg-[var(--surface-2)] shadow-[var(--shadow-pop)] border border-[var(--border)]">
+      <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--surface-1)]">
         <div className="font-bold text-gray-900 text-sm">Notificações</div>
         <div className="flex items-center gap-2">
           {browserNotifPermission === 'default' && fiscalUnreadNotifs.length > 0 && (

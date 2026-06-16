@@ -510,7 +510,7 @@ export default function DashboardPage() {
 
       {/* GUIAS NÃO ENVIADAS (envio automático) — card de pendências */}
       {podeVerCardAuto && autoProblemas.length > 0 && (
-        <div className="rounded-2xl border-l-4 border-amber-500 bg-amber-50 p-5">
+        <div className="rounded-[var(--radius-md)] border-l-4 border-amber-500 bg-amber-50 p-5">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-md bg-white border border-amber-200 flex items-center justify-center shrink-0">
@@ -532,7 +532,7 @@ export default function DashboardPage() {
           </div>
           <div className="space-y-2">
             {autoProblemas.slice(0, 8).map((p) => (
-              <div key={p.id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 bg-white border border-amber-200 rounded-xl px-3 sm:px-4 py-2.5">
+              <div key={p.id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 bg-white border border-amber-200 rounded-[var(--radius)] px-3 sm:px-4 py-2.5">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="font-semibold text-slate-800 shrink-0">{p.empresa_codigo ?? '—'}</span>
                   <span className="text-slate-400 hidden sm:inline">—</span>
@@ -748,11 +748,11 @@ export default function DashboardPage() {
       )}
 
       {/* Filtros */}
-      <div className="rounded-2xl bg-white p-5 shadow-sm">
+      <div className="rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] p-5">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="text-lg font-bold text-gray-800">Filtros de Empresas</div>
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as 'alpha' | 'vencidos' | 'proximo' | 'recente')} className="rounded-lg bg-teal-50 px-3 py-1.5 text-sm text-gray-900 font-medium focus:ring-2 focus:ring-cyan-400 border border-teal-200">
+            <div className="text-lg font-bold text-[var(--text-1)]">Filtros de Empresas</div>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as 'alpha' | 'vencidos' | 'proximo' | 'recente')} className="rounded-[var(--radius)] bg-[var(--surface-1)] px-3 py-1.5 text-sm text-[var(--text-1)] font-medium focus:ring-2 focus:ring-[var(--brand)] border border-[var(--border)]">
               <option value="alpha">Ordenar por</option>
               <option value="proximo">Mais próximo</option>
               <option value="recente">Mais recente</option>
@@ -789,7 +789,7 @@ export default function DashboardPage() {
                 <ChevronDown size={12} />
               </button>
               {exportMenuOpen && (
-                <div className="absolute right-0 mt-2 w-64 rounded-xl bg-white shadow-2xl border border-gray-100 z-40 overflow-hidden">
+                <div className="absolute right-0 mt-2 w-64 rounded-[var(--radius-md)] bg-[var(--surface-2)] shadow-[var(--shadow-pop)] border border-[var(--border)] z-40 overflow-hidden">
                   <button
                     onClick={() => {
                       setExportMenuOpen(false);
@@ -841,49 +841,49 @@ export default function DashboardPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar empresa, CNPJ, código..."
-              className="w-full rounded-xl bg-gray-50 pl-10 pr-4 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400 focus:bg-white transition"
+              className="w-full rounded-[var(--radius)] bg-[var(--surface-1)] pl-10 pr-4 py-2.5 text-sm text-[var(--text-1)] focus:ring-2 focus:ring-[var(--brand)] focus:bg-[var(--surface-2)] transition"
             />
           </div>
-          <select value={depId} onChange={(e) => { setDepId(e.target.value); setResponsavelId(''); }} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={depId} onChange={(e) => { setDepId(e.target.value); setResponsavelId(''); }} className="rounded-[var(--radius)] bg-[var(--surface-1)] px-3 py-2.5 text-sm text-[var(--text-1)] focus:ring-2 focus:ring-[var(--brand)]">
             <option value="">Departamento</option>
             {sortedDepartamentos.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
           </select>
-          <select value={responsavelId} onChange={(e) => setResponsavelId(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={responsavelId} onChange={(e) => setResponsavelId(e.target.value)} className="rounded-[var(--radius)] bg-[var(--surface-1)] px-3 py-2.5 text-sm text-[var(--text-1)] focus:ring-2 focus:ring-[var(--brand)]">
             <option value="">Responsável</option>
             {responsaveisOptions.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
           </select>
-          <select value={tipoEstabelecimento} onChange={(e) => setTipoEstabelecimento(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={tipoEstabelecimento} onChange={(e) => setTipoEstabelecimento(e.target.value)} className="rounded-[var(--radius)] bg-[var(--surface-1)] px-3 py-2.5 text-sm text-[var(--text-1)] focus:ring-2 focus:ring-[var(--brand)]">
             <option value="">Matriz / Filial</option>
             <option value="filial">Filial</option>
             <option value="matriz">Matriz</option>
           </select>
-          <select value={tipoDocumento} onChange={(e) => setTipoDocumento(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={tipoDocumento} onChange={(e) => setTipoDocumento(e.target.value)} className="rounded-[var(--radius)] bg-[var(--surface-1)] px-3 py-2.5 text-sm text-[var(--text-1)] focus:ring-2 focus:ring-[var(--brand)]">
             <option value="">Tipo de inscrição</option>
             <option value="CNO">CNO</option>
             <option value="CNPJ">CNPJ</option>
             <option value="CPF">CPF</option>
           </select>
-          <select value={regimeFederal} onChange={(e) => setRegimeFederal(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={regimeFederal} onChange={(e) => setRegimeFederal(e.target.value)} className="rounded-[var(--radius)] bg-[var(--surface-1)] px-3 py-2.5 text-sm text-[var(--text-1)] focus:ring-2 focus:ring-[var(--brand)]">
             <option value="">Regime Federal</option>
             <option value="Lucro Presumido">Lucro Presumido</option>
             <option value="Lucro Real">Lucro Real</option>
             <option value="Simples Nacional">Simples Nacional</option>
           </select>
-          <select value={servico} onChange={(e) => setServico(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={servico} onChange={(e) => setServico(e.target.value)} className="rounded-[var(--radius)] bg-[var(--surface-1)] px-3 py-2.5 text-sm text-[var(--text-1)] focus:ring-2 focus:ring-[var(--brand)]">
             <option value="">Serviço</option>
             {allServicos.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
           {allTags.length > 0 && (
-            <select value={tagFiltro} onChange={(e) => setTagFiltro(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-violet-400">
+            <select value={tagFiltro} onChange={(e) => setTagFiltro(e.target.value)} className="rounded-[var(--radius)] bg-[var(--surface-1)] px-3 py-2.5 text-sm text-[var(--text-1)] focus:ring-2 focus:ring-[var(--brand)]">
               <option value="">Tag</option>
               {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           )}
-          <select value={estado} onChange={(e) => setEstado(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={estado} onChange={(e) => setEstado(e.target.value)} className="rounded-[var(--radius)] bg-[var(--surface-1)] px-3 py-2.5 text-sm text-[var(--text-1)] focus:ring-2 focus:ring-[var(--brand)]">
             <option value="">Estado</option>
             {allEstados.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
           </select>
-          <select value={statusVenc} onChange={(e) => setStatusVenc(e.target.value)} className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-cyan-400">
+          <select value={statusVenc} onChange={(e) => setStatusVenc(e.target.value)} className="rounded-[var(--radius)] bg-[var(--surface-1)] px-3 py-2.5 text-sm text-[var(--text-1)] focus:ring-2 focus:ring-[var(--brand)]">
             <option value="">Vencimento</option>
             <option value="emdia">Em dia</option>
             <option value="risco">Em risco</option>
@@ -1116,7 +1116,7 @@ export default function DashboardPage() {
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                              <span className={`rounded-[var(--radius-sm)] border px-2 py-0.5 text-[10px] font-bold ${
                                 item.dias < 0
                                   ? 'border-red-200 bg-red-50 text-red-700'
                                   : item.dias <= limiares.critico
