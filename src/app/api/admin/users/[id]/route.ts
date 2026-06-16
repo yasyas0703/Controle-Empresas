@@ -172,7 +172,7 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
       hint: dbError.hint,
     });
     return NextResponse.json(
-      { error: 'Não foi possível remover o perfil.', detail: dbError.message, code: dbError.code },
+      { error: 'Não foi possível remover o perfil.' },
       { status: 400 }
     );
   }
@@ -181,7 +181,7 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   const { error: authError } = await admin.auth.admin.deleteUser(id);
   if (authError && !authError.message.toLowerCase().includes('not found')) {
     console.error('[admin/users DELETE] Falha ao remover do Auth:', { id, message: authError.message });
-    return NextResponse.json({ error: 'Não foi possível remover o usuário.', detail: authError.message }, { status: 400 });
+    return NextResponse.json({ error: 'Não foi possível remover o usuário.' }, { status: 400 });
   }
 
   // Audit log

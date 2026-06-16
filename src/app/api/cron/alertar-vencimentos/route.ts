@@ -103,11 +103,10 @@ export async function GET(req: Request) {
   try {
     return await processarCron({ simularDataIso: simular, dry });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erro desconhecido';
-    const stack = err instanceof Error ? err.stack : undefined;
+    // Detalhe técnico (mensagem + stack) só no log do Vercel — nunca no corpo HTTP.
     console.error('[cron] erro fatal:', err);
     return NextResponse.json(
-      { error: message, stack: stack?.split('\n').slice(0, 6) },
+      { error: 'Erro interno ao processar alertas de vencimento.' },
       { status: 500 },
     );
   }
@@ -134,10 +133,11 @@ async function processarCron(opts: { simularDataIso?: string | null; dry?: boole
     admin.from('responsaveis').select('empresa_id, departamento_id, usuario_id'),
   ]);
 
-  if (empresasRes.error) return NextResponse.json({ error: empresasRes.error.message }, { status: 500 });
-  if (departamentosRes.error) return NextResponse.json({ error: departamentosRes.error.message }, { status: 500 });
-  if (usuariosRes.error) return NextResponse.json({ error: usuariosRes.error.message }, { status: 500 });
-  if (responsaveisRes.error) return NextResponse.json({ error: responsaveisRes.error.message }, { status: 500 });
+  // Erro do Postgres só no log — corpo HTTP genérico (rota pública atrás de CRON_SECRET).
+  if (empresasRes.error) { console.error('[cron] erro ao carregar empresas:', empresasRes.error); return NextResponse.json({ error: 'Erro ao carregar dados.' }, { status: 500 }); }
+  if (departamentosRes.error) { console.error('[cron] erro ao carregar departamentos:', departamentosRes.error); return NextResponse.json({ error: 'Erro ao carregar dados.' }, { status: 500 }); }
+  if (usuariosRes.error) { console.error('[cron] erro ao carregar usuarios:', usuariosRes.error); return NextResponse.json({ error: 'Erro ao carregar dados.' }, { status: 500 }); }
+  if (responsaveisRes.error) { console.error('[cron] erro ao carregar responsaveis:', responsaveisRes.error); return NextResponse.json({ error: 'Erro ao carregar dados.' }, { status: 500 }); }
 
   const empresas = (empresasRes.data ?? []) as Array<{
     id: string;

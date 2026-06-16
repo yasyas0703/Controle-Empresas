@@ -63,7 +63,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     return NextResponse.json({ ok: true, ativo: body.ativo });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erro inesperado';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[clientes-portal/toggle-ativo] erro:', err);
+    return NextResponse.json({ error: 'Não foi possível atualizar agora.' }, { status: 500 });
   }
 }

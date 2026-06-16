@@ -88,7 +88,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     return NextResponse.json({ ok: true, marcado_pago_em: novoValor });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erro inesperado';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[portal/marcar-pago] erro:', err);
+    return NextResponse.json({ error: 'Não foi possível atualizar agora.' }, { status: 500 });
   }
 }

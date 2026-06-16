@@ -257,7 +257,7 @@ export async function POST(req: Request) {
       email_erro: sendResult.ok ? null : sendResult.error,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erro inesperado';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[clientes-portal/criar] erro:', err);
+    return NextResponse.json({ error: 'Não foi possível criar o acesso agora.' }, { status: 500 });
   }
 }

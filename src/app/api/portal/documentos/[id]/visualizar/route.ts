@@ -79,7 +79,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     return NextResponse.json({ ok: true, visualizado_em: doc.visualizado_em ?? nowIso });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erro inesperado';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[portal/visualizar] erro:', err);
+    return NextResponse.json({ error: 'Não foi possível registrar a visualização agora.' }, { status: 500 });
   }
 }

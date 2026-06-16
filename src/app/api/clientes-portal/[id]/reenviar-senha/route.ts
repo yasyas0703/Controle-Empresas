@@ -125,7 +125,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       email_erro: sendResult.ok ? null : sendResult.error,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erro inesperado';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[clientes-portal/reenviar-senha] erro:', err);
+    return NextResponse.json({ error: 'Não foi possível reenviar a senha agora.' }, { status: 500 });
   }
 }

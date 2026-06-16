@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rateLimit, getClientIp } from '@/lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,6 +83,13 @@ export async function GET(
   context: { params: Promise<{ cnpj: string }> }
 ): Promise<Response> {
   try {
+    // Freio contra abuso da cota das APIs externas (BrasilAPI/cnpj.ws têm 429
+    // compartilhado). Rota é staff-only, mas isto evita varredura/loop acidental.
+    const ip = getClientIp(_req);
+    if (!rateLimit(`cnpj:${ip}`, 30, 10 * 60 * 1000).ok) {
+      return NextResponse.json({ error: 'Muitas consultas. Tente novamente em alguns minutos.' }, { status: 429 });
+    }
+
     const { cnpj: rawCnpj } = await context.params;
     const cnpj = onlyDigits(rawCnpj);
 
@@ -163,8 +171,10 @@ export async function GET(
       );
     }
 
+    // Status dos provedores externos só no log — não expor no corpo HTTP.
+    console.error('[cnpj] falha nos provedores:', { brStatus: br.status, wsStatus: ws.status });
     return NextResponse.json(
-      { error: `Erro ao consultar CNPJ (BrasilAPI ${br.status}, CNPJ.ws ${ws.status})` },
+      { error: 'Não foi possível consultar o CNPJ agora. Tente novamente em instantes.' },
       { status: 502 }
     );
   } catch (err) {

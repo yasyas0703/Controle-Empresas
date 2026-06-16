@@ -116,8 +116,8 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       email_liberado: authRemovido,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erro inesperado';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[clientes-portal/DELETE] erro:', err);
+    return NextResponse.json({ error: 'Não foi possível excluir o acesso agora.' }, { status: 500 });
   }
 }
 
@@ -324,7 +324,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       email_notificacao_erro: emailNotificacaoErro,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erro inesperado';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[clientes-portal/PUT] erro:', err);
+    return NextResponse.json({ error: 'Não foi possível salvar as alterações agora.' }, { status: 500 });
   }
 }

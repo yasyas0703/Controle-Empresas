@@ -52,7 +52,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erro inesperado';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[push/unsubscribe] erro:', err);
+    return NextResponse.json({ error: 'Não foi possível desativar as notificações agora.' }, { status: 500 });
   }
 }

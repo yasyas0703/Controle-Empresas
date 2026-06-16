@@ -111,7 +111,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       visualizado_em: docMeta?.visualizado_em ?? updates.visualizado_em ?? null,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erro inesperado';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[portal/download] erro:', err);
+    return NextResponse.json({ error: 'Não foi possível baixar o documento agora.' }, { status: 500 });
   }
 }
