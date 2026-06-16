@@ -68,6 +68,13 @@ function fmtCnpj(c?: string): string {
 
 type CellTarget = { empresa: Empresa; certidao: CadastroCertidao; coluna: CadastroCertidaoColuna; subLabel?: string };
 
+// Cache em memória (nível de módulo) das células por mês. Sobrevive à navegação
+// entre rotas — o componente desmonta, mas o módulo não. Sem isso, voltar pra
+// tela recarregava tudo do zero (spinner de tela cheia) toda vez. Com cache:
+// mostra na hora o que já tinha e revalida em 2º plano (stale-while-revalidate).
+// Some num reload de página (F5), que é o comportamento esperado.
+const cacheCelulasPorMes = new Map<string, Map<string, ChecklistCadastroItem>>();
+
 export default function ControleCadastroPage() {
   const {
     empresas, departamentos, currentUser, currentUserId,
@@ -79,8 +86,11 @@ export default function ControleCadastroPage() {
 
   const [abaInterna, setAbaInterna] = useState<'checklist' | 'gestao'>('checklist');
   const [mes, setMes] = useState<string>(() => currentMonth());
-  const [items, setItems] = useState<Map<string, ChecklistCadastroItem>>(new Map());
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<Map<string, ChecklistCadastroItem>>(
+    () => cacheCelulasPorMes.get(currentMonth()) ?? new Map(),
+  );
+  // Spinner de tela cheia só quando NÃO há nada em cache pra exibir.
+  const [loading, setLoading] = useState(() => !cacheCelulasPorMes.has(currentMonth()));
   const [search, setSearch] = useState('');
   const [filtroUf, setFiltroUf] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<'todos' | 'negativa' | 'pen' | 'positiva' | 'falta'>('todos');
@@ -101,11 +111,13 @@ export default function ControleCadastroPage() {
   useEffect(() => { mostrarAlertaRef.current = mostrarAlerta; }, [mostrarAlerta]);
 
   const carregar = useCallback(async (mesAlvo: string) => {
-    setLoading(true);
+    // Com cache, revalida em silêncio (sem spinner). Sem cache, mostra spinner.
+    if (!cacheCelulasPorMes.has(mesAlvo)) setLoading(true);
     try {
       const lista = await db.fetchChecklistCadastroByMes(mesAlvo);
       const mapa = new Map<string, ChecklistCadastroItem>();
       for (const it of lista) mapa.set(buildCadastroKey(it.empresaId, it.certidao), it);
+      cacheCelulasPorMes.set(mesAlvo, mapa);
       setItems(mapa);
     } catch (err) {
       console.error('[cadastro] erro ao carregar:', err);
@@ -117,6 +129,10 @@ export default function ControleCadastroPage() {
 
   useEffect(() => {
     if (!podeVer) { setLoading(false); return; }
+    // Mostra na hora o que já tem em cache pra este mês (se tiver) e revalida.
+    const cached = cacheCelulasPorMes.get(mes);
+    setItems(cached ?? new Map());
+    setLoading(!cached);
     carregar(mes);
   }, [mes, carregar, podeVer]);
 
@@ -133,6 +149,7 @@ export default function ControleCadastroPage() {
           setItems((prev) => {
             const next = new Map(prev);
             next.delete(buildCadastroKey(row.empresa_id, row.certidao));
+            cacheCelulasPorMes.set(mes, next);
             return next;
           });
         } else {
@@ -140,6 +157,7 @@ export default function ControleCadastroPage() {
           setItems((prev) => {
             const next = new Map(prev);
             next.set(buildCadastroKey(item.empresaId, item.certidao), item);
+            cacheCelulasPorMes.set(mes, next);
             return next;
           });
         }
@@ -175,6 +193,7 @@ export default function ControleCadastroPage() {
     setItems((prev) => {
       const next = new Map(prev);
       next.set(buildCadastroKey(it.empresaId, it.certidao), it);
+      cacheCelulasPorMes.set(mes, next);
       return next;
     });
   };
