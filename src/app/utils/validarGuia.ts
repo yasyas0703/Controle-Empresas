@@ -359,7 +359,13 @@ const PERFIS: Record<string, PerfilValidacao> = {
     // \bdime\b com fronteira: /dime/ casava com "aTENDIMEnto" (substring),
     // virando candidato fantasma em guias municipais. "santa catarina" removido
     // (genérico demais — aparece em endereços). estadoEsperado SC ainda orienta.
-    denominacaoRegex: /\bdime\b|declaracao\s*do\s*ic\s*ms\s*mensal/i,
+    //
+    // O RECIBO da DIME (sistema SAT da SEF-SC) NÃO traz a palavra "dime" no corpo
+    // — só o cabeçalho "Recepção de Declarações do ICMS" e a URL sat.sef.sc. Sem
+    // esses marcadores o recibo caía em obrigacao_nao_identificada (confirmado no
+    // recibo real 05/2026 da COMPANHIA TEXTIL BASP). Ambos são exclusivos da
+    // SEF-SC, então casar por eles é seguro (não vazam pra guia de outro estado).
+    denominacaoRegex: /\bdime\b|declaracao\s*do\s*ic\s*ms\s*mensal|recepcao\s*de\s*declaracoes\s*do\s*ic\s*ms|sat\.?sef\.?sc/i,
     estadoEsperado: 'SC',
   },
 
