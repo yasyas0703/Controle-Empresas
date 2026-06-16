@@ -195,6 +195,19 @@ function readErrorStatus(error: unknown): number | null {
   return null;
 }
 
+/**
+ * Extrai code/message de um erro do Postgres/Supabase sem `any`. Para erro
+ * não-objeto, devolve strings vazias (equivalente aos early-returns dos
+ * detectores de coluna/tabela ausente que usam este helper).
+ */
+function getPgError(error: unknown): { code: string; message: string } {
+  let code = '';
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    code = String((error as { code?: unknown }).code ?? '');
+  }
+  return { code, message: readErrorMessage(error) };
+}
+
 function asRecord(value: unknown): GenericRow | null {
   return typeof value === 'object' && value !== null ? (value as GenericRow) : null;
 }
@@ -2158,9 +2171,7 @@ async function lerChecklistAtual(
  * rodada no Supabase. Permite fazer fallback sem quebrar o fluxo.
  */
 function isErroColunaHistoricoFaltando(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const msg = String((err as any).message ?? '').toLowerCase();
+  const msg = getPgError(err).message.toLowerCase();
   return msg.includes('arquivo_historico') || (msg.includes('column') && msg.includes('does not exist'));
 }
 
@@ -3218,9 +3229,7 @@ export async function removerEnvioChecklist(
 }
 
 function isErroColunaEnviosFaltando(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const msg = String((err as any).message ?? '').toLowerCase();
+  const msg = getPgError(err).message.toLowerCase();
   return msg.includes('envios_historico') || (msg.includes('column') && msg.includes('does not exist'));
 }
 
@@ -4431,10 +4440,7 @@ export async function fetchLoteLivrosItens(
 }
 
 function hasMissingTable(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const msg = String((err as any).message ?? '').toLowerCase();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const code = String((err as any).code ?? '');
-  return code === '42P01' || msg.includes('does not exist') || msg.includes('relation') && msg.includes('not found');
+  const { code, message } = getPgError(err);
+  const msg = message.toLowerCase();
+  return code === '42P01' || msg.includes('does not exist') || (msg.includes('relation') && msg.includes('not found'));
 }

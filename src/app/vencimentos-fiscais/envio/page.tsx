@@ -32,6 +32,7 @@ import {
 import StatusPortalCliente from '@/app/vencimentos-fiscais/checklist/StatusPortalCliente';
 import { supabase } from '@/lib/supabase';
 import { formatBR } from '@/app/utils/date';
+import { formatarDocumento } from '@/app/utils/validation';
 import { avaliarJanelaCompetencia, competenciaEsperada, competenciaEfetiva } from '@/app/utils/competencia';
 import ModalBase from '@/app/components/ModalBase';
 import ModalMotivoReenvio from '@/app/components/ModalMotivoReenvio';
@@ -2049,7 +2050,7 @@ function ModalEnviarGuia({
               <div className="font-bold text-gray-700 mb-1">Detectado no PDF:</div>
               <div className="grid grid-cols-2 gap-2">
                 <PreviewLine label="Perfil" valor={resultado.perfilUsado ?? '(sem perfil)'} />
-                <PreviewLine label="CNPJ" valor={resultado.detectado.cnpjEncontrado ? formatarCnpj(resultado.detectado.cnpjEncontrado) : null} bom={!!resultado.detectado.cnpjEncontrado} />
+                <PreviewLine label="CNPJ" valor={resultado.detectado.cnpjEncontrado ? formatarDocumento(resultado.detectado.cnpjEncontrado, 'CNPJ') : null} bom={!!resultado.detectado.cnpjEncontrado} />
                 <PreviewLine label="Denominação" valor={resultado.detectado.denominacaoEncontrada} bom={!!resultado.detectado.denominacaoEncontrada} />
                 <PreviewLine label="Código receita" valor={resultado.detectado.codigoReceitaEncontrado} />
                 <PreviewLine label="Cidade" valor={resultado.detectado.cidadeEncontrada} />
@@ -2185,11 +2186,6 @@ function PreviewLine({
       {alerta && <div className="text-[10px] text-amber-600 italic">{alerta}</div>}
     </div>
   );
-}
-
-function formatarCnpj(s: string): string {
-  if (s.length !== 14) return s;
-  return `${s.slice(0, 2)}.${s.slice(2, 5)}.${s.slice(5, 8)}/${s.slice(8, 12)}-${s.slice(12)}`;
 }
 
 // ──────────────────────────────────────────────────────────────────────────

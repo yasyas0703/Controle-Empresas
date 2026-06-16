@@ -26,6 +26,7 @@ import {
 } from '@/app/utils/certidoes';
 import { useFileDropZone } from '@/app/hooks/useFileDropZone';
 import { formatBR, formatDateTimeBR } from '@/app/utils/date';
+import { formatarDocumento } from '@/app/utils/validation';
 
 // ── Mês ──────────────────────────────────────────────────────────────────────
 function monthKey(d: Date): string {
@@ -59,12 +60,6 @@ const CELL_STYLE: Record<CorCelulaCadastro, { cell: string; dot: string; legenda
 };
 
 const RESULTADO_ABBR: Record<CadastroResultado, string> = { Negativa: 'Neg', PEN: 'PEN', Positiva: 'Pos' };
-
-function fmtCnpj(c?: string): string {
-  const d = (c ?? '').replace(/\D/g, '');
-  if (d.length !== 14) return c ?? '';
-  return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
-}
 
 type CellTarget = { empresa: Empresa; certidao: CadastroCertidao; coluna: CadastroCertidaoColuna; subLabel?: string };
 
@@ -619,7 +614,7 @@ export default function ControleCadastroPage() {
                     <div className="text-xs text-[var(--text-3)]">
                       {empresa.codigo}{empresa.estado ? ` · ${ufDaEmpresa(empresa)}` : ''}
                     </div>
-                    {empresa.cnpj && <div className="font-mono text-[11px] text-[var(--text-3)]">{fmtCnpj(empresa.cnpj)}</div>}
+                    {empresa.cnpj && <div className="font-mono text-[11px] text-[var(--text-3)]">{formatarDocumento(empresa.cnpj, 'CNPJ')}</div>}
                   </td>
                   {CADASTRO_CERTIDAO_COLUNAS.map((coluna) => {
                     const celulas = celulasDaColuna(coluna, empresa);

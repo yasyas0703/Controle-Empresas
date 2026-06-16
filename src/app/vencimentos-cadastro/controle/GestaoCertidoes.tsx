@@ -16,6 +16,7 @@ import type { CadastroCertidaoColuna } from '@/app/types';
 import * as db from '@/lib/db';
 import { daysUntil, formatBR, formatDateTimeBR } from '@/app/utils/date';
 import { colunaDaCertidao, ufDaEmpresa } from '@/app/utils/certidoes';
+import { formatarDocumento } from '@/app/utils/validation';
 
 // Faixas de alerta (sugeridas no levantamento: 30 / 15 / 7 dias).
 const DIAS_A_VENCER = 30;
@@ -46,11 +47,6 @@ const RESULTADO_BADGE: Record<CadastroResultado, string> = {
   Positiva: 'bg-red-50 border-red-300 text-red-700',
 };
 
-function fmtCnpj(c?: string): string {
-  const d = (c ?? '').replace(/\D/g, '');
-  if (d.length !== 14) return c ?? '';
-  return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
-}
 
 function mesLabel(mes: string): string {
   const [y, m] = mes.split('-').map(Number);
@@ -313,7 +309,7 @@ export default function GestaoCertidoes() {
                       {!soMaisRecente && <div className="text-[10px] capitalize text-[var(--text-3)]">{mesLabel(l.item.mes)}</div>}
                     </td>
                     <td className="whitespace-nowrap border-b border-r border-[var(--border)] px-2.5 py-1.5">
-                      <div className="font-mono text-xs text-[var(--text-2)]">{fmtCnpj(l.empresa?.cnpj) || '—'}</div>
+                      <div className="font-mono text-xs text-[var(--text-2)]">{formatarDocumento(l.empresa?.cnpj ?? '', 'CNPJ') || '—'}</div>
                       {l.empresa?.inscricao_estadual && <div className="font-mono text-[10px] text-[var(--text-3)]">IE {l.empresa.inscricao_estadual}</div>}
                     </td>
                     <td className="whitespace-nowrap border-b border-r border-[var(--border)] px-2.5 py-1.5 text-[var(--text-1)]">

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Trash2, RotateCcw, AlertTriangle, Clock, Building2, Search, Eraser, FileText, MessageSquare, Filter, ShieldCheck, Paperclip } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { formatarDocumento, detectTipoInscricao } from '@/app/utils/validation';
+import { formatBR } from '@/app/utils/date';
 import ModalDetalhesEmpresa from '@/app/components/ModalDetalhesEmpresa';
 import ConfirmModal from '@/app/components/ConfirmModal';
 import type { Empresa, LixeiraTipo } from '@/app/types';
@@ -259,7 +260,7 @@ export default function LixeiraPage() {
                           <span className="text-base font-bold text-gray-900">{item.documento.nome}</span>
                         </div>
                         <div className="text-sm text-gray-500 mt-0.5">
-                          Validade: {new Date(item.documento.validade).toLocaleDateString('pt-BR')}
+                          Validade: {formatBR(item.documento.validade)}
                           {item.documento.arquivoUrl && (
                             <span className="ml-2 inline-flex items-center gap-1 text-orange-600 font-semibold text-xs">
                               <Paperclip size={11} /> Com arquivo anexo
@@ -294,7 +295,7 @@ export default function LixeiraPage() {
                         </div>
                         <div className="text-sm text-gray-500 mt-0.5 flex flex-wrap gap-3">
                           <span>PTA: <span className="font-semibold text-gray-700">{item.ret.numeroPta}</span></span>
-                          <span>Vencimento: <span className="font-semibold text-gray-700">{new Date(item.ret.vencimento).toLocaleDateString('pt-BR')}</span></span>
+                          <span>Vencimento: <span className="font-semibold text-gray-700">{formatBR(item.ret.vencimento)}</span></span>
                           {item.ret.portaria && <span>Portaria: <span className="font-semibold text-gray-700">{item.ret.portaria}</span></span>}
                         </div>
                       </div>
