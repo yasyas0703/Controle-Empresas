@@ -2,11 +2,10 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { AlertTriangle, Grid3x3, ListChecks, Send } from 'lucide-react';
+import { AlertTriangle, ListChecks, Send } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 
 const TABS = [
-  { href: '/vencimentos-fiscais', label: 'Painel Fiscal', icon: Grid3x3, badge: false },
   { href: '/vencimentos-fiscais/checklist', label: 'Checklist Mensal', icon: ListChecks, badge: false },
   { href: '/vencimentos-fiscais/envio', label: 'Envio de Guias', icon: Send, badge: false },
   { href: '/vencimentos-fiscais/auto-problemas', label: 'Pendências Auto', icon: AlertTriangle, badge: true },

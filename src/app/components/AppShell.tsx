@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Archive, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, Grid3x3, ListChecks, FileStack, Eye, EyeOff, Smartphone, Sparkles, Download } from 'lucide-react';
+import { LogOut, Shield, User, LayoutDashboard, CalendarDays, Building2, Users, Layers, BarChart3, ClipboardList, Briefcase, AlertTriangle, Archive, Trash2, Bell, CheckCircle, XCircle, Info, ChevronLeft, ChevronRight, HardDrive, Menu, X, Terminal, WrenchIcon, Loader2, Tag, ListChecks, FileStack, Eye, EyeOff, Smartphone, Sparkles, Download } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { daysUntil, isRetRenovado } from '@/app/utils/date';
 import { getDepartamentoSlugDoUsuario, getDepartamentoSlugsDoUsuario, type DepartamentoSlug } from '@/app/utils/departamento';
@@ -40,12 +40,8 @@ const nav: NavItem[] = [
   //   • Outros departamentos: NÃO aparece
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/vencimentos', label: 'Vencimentos', icon: AlertTriangle, badge: true },
-  { href: '/vencimentos-fiscais', label: 'Painel Fiscal', icon: Grid3x3, department: 'fiscal' },
   { href: '/vencimentos-fiscais/checklist', label: 'Checklist Mensal', icon: ListChecks, department: 'fiscal' },
-  { href: '/vencimentos-pessoal', label: 'Vencimentos Pessoal', icon: Grid3x3, department: 'pessoal' },
-  { href: '/vencimentos-pessoal/controle', label: 'Controle Pessoal', icon: ListChecks, department: 'pessoal' },
   { href: '/vencimentos-contabil/controle', label: 'Controle Contábil', icon: ListChecks, department: 'contabil' },
-  { href: '/vencimentos-cadastro', label: 'Vencimentos Cadastro', icon: Grid3x3, department: 'cadastro' },
   { href: '/vencimentos-cadastro/controle', label: 'Controle Cadastro', icon: ListChecks, department: 'cadastro' },
   { href: '/calendario', label: 'Calendário', icon: CalendarDays },
   { href: '/aplicativos', label: 'Aplicativos', icon: Download },
