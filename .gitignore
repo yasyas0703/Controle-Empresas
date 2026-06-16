@@ -48,6 +48,8 @@ scripts/_*
 # watcher local (estado e logs por máquina — não devem ser versionados)
 scripts/.watcher-state.json
 scripts/.watcher.log
+# alias empresa→pasta do T: (contém nomes de clientes — local por máquina)
+scripts/pastas-empresa-alias.json
 
 # TypeScript build cache (regenerado a cada build)
 tsconfig.tsbuildinfo

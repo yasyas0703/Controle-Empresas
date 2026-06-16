@@ -229,6 +229,32 @@ function normalizarNomeEmpresa(s) {
     .trim();
 }
 
+// Aliases manuais empresa→pasta, pra quando o nome no sistema (apelido/razão/
+// código) não casa com o nome da pasta no T: (ex.: razão social longa no sistema,
+// nome fantasia curto na pasta). Arquivo editável scripts/pastas-empresa-alias.json
+// — FORA do git porque tem nome de cliente; NÃO repita nome de cliente aqui nem em
+// qualquer arquivo versionado (regra do CLAUDE.md). Chave = nome que o sistema
+// manda; valor = nome EXATO da pasta. Carrega 1x; normaliza as chaves como as pastas.
+const ALIASES_PASTA = (() => {
+  const arquivo = resolve(__dirname, 'pastas-empresa-alias.json');
+  if (!existsSync(arquivo)) return new Map(); // sem arquivo = sem alias, fluxo normal
+  try {
+    // .replace do BOM: Notepad/PowerShell salvam UTF-8 com BOM e o JSON.parse quebra.
+    const raw = JSON.parse(readFileSync(arquivo, 'utf8').replace(/^\uFEFF/, ''));
+    const map = new Map();
+    for (const [chave, pasta] of Object.entries(raw)) {
+      if (chave.startsWith('_') || !pasta) continue; // _comentario etc.
+      map.set(normalizarNomeEmpresa(chave), String(pasta));
+    }
+    return map;
+  } catch (err) {
+    // Existe mas não parseou (JSON inválido / BOM): NÃO falha calado — senão os
+    // aliases somem e as guias voltam pro _PENDENTES sem ninguém perceber.
+    console.error(`AVISO: pastas-empresa-alias.json inválido — aliases desativados: ${err.message}`);
+    return new Map();
+  }
+})();
+
 // Acha a pasta real da empresa no T: a partir dos candidatos (apelido/razão/código).
 // Retorna o caminho absoluto ou null se não achar / estiver ambíguo (seguro: null).
 function acharPastaEmpresa(candidatos) {
@@ -242,6 +268,25 @@ function acharPastaEmpresa(candidatos) {
     return null;
   }
   const normDirs = dirs.map((n) => ({ nome: n, norm: normalizarNomeEmpresa(n) }));
+
+  // 0. Alias manual (nome no sistema ≠ nome da pasta) — prioridade máxima. Só
+  //    confia se a pasta-alvo do alias REALMENTE existe e é ÚNICA (1 match exato);
+  //    senão cai no fluxo normal abaixo. As guardas de string vazia espelham o
+  //    passo 1, pra um alias mal preenchido não casar a pasta errada. Loga o que
+  //    resolveu (rastro auditável — vai só pro .watcher.log local).
+  for (const cand of candidatos || []) {
+    const c = normalizarNomeEmpresa(cand);
+    if (!c) continue;
+    const pastaAlias = ALIASES_PASTA.get(c);
+    if (!pastaAlias) continue;
+    const alvoNorm = normalizarNomeEmpresa(pastaAlias);
+    if (!alvoNorm) continue;
+    const alvo = normDirs.filter((d) => d.norm === alvoNorm);
+    if (alvo.length === 1) {
+      log.info(`Alias de pasta: "${cand}" → "${alvo[0].nome}"`);
+      return resolve(T_ROOT, alvo[0].nome);
+    }
+  }
 
   // 1. Match exato normalizado.
   for (const cand of candidatos || []) {
