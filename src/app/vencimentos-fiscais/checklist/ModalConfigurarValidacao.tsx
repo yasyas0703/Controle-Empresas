@@ -33,6 +33,7 @@ export default function ModalConfigurarValidacao({
   const [analisandoPdf, setAnalisandoPdf] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erroSalvar, setErroSalvar] = useState<string | null>(null);
+  const [erroPdf, setErroPdf] = useState<string | null>(null);
 
   // Carrega palavras existentes quando o modal abre
   useEffect(() => {
@@ -66,13 +67,14 @@ export default function ModalConfigurarValidacao({
 
   async function analisarPdf(file: File) {
     setAnalisandoPdf(true);
+    setErroPdf(null);
     try {
       const { texto } = await extrairTextoPdf(file);
       const sug = sugerirPalavrasChave(texto, 10);
       setSugestoes(sug);
     } catch (err) {
       console.error('[ModalConfigurarValidacao] erro ao analisar PDF:', err);
-      alert('Não foi possível ler esse PDF. Pode ser um PDF de imagem (scanneado) ou protegido.');
+      setErroPdf('Não foi possível ler esse PDF. Pode ser um PDF de imagem (scanneado) ou protegido.');
     } finally {
       setAnalisandoPdf(false);
     }
@@ -162,6 +164,9 @@ export default function ModalConfigurarValidacao({
                   }}
                 />
               </label>
+              {erroPdf && (
+                <p className="mt-2 text-[11px] text-red-700 dark:text-red-300">{erroPdf}</p>
+              )}
             </div>
 
             {/* Sugestões */}

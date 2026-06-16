@@ -48,7 +48,8 @@ export default function PerfilPage() {
       .eq('id', cliente.id);
     setSalvandoPerfil(false);
     if (error) {
-      setPerfilMsg({ tipo: 'erro', texto: error.message });
+      console.error('[portal/perfil] falha ao salvar contato:', error.message);
+      setPerfilMsg({ tipo: 'erro', texto: 'Não foi possível salvar seus dados agora. Tente de novo em instantes.' });
       return;
     }
     setPerfilMsg({ tipo: 'ok', texto: 'Dados atualizados.' });
@@ -84,7 +85,8 @@ export default function PerfilPage() {
     const { error } = await supabasePortal.auth.updateUser({ password: novaSenha });
     setSalvandoSenha(false);
     if (error) {
-      setSenhaMsg({ tipo: 'erro', texto: error.message });
+      console.error('[portal/perfil] falha ao trocar senha:', error.message);
+      setSenhaMsg({ tipo: 'erro', texto: 'Não foi possível alterar a senha agora. Confira a senha e tente novamente.' });
       return;
     }
     setSenhaMsg({ tipo: 'ok', texto: 'Senha alterada com sucesso.' });

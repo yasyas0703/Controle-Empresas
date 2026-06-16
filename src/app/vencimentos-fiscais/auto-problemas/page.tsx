@@ -212,7 +212,7 @@ export default function AutoProblemasPage() {
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        mostrarAlerta('Erro ao carregar', String(j.error || res.status), 'erro');
+        mostrarAlerta('Erro ao carregar', String(j.error || 'Não foi possível carregar a lista agora. Tente atualizar em instantes.'), 'erro');
         return;
       }
       const json = await res.json() as Resposta;
@@ -257,7 +257,7 @@ export default function AutoProblemasPage() {
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        mostrarAlerta('Falha na ação', String(j.error || `HTTP ${res.status}`), 'erro');
+        mostrarAlerta('Falha na ação', String(j.error || 'Não foi possível concluir a ação agora. Tente de novo em instantes.'), 'erro');
         return;
       }
       mostrarAlerta('Pronto', 'Ação aplicada com sucesso.', 'sucesso');
@@ -290,7 +290,7 @@ export default function AutoProblemasPage() {
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        mostrarAlerta('Falha ao aprovar', String(j.error || `HTTP ${res.status}`), 'erro');
+        mostrarAlerta('Falha ao aprovar', String(j.error || 'Não foi possível aprovar/enviar agora. Tente de novo em instantes.'), 'erro');
         return;
       }
       const j = await res.json() as { destinatarios?: string[] };

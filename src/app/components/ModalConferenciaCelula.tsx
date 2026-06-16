@@ -111,9 +111,11 @@ export default function ModalConferenciaCelula({
       const msg = err instanceof Error ? err.message : '';
       // Detectar erro de check constraint do sem_movimento
       if (novo === 'sem_movimento' && /check.*status/i.test(msg)) {
+        // Detalhe técnico (nome do .sql) só no console; pro operador, instrução de acionar o suporte.
+        console.error('[ConferenciaCelula] check constraint sem_movimento ausente — aplicar migration supabase-schema-controle-contabil-v2.sql:', msg);
         mostrarAlerta(
-          'Falta rodar o SQL',
-          'O status "sem movimento" ainda não foi habilitado no banco. Rode o arquivo supabase-schema-controle-contabil-v2.sql no Supabase.',
+          'Recurso ainda indisponível',
+          'A marcação "sem movimento" ainda não está liberada neste ambiente. Avise o suporte para habilitar.',
           'erro'
         );
       } else {

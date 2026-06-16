@@ -285,7 +285,8 @@ export function PortalProvider({ children }: { children: React.ReactNode }) {
         if (msg.includes('invalid') || msg.includes('credentials')) {
           return { status: 'invalid' };
         }
-        return { status: 'error', message: error.message || 'Erro ao autenticar.' };
+        // Detalhe técnico do GoTrue já foi logado acima; cliente vê msg amigável.
+        return { status: 'error', message: 'Não foi possível entrar agora. Tente de novo em instantes; se persistir, fale com o escritório.' };
       }
 
       const userId = data.user?.id;

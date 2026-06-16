@@ -208,16 +208,16 @@ export default function PushPrompt() {
       setPassoAtual('Conferindo permissão...');
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') {
-        setErroVisivel(`Permissão: ${perm}. Habilite nas configs do navegador.`);
+        setErroVisivel('As notificações estão bloqueadas neste navegador. Libere a permissão de notificação nas configurações do site e tente de novo.');
         return;
       }
       await garantirSubscription();
       setPassoAtual(null);
       setEstado('dispensado');
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Erro inesperado';
+      // Detalhe técnico (SW/VAPID/HTTP/timeout) fica só no console.
       console.error('[PushPrompt] erro ao ativar push:', err);
-      setErroVisivel(msg);
+      setErroVisivel('Não conseguimos ativar as notificações neste aparelho. Tente de novo; se não funcionar, verifique as permissões de notificação do navegador.');
     } finally {
       setEnviando(false);
     }
