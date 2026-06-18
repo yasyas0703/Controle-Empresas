@@ -57,6 +57,16 @@ function compareDashboardRiskItems(a: DashboardRiskItem, b: DashboardRiskItem): 
   return comparePtBr(a.nome, b.nome);
 }
 
+// Em vez de mostrar o limiar fixo (≤15d / ≤60d), mostra os dias que realmente
+// faltam. Com 1 item vira "Xd restantes"; com vários, a faixa "min–max".
+function diasRestantesLabel(items: DashboardRiskItem[]): string {
+  if (items.length === 0) return '';
+  const dias = items.map((r) => r.dias);
+  const min = Math.min(...dias);
+  const max = Math.max(...dias);
+  return min === max ? `${min}d restantes` : `${min}–${max}d restantes`;
+}
+
 // Guia que travou no envio automático (espelha o painel Auto-problemas no Dashboard).
 type AutoProblemaItem = {
   id: string;
@@ -628,14 +638,14 @@ export default function DashboardPage() {
                 {criticos.length > 0 && (
                   <span className="font-semibold inline-flex items-center gap-1.5">
                     <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-[var(--danger)]" />
-                    {criticos.length} crítico(s) (≤{limiares.critico}d)
+                    {criticos.length} crítico(s) ({diasRestantesLabel(criticos)})
                   </span>
                 )}
                 {criticos.length > 0 && atencao.length > 0 && ' • '}
                 {atencao.length > 0 && (
                   <span className="inline-flex items-center gap-1.5">
                     <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-[var(--warn)]" />
-                    {atencao.length} em atenção (≤{limiares.atencao}d)
+                    {atencao.length} em atenção ({diasRestantesLabel(atencao)})
                   </span>
                 )}
               </div>

@@ -834,142 +834,179 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
             )}
           </div>
 
-          {/* Particularidades da Empresa — logo após Dados Principais
-              pra facilitar achar (antes ficava bem mais embaixo) */}
-          <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
-            <h4 className="font-semibold text-amber-800 mb-2">Particularidades por setor</h4>
-            <p className="text-xs text-amber-700/80 mb-3">
-              Anotações livres do seu setor (regime especial, tratamento específico, combinados com o cliente, etc.).
-              Cada setor vê e edita só a sua; o que os outros setores escreverem fica preservado.
-            </p>
-            <div className="space-y-3">
-              {slugsParticularidade.map((slug) => (
-                <div key={slug}>
-                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-amber-700 mb-1">
-                    {DEPARTAMENTO_LABELS[slug]}
-                  </label>
-                  <textarea
-                    value={String(formData.particularidadesPorDep?.[slug] || '')}
-                    onChange={(e) => handleChange('particularidadesPorDep', { ...(formData.particularidadesPorDep ?? {}), [slug]: e.target.value })}
-                    rows={4}
-                    placeholder={`Particularidades do ${DEPARTAMENTO_LABELS[slug]}...`}
-                    className="w-full px-4 py-3 border border-amber-300 rounded-xl focus:ring-2 focus:ring-amber-500 bg-white text-gray-900 resize-y"
-                  />
-                </div>
-              ))}
-              {slugsParticularidade.length === 0 && (
-                <p className="text-xs text-amber-700/70 italic">Seu usuário não está vinculado a um setor, então não há particularidade para editar aqui.</p>
-              )}
-            </div>
-          </div>
-
-          {/* Forma de Envio — logo abaixo de Particularidades */}
-          <div className="bg-teal-50 rounded-xl p-4 border border-teal-200">
-            <h4 className="font-semibold text-teal-800 mb-2">Forma de Envio</h4>
-            <p className="text-xs text-teal-700 mb-3">
-              Como os documentos, guias e avisos devem ser enviados para esse cliente. Você pode marcar mais de uma opção.
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              {FORMAS_ENVIO.map((opt) => {
-                const selected = formasEnvioSelecionadas.includes(opt.value);
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => handleChange(
-                      'formaEnvio',
-                      selected
-                        ? formasEnvioSelecionadas.filter((item) => item !== opt.value)
-                        : [...formasEnvioSelecionadas, opt.value]
-                    )}
-                    className={`rounded-xl border-2 px-3 py-3 font-bold text-sm transition ${
-                      selected
-                        ? 'bg-teal-100 border-teal-500 text-teal-800'
-                        : 'bg-white border-gray-200 text-gray-600 hover:border-teal-300 hover:bg-teal-50'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-            {formasEnvioSelecionadas.length > 0 && (
-              <button
-                type="button"
-                onClick={() => handleChange('formaEnvio', [] as FormaEnvio[])}
-                className="mt-2 text-xs text-teal-700 font-semibold hover:text-teal-900"
-              >
-                Limpar seleções
-              </button>
-            )}
-          </div>
-
-          {/* Serviços */}
+          {/* Endereço */}
           <div className="bg-cyan-50 rounded-xl p-4 border border-cyan-200">
-            <h4 className="font-semibold text-cyan-800 mb-4">Serviços contratados</h4>
+            <h4 className="font-semibold text-cyan-800 mb-4">Endereço</h4>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {allServicos.map((s) => (
-                <label key={s} className="flex items-center gap-3 rounded-xl border bg-white px-4 py-3 cursor-pointer hover:bg-gray-50">
-                  <input
-                    type="checkbox"
-                    checked={(formData.servicos ?? []).includes(s)}
-                    onChange={() => toggleServico(s)}
-                    className="h-5 w-5"
-                  />
-                  <span className="font-semibold text-gray-900">{s}</span>
-                </label>
-              ))}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">CEP</label>
+                <input
+                  type="text"
+                  value={String(formData.cep || '')}
+                  autoComplete="new-password"
+                  onChange={(e) => {
+                    const apenasNumeros = e.target.value.replace(/\D/g, '');
+                    const valorFormatado = formatarCEP(apenasNumeros);
+                    handleChange('cep', valorFormatado);
+                  }}
+                  onKeyDown={(e) => {
+                    if (
+                      e.ctrlKey ||
+                      e.metaKey ||
+                      ['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key) ||
+                      /^[0-9]$/.test(e.key)
+                    )
+                      return;
+                    e.preventDefault();
+                  }}
+                  className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-cyan-500 ${erros.cep ? 'border-red-500' : 'border-gray-300'} bg-white text-gray-900`}
+                  placeholder="00000-000"
+                  maxLength={9}
+                />
+                {erros.cep && <p className="mt-1 text-sm text-red-500">{erros.cep}</p>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Estado</label>
+                <select
+                  value={String(formData.estado || '')}
+                  autoComplete="new-password"
+                  onChange={(e) => handleChange('estado', e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 bg-white text-gray-900"
+                >
+                  <option value="">Selecione...</option>
+                  {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map((uf) => (
+                    <option key={uf} value={uf}>{uf}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Cidade</label>
+                <input
+                  type="text"
+                  value={String(formData.cidade || '')}
+                  autoComplete="new-password"
+                  onChange={(e) => handleChange('cidade', e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 bg-white text-gray-900"
+                />
+              </div>
             </div>
 
-            <div className="mt-4 flex gap-3">
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Bairro</label>
+                <input
+                  type="text"
+                  value={String(formData.bairro || '')}
+                  autoComplete="new-password"
+                  onChange={(e) => handleChange('bairro', e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 bg-white text-gray-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Logradouro</label>
+                <input
+                  type="text"
+                  value={String(formData.logradouro || '')}
+                  autoComplete="new-password"
+                  onChange={(e) => handleChange('logradouro', e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 bg-white text-gray-900"
+                  placeholder="Rua, Avenida..."
+                />
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Número</label>
               <input
-                value={servicoNovo}
-                onChange={(e) => setServicoNovo(e.target.value)}
-                className="flex-1 rounded-xl border px-4 py-3 bg-white"
-                placeholder="Adicionar outro serviço (ex.: Abertura, DP, etc)"
+                type="text"
+                value={String(formData.numero || '')}
+                autoComplete="new-password"
+                onChange={(e) => {
+                  const apenasNumeros = e.target.value.replace(/\D/g, '');
+                  handleChange('numero', apenasNumeros);
+                }}
+                onKeyDown={(e) => {
+                  if (
+                    e.ctrlKey ||
+                    e.metaKey ||
+                    ['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key) ||
+                    /^[0-9]$/.test(e.key)
+                  )
+                    return;
+                  e.preventDefault();
+                }}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 bg-white text-gray-900"
               />
-              <button
-                type="button"
-                onClick={addServico}
-                className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 text-white px-4 py-3 font-semibold hover:bg-cyan-700"
-                disabled={!servicoNovo.trim()}
-              >
-                <Plus size={18} />
-                Adicionar
-              </button>
             </div>
-
-            <div className="mt-2 text-xs text-gray-600">Você pode selecionar mais de um serviço.</div>
           </div>
 
-          {/* Tags */}
-          {tagsCadastradas.length > 0 && (
-            <div className="bg-violet-50 rounded-xl p-4 border border-violet-200">
-              <h4 className="font-semibold text-violet-800 mb-4">Tags</h4>
-              <div className="flex flex-wrap gap-2">
-                {tagsCadastradas.map((tag) => {
-                  const selected = (formData.tags ?? []).includes(tag.nome);
-                  const colors = TAG_COLORS[tag.cor] ?? TAG_COLORS.slate;
-                  return (
-                    <button
-                      key={tag.id}
-                      type="button"
-                      onClick={() => toggleTag(tag.nome)}
-                      className={`rounded-full px-3.5 py-1.5 text-xs font-bold border transition ${
-                        selected
-                          ? `${colors.bg} ${colors.text} ${colors.border} ring-2 ring-offset-1 ring-violet-400`
-                          : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50'
-                      }`}
-                    >
-                      {tag.nome}
-                    </button>
-                  );
-                })}
+          {/* Inscrições e Regimes */}
+          <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+            <h4 className="font-semibold text-blue-800 mb-4">Inscrições e Regimes</h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Inscrição Estadual</label>
+                <input
+                  type="text"
+                  value={String(formData.inscricao_estadual || '')}
+                  onChange={(e) => handleChange('inscricao_estadual', e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                />
               </div>
-              <div className="mt-2 text-xs text-gray-600">Clique para selecionar ou desmarcar tags.</div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Inscrição Municipal</label>
+                <input
+                  type="text"
+                  value={String(formData.inscricao_municipal || '')}
+                  onChange={(e) => handleChange('inscricao_municipal', e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Regime Federal</label>
+                <select
+                  value={String(formData.regime_federal || '')}
+                  onChange={(e) => handleChange('regime_federal', e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                >
+                  <option value="">Selecione...</option>
+                  <option value="MEI">MEI</option>
+                  <option value="Simples Nacional">Simples Nacional</option>
+                  <option value="Lucro Presumido">Lucro Presumido</option>
+                  <option value="Lucro Real">Lucro Real</option>
+                </select>
+              </div>
             </div>
-          )}
+
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Regime Estadual</label>
+                <input
+                  type="text"
+                  value={String(formData.regime_estadual || '')}
+                  onChange={(e) => handleChange('regime_estadual', e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Regime Municipal</label>
+                <input
+                  type="text"
+                  value={String(formData.regime_municipal || '')}
+                  onChange={(e) => handleChange('regime_municipal', e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                />
+              </div>
+            </div>
+          </div>
 
           {/* RET */}
           <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
@@ -1106,6 +1143,176 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
             )}
           </div>
 
+          {/* Particularidades por setor — ordem do formulário definida com a Yasmin:
+              dados → endereço → inscrições → RET → particularidades → envio → serviços */}
+          <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
+            <h4 className="font-semibold text-amber-800 mb-2">Particularidades por setor</h4>
+            <p className="text-xs text-amber-700/80 mb-3">
+              Anotações livres do seu setor (regime especial, tratamento específico, combinados com o cliente, etc.).
+              Cada setor vê e edita só a sua; o que os outros setores escreverem fica preservado.
+            </p>
+            <div className="space-y-3">
+              {slugsParticularidade.map((slug) => (
+                <div key={slug}>
+                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-amber-700 mb-1">
+                    {DEPARTAMENTO_LABELS[slug]}
+                  </label>
+                  <textarea
+                    value={String(formData.particularidadesPorDep?.[slug] || '')}
+                    onChange={(e) => handleChange('particularidadesPorDep', { ...(formData.particularidadesPorDep ?? {}), [slug]: e.target.value })}
+                    rows={4}
+                    placeholder={`Particularidades do ${DEPARTAMENTO_LABELS[slug]}...`}
+                    className="w-full px-4 py-3 border border-amber-300 rounded-xl focus:ring-2 focus:ring-amber-500 bg-white text-gray-900 resize-y"
+                  />
+                </div>
+              ))}
+              {slugsParticularidade.length === 0 && (
+                <p className="text-xs text-amber-700/70 italic">Seu usuário não está vinculado a um setor, então não há particularidade para editar aqui.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Forma de Envio — logo abaixo de Particularidades */}
+          <div className="bg-teal-50 rounded-xl p-4 border border-teal-200">
+            <h4 className="font-semibold text-teal-800 mb-2">Forma de Envio</h4>
+            <p className="text-xs text-teal-700 mb-3">
+              Como os documentos, guias e avisos devem ser enviados para esse cliente. Você pode marcar mais de uma opção.
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {FORMAS_ENVIO.map((opt) => {
+                const selected = formasEnvioSelecionadas.includes(opt.value);
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => handleChange(
+                      'formaEnvio',
+                      selected
+                        ? formasEnvioSelecionadas.filter((item) => item !== opt.value)
+                        : [...formasEnvioSelecionadas, opt.value]
+                    )}
+                    className={`rounded-xl border-2 px-3 py-3 font-bold text-sm transition ${
+                      selected
+                        ? 'bg-teal-100 border-teal-500 text-teal-800'
+                        : 'bg-white border-gray-200 text-gray-600 hover:border-teal-300 hover:bg-teal-50'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            {formasEnvioSelecionadas.length > 0 && (
+              <button
+                type="button"
+                onClick={() => handleChange('formaEnvio', [] as FormaEnvio[])}
+                className="mt-2 text-xs text-teal-700 font-semibold hover:text-teal-900"
+              >
+                Limpar seleções
+              </button>
+            )}
+          </div>
+
+          {/* Serviços */}
+          <div className="bg-cyan-50 rounded-xl p-4 border border-cyan-200">
+            <h4 className="font-semibold text-cyan-800 mb-4">Serviços contratados</h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {allServicos.map((s) => (
+                <label key={s} className="flex items-center gap-3 rounded-xl border bg-white px-4 py-3 cursor-pointer hover:bg-gray-50">
+                  <input
+                    type="checkbox"
+                    checked={(formData.servicos ?? []).includes(s)}
+                    onChange={() => toggleServico(s)}
+                    className="h-5 w-5"
+                  />
+                  <span className="font-semibold text-gray-900">{s}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="mt-4 flex gap-3">
+              <input
+                value={servicoNovo}
+                onChange={(e) => setServicoNovo(e.target.value)}
+                className="flex-1 rounded-xl border px-4 py-3 bg-white"
+                placeholder="Adicionar outro serviço (ex.: Abertura, DP, etc)"
+              />
+              <button
+                type="button"
+                onClick={addServico}
+                className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 text-white px-4 py-3 font-semibold hover:bg-cyan-700"
+                disabled={!servicoNovo.trim()}
+              >
+                <Plus size={18} />
+                Adicionar
+              </button>
+            </div>
+
+            <div className="mt-2 text-xs text-gray-600">Você pode selecionar mais de um serviço.</div>
+          </div>
+
+          {/* Tags */}
+          {tagsCadastradas.length > 0 && (
+            <div className="bg-violet-50 rounded-xl p-4 border border-violet-200">
+              <h4 className="font-semibold text-violet-800 mb-4">Tags</h4>
+              <div className="flex flex-wrap gap-2">
+                {tagsCadastradas.map((tag) => {
+                  const selected = (formData.tags ?? []).includes(tag.nome);
+                  const colors = TAG_COLORS[tag.cor] ?? TAG_COLORS.slate;
+                  return (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      onClick={() => toggleTag(tag.nome)}
+                      className={`rounded-full px-3.5 py-1.5 text-xs font-bold border transition ${
+                        selected
+                          ? `${colors.bg} ${colors.text} ${colors.border} ring-2 ring-offset-1 ring-violet-400`
+                          : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      {tag.nome}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-2 text-xs text-gray-600">Clique para selecionar ou desmarcar tags.</div>
+            </div>
+          )}
+
+          {/* Responsáveis */}
+          {canManage && (
+          <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+            <h4 className="font-semibold text-gray-800 mb-4">Responsáveis por Departamento</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {sortedDepartamentos.map((d) => (
+                <div key={d.id}>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">{d.nome}</label>
+                  <select
+                    value={(formData.responsaveis as Record<string, string | null> | undefined)?.[d.id] ?? ''}
+                    onChange={(e) => {
+                      const userId = e.target.value || null;
+                      setFormData((prev) => ({
+                        ...prev,
+                        responsaveis: { ...(prev.responsaveis ?? {}), [d.id]: userId },
+                      }));
+                    }}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-white"
+                  >
+                    <option value="">(Sem responsável)</option>
+                    {activeUsers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.nome}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="text-xs text-gray-500 mt-1">Mostra todos os usuários ativos.</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          )}
+
           {/* Vencimentos Fiscais */}
           <div className="bg-red-50 rounded-xl p-4 border border-red-200">
             <div className="flex items-center gap-2 mb-2">
@@ -1238,213 +1445,6 @@ export default function ModalCadastrarEmpresa({ onClose, empresa }: ModalCadastr
                   </div>
                 );
               })}
-            </div>
-          </div>
-
-          {/* Responsáveis */}
-          {canManage && (
-          <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-            <h4 className="font-semibold text-gray-800 mb-4">Responsáveis por Departamento</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {sortedDepartamentos.map((d) => (
-                <div key={d.id}>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">{d.nome}</label>
-                  <select
-                    value={(formData.responsaveis as Record<string, string | null> | undefined)?.[d.id] ?? ''}
-                    onChange={(e) => {
-                      const userId = e.target.value || null;
-                      setFormData((prev) => ({
-                        ...prev,
-                        responsaveis: { ...(prev.responsaveis ?? {}), [d.id]: userId },
-                      }));
-                    }}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-white"
-                  >
-                    <option value="">(Sem responsável)</option>
-                    {activeUsers.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.nome}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="text-xs text-gray-500 mt-1">Mostra todos os usuários ativos.</div>
-                </div>
-              ))}
-            </div>
-          </div>
-          )}
-
-          {/* Inscrições e Regimes */}
-          <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
-            <h4 className="font-semibold text-blue-800 mb-4">Inscrições e Regimes</h4>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Inscrição Estadual</label>
-                <input
-                  type="text"
-                  value={String(formData.inscricao_estadual || '')}
-                  onChange={(e) => handleChange('inscricao_estadual', e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Inscrição Municipal</label>
-                <input
-                  type="text"
-                  value={String(formData.inscricao_municipal || '')}
-                  onChange={(e) => handleChange('inscricao_municipal', e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Regime Federal</label>
-                <select
-                  value={String(formData.regime_federal || '')}
-                  onChange={(e) => handleChange('regime_federal', e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                >
-                  <option value="">Selecione...</option>
-                  <option value="MEI">MEI</option>
-                  <option value="Simples Nacional">Simples Nacional</option>
-                  <option value="Lucro Presumido">Lucro Presumido</option>
-                  <option value="Lucro Real">Lucro Real</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Regime Estadual</label>
-                <input
-                  type="text"
-                  value={String(formData.regime_estadual || '')}
-                  onChange={(e) => handleChange('regime_estadual', e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Regime Municipal</label>
-                <input
-                  type="text"
-                  value={String(formData.regime_municipal || '')}
-                  onChange={(e) => handleChange('regime_municipal', e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Endereço */}
-          <div className="bg-cyan-50 rounded-xl p-4 border border-cyan-200">
-            <h4 className="font-semibold text-cyan-800 mb-4">Endereço</h4>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">CEP</label>
-                <input
-                  type="text"
-                  value={String(formData.cep || '')}
-                  autoComplete="new-password"
-                  onChange={(e) => {
-                    const apenasNumeros = e.target.value.replace(/\D/g, '');
-                    const valorFormatado = formatarCEP(apenasNumeros);
-                    handleChange('cep', valorFormatado);
-                  }}
-                  onKeyDown={(e) => {
-                    if (
-                      e.ctrlKey ||
-                      e.metaKey ||
-                      ['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key) ||
-                      /^[0-9]$/.test(e.key)
-                    )
-                      return;
-                    e.preventDefault();
-                  }}
-                  className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-cyan-500 ${erros.cep ? 'border-red-500' : 'border-gray-300'} bg-white text-gray-900`}
-                  placeholder="00000-000"
-                  maxLength={9}
-                />
-                {erros.cep && <p className="mt-1 text-sm text-red-500">{erros.cep}</p>}
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Estado</label>
-                <select
-                  value={String(formData.estado || '')}
-                  autoComplete="new-password"
-                  onChange={(e) => handleChange('estado', e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 bg-white text-gray-900"
-                >
-                  <option value="">Selecione...</option>
-                  {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map((uf) => (
-                    <option key={uf} value={uf}>{uf}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Cidade</label>
-                <input
-                  type="text"
-                  value={String(formData.cidade || '')}
-                  autoComplete="new-password"
-                  onChange={(e) => handleChange('cidade', e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 bg-white text-gray-900"
-                />
-              </div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Bairro</label>
-                <input
-                  type="text"
-                  value={String(formData.bairro || '')}
-                  autoComplete="new-password"
-                  onChange={(e) => handleChange('bairro', e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 bg-white text-gray-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Logradouro</label>
-                <input
-                  type="text"
-                  value={String(formData.logradouro || '')}
-                  autoComplete="new-password"
-                  onChange={(e) => handleChange('logradouro', e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 bg-white text-gray-900"
-                  placeholder="Rua, Avenida..."
-                />
-              </div>
-            </div>
-
-            <div className="mt-4">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Número</label>
-              <input
-                type="text"
-                value={String(formData.numero || '')}
-                autoComplete="new-password"
-                onChange={(e) => {
-                  const apenasNumeros = e.target.value.replace(/\D/g, '');
-                  handleChange('numero', apenasNumeros);
-                }}
-                onKeyDown={(e) => {
-                  if (
-                    e.ctrlKey ||
-                    e.metaKey ||
-                    ['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key) ||
-                    /^[0-9]$/.test(e.key)
-                  )
-                    return;
-                  e.preventDefault();
-                }}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 bg-white text-gray-900"
-              />
             </div>
           </div>
 
