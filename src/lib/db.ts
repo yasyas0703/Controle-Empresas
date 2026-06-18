@@ -1362,14 +1362,31 @@ export async function deleteObservacao(obsId: UUID) {
 
 // ─── Logs ───────────────────────────────────────────────────
 
-export async function fetchLogs(limit = 200): Promise<LogEntry[]> {
-  // Limita os logs carregados pra economizar trafego (plano free Supabase).
-  // 200 = suficiente pro historico recente (retenção do banco é 3 dias via cron).
-  // Se admin precisar olhar mais antigo, dá pra implementar paginacao na página.
+export interface FetchLogsOptions {
+  /** Quantos registros trazer por vez (página). Default 200. */
+  limit?: number;
+  /** Cursor de paginação "carregar mais": só logs com `em` < este ISO (mais antigos). */
+  before?: string | null;
+  /** Filtro por data inicial: só logs com `em` >= este ISO. */
+  de?: string | null;
+  /** Filtro por data final: só logs com `em` <= este ISO. */
+  ate?: string | null;
+}
+
+export async function fetchLogs(opts: FetchLogsOptions = {}): Promise<LogEntry[]> {
+  // Carrega sob demanda e paginado — o histórico fica guardado pra sempre (só o
+  // diff pesado é compactado após 30 dias via /api/cron/compactar-logs), então a
+  // leitura precisa alcançar o passado por janela de data + cursor `before`, sem
+  // baixar tudo de uma vez (egress do plano free).
+  const { limit = 200, before = null, de = null, ate = null } = opts;
   const hiddenUserIds = getHiddenUserIds();
-  const { data, error } = await supabase
-    .from('logs')
-    .select('*')
+  // Filtros antes de order/limit: no supabase-js os métodos .lt/.gte/.lte só
+  // existem no FilterBuilder (depois de .order/.limit vira TransformBuilder).
+  let query = supabase.from('logs').select('*');
+  if (before) query = query.lt('em', before);
+  if (de) query = query.gte('em', de);
+  if (ate) query = query.lte('em', ate);
+  const { data, error } = await query
     .order('em', { ascending: false })
     .limit(limit);
   if (error) throw error;

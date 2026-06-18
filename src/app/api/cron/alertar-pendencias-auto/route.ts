@@ -18,6 +18,7 @@ import {
   resolverDestinatariosFiscais, criarNotificacaoSistema, rotuloTipoProblema,
 } from '@/lib/alertasAutoEnvio';
 import { fecharLotesMaduros, alertarLotesIncompletosParados } from '../../checklist-fiscal/auto-enviar/_shared-lote';
+import { compactarLogsAntigos } from '@/lib/logsRetencao';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -83,6 +84,18 @@ async function processar() {
     resultado.lotesParados = await alertarLotesIncompletosParados(admin, {});
   } catch (e) {
     console.error('[cron] falha ao alertar lotes parados:', e);
+  }
+
+  // Retenção do histórico: arquiva no Storage e zera o diff pesado de logs com
+  // +30 dias (o resumo fica pra sempre no banco). Acoplado aqui pra não gastar um
+  // 3º slot de cron (Hobby = 2). Lotes pequenos (default) = manutenção diária; o
+  // backlog grande é drenado via /api/cron/compactar-logs (gatilho manual).
+  try {
+    const r = await compactarLogsAntigos(admin);
+    resultado.logsCompactados = r.compactados ?? 0;
+    resultado.logsArquivados = r.arquivados ?? 0;
+  } catch (e) {
+    console.error('[cron] falha ao compactar logs:', e);
   }
 
   // Destinatários fiscais (gerentes/admins; fallback admins). Usados nos dois alertas.

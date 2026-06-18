@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ClipboardList, UserCircle, Search, ChevronDown, ChevronUp, ArrowRight, Calendar, Trash2, CheckSquare, Square, Pencil } from 'lucide-react';
+import { ClipboardList, UserCircle, Search, ChevronDown, ChevronUp, ArrowRight, Calendar, Trash2, CheckSquare, Square, Pencil, Archive } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import { formatBR } from '@/app/utils/date';
 import type { LogEntry } from '@/app/types';
 import { sortByPtBr, sortResponsaveisByNome } from '@/lib/sort';
 import { formatRetNumber } from '@/app/utils/formatting';
+import { supabase } from '@/lib/supabase';
 
 /** Labels amigáveis para os campos da empresa */
 const FIELD_LABELS: Record<string, string> = {
@@ -49,6 +50,12 @@ const FIELD_LABELS: Record<string, string> = {
 /** Campos que devem ser ignorados no diff (metadados internos) */
 const IGNORED_FIELDS = new Set(['id', 'atualizadoEm', 'criadoEm', 'observacoes']);
 
+/** Tamanho da página ao buscar logs no servidor (mount, filtro de data e "carregar mais"). */
+const PAGE_SIZE = 200;
+
+/** Janela (ms) em que o diff fica no banco. Acima disso, está no arquivo (Storage). Espelha DIAS_RETENCAO_DIFF=30. */
+const DIAS_RETENCAO_DIFF_MS = 30 * 86400000;
+
 type RetDiffItem = {
   id: string;
   nome: string;
@@ -87,13 +94,7 @@ function getErrorMessage(err: unknown, fallback: string): string {
 }
 
 export default function HistoricoPage() {
-  const { logs, usuarios, departamentos, canAdmin, isGhost, limparHistorico, removerLogsSelecionados, mostrarAlerta, loadLogs } = useSistema();
-  // Logs são pesados (até 1000 linhas com diff JSON) e antes eram puxados a cada
-  // mudança no realtime — agora carregam só ao abrir esta página.
-  useEffect(() => {
-    if (!canAdmin && !isGhost) return;
-    loadLogs();
-  }, [canAdmin, isGhost, loadLogs]);
+  const { logs, usuarios, departamentos, canAdmin, isGhost, limparHistorico, removerLogsSelecionados, mostrarAlerta, loadLogs, loadMoreLogs } = useSistema();
   const [search, setSearch] = useState('');
   const [filtroAction, setFiltroAction] = useState('');
   const [filtroEntity, setFiltroEntity] = useState('');
@@ -107,7 +108,28 @@ export default function HistoricoPage() {
   const [excluindo, setExcluindo] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [excluindoSelecionados, setExcluindoSelecionados] = useState(false);
+  const [carregandoMais, setCarregandoMais] = useState(false);
+  const [semMaisServidor, setSemMaisServidor] = useState(false);
+  // Diffs recuperados do arquivo (Storage) sob demanda, pra edições com +30 dias
+  // cujo detalhe já saiu do banco. Mapeado por id do log.
+  const [arquivadoDiffPorId, setArquivadoDiffPorId] = useState<Map<string, LogEntry['diff']>>(new Map());
+  const [buscandoArquivo, setBuscandoArquivo] = useState(false);
   const canViewHistory = canAdmin || isGhost;
+
+  // O histórico fica guardado pra sempre (só o diff pesado some após 30 dias),
+  // então a leitura precisa alcançar o passado. Sem filtro de data: traz a
+  // página mais recente. Com filtro: busca a janela direto no servidor — não dá
+  // pra filtrar só no client, que enxergaria apenas os recentes já carregados.
+  useEffect(() => {
+    if (!canAdmin && !isGhost) return;
+    const deIso = dataDe ? new Date(dataDe + 'T00:00:00').toISOString() : null;
+    const ateIso = dataAte ? new Date(dataAte + 'T23:59:59').toISOString() : null;
+    setSemMaisServidor(false);
+    setQtdExibir(100);
+    loadLogs({ de: deIso, ate: ateIso, limit: PAGE_SIZE }).then((n) => {
+      if (n < PAGE_SIZE) setSemMaisServidor(true);
+    });
+  }, [canAdmin, isGhost, dataDe, dataAte, loadLogs]);
   const canDeleteLogs = canAdmin && !isGhost;
   const visibleLogs = useMemo(
     () => (isGhost ? logs : logs.filter((log) => !log.deletedEm)),
@@ -276,6 +298,69 @@ export default function HistoricoPage() {
   const hasFilters = search || filtroAction || filtroEntity || filtroUser || dataDe || dataAte;
   const exibidos = filtered.slice(0, qtdExibir);
   const temMais = filtered.length > qtdExibir;
+  const podeCarregarMais = temMais || !semMaisServidor;
+
+  const handleCarregarMais = async () => {
+    // Ainda há itens já carregados fora da janela exibida → só revela mais.
+    if (filtered.length > qtdExibir) {
+      setQtdExibir((p) => p + 100);
+      return;
+    }
+    // Esgotou o que está carregado: busca a próxima página (mais antiga) no servidor.
+    if (semMaisServidor || carregandoMais) return;
+    const oldest = logs.length ? logs[logs.length - 1] : null;
+    if (!oldest) { setSemMaisServidor(true); return; }
+    const deIso = dataDe ? new Date(dataDe + 'T00:00:00').toISOString() : null;
+    const ateIso = dataAte ? new Date(dataAte + 'T23:59:59').toISOString() : null;
+    setCarregandoMais(true);
+    const trazidos = await loadMoreLogs({ before: oldest.em, de: deIso, ate: ateIso, limit: 100 });
+    setCarregandoMais(false);
+    if (trazidos < 100) setSemMaisServidor(true);
+    if (trazidos > 0) setQtdExibir((p) => p + 100);
+  };
+
+  // Diff "efetivo": usa o do banco se ainda existir; senão, o recuperado do
+  // arquivo (edições antigas têm o diff zerado no banco e guardado no Storage).
+  const getDiffEfetivo = (l: LogEntry): LogEntry['diff'] | undefined => {
+    if (l.diff && Object.keys(l.diff).length > 0) return l.diff;
+    const arq = arquivadoDiffPorId.get(l.id);
+    return arq && Object.keys(arq).length > 0 ? arq : undefined;
+  };
+
+  // Recupera do arquivo os detalhes do período que está sendo olhado. Usa o
+  // filtro de data, ou o intervalo dos logs já carregados quando não há filtro.
+  const buscarArquivados = async () => {
+    setBuscandoArquivo(true);
+    try {
+      const deIso = dataDe
+        ? new Date(dataDe + 'T00:00:00').toISOString()
+        : (logs.length ? logs[logs.length - 1].em : new Date(Date.now() - 31 * 86400000).toISOString());
+      const ateIso = dataAte
+        ? new Date(dataAte + 'T23:59:59').toISOString()
+        : (logs.length ? logs[0].em : new Date().toISOString());
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch(`/api/historico-arquivo?de=${encodeURIComponent(deIso)}&ate=${encodeURIComponent(ateIso)}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error || 'Falha ao carregar o arquivo.');
+      const rows = (json?.rows ?? []) as Array<{ id: string; diff: LogEntry['diff'] }>;
+      setArquivadoDiffPorId((prev) => {
+        const next = new Map(prev);
+        for (const r of rows) if (r.diff) next.set(r.id, r.diff);
+        return next;
+      });
+      mostrarAlerta(
+        'Detalhes arquivados',
+        rows.length ? `${rows.length} registro(s) com detalhe recuperado(s) do arquivo.` : 'Nenhum detalhe arquivado encontrado neste período.',
+        rows.length ? 'sucesso' : 'aviso',
+      );
+    } catch (err: unknown) {
+      mostrarAlerta('Erro', getErrorMessage(err, 'Não foi possível carregar os detalhes arquivados.'), 'erro');
+    } finally {
+      setBuscandoArquivo(false);
+    }
+  };
 
   /** Formata um valor do diff para exibição legível */
   const formatValue = (key: string, val: unknown): string => {
@@ -327,11 +412,20 @@ export default function HistoricoPage() {
 
   /** Renderiza o diff detalhado de um log entry */
   const renderDiff = (log: LogEntry) => {
-    if (!log.diff || Object.keys(log.diff).length === 0) {
-      return <div className="text-xs text-gray-400 italic px-5 py-2">Sem detalhes registrados para esta alteração.</div>;
+    const diff = getDiffEfetivo(log);
+    if (!diff || Object.keys(diff).length === 0) {
+      // Edição com +30 dias e diff zerado no banco: o detalhe pode estar no arquivo.
+      const ehAntigo = Date.now() - new Date(log.em).getTime() > DIAS_RETENCAO_DIFF_MS;
+      return (
+        <div className="text-xs text-gray-400 italic px-5 py-2">
+          {ehAntigo
+            ? 'Detalhe arquivado — use "Carregar detalhes arquivados" no topo para recuperar.'
+            : 'Sem detalhes registrados para esta alteração.'}
+        </div>
+      );
     }
 
-    const entries = Object.entries(log.diff).filter(([key]) => !IGNORED_FIELDS.has(key));
+    const entries = Object.entries(diff).filter(([key]) => !IGNORED_FIELDS.has(key));
     if (entries.length === 0) {
       return <div className="text-xs text-gray-400 italic px-5 py-2">Apenas metadados internos foram alterados.</div>;
     }
@@ -622,6 +716,15 @@ export default function HistoricoPage() {
               Limpar filtros
             </button>
           )}
+          <button
+            onClick={buscarArquivados}
+            disabled={buscandoArquivo}
+            title="Recupera do arquivo o 'antes → depois' de edições com mais de 30 dias"
+            className="inline-flex items-center gap-1.5 text-xs text-gray-600 hover:text-teal-700 font-semibold px-3 py-2.5 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <Archive size={14} />
+            {buscandoArquivo ? 'Carregando...' : 'Carregar detalhes arquivados'}
+          </button>
         </div>
       </div>
 
@@ -649,7 +752,8 @@ export default function HistoricoPage() {
             </thead>
             <tbody>
               {exibidos.map((l, idx) => {
-                const hasDiff = l.diff && Object.keys(l.diff).filter(k => !IGNORED_FIELDS.has(k)).length > 0;
+                const diffEf = getDiffEfetivo(l);
+                const hasDiff = diffEf && Object.keys(diffEf).filter(k => !IGNORED_FIELDS.has(k)).length > 0;
                 const isExpanded = expandedIds.has(l.id);
                 const isUpdate = l.action === 'update';
 
@@ -729,7 +833,8 @@ export default function HistoricoPage() {
         {/* Mobile cards */}
         <div className="md:hidden divide-y divide-gray-100">
           {exibidos.map((l) => {
-            const hasDiff = l.diff && Object.keys(l.diff).filter(k => !IGNORED_FIELDS.has(k)).length > 0;
+            const diffEf = getDiffEfetivo(l);
+            const hasDiff = diffEf && Object.keys(diffEf).filter(k => !IGNORED_FIELDS.has(k)).length > 0;
             const isExpanded = expandedIds.has(l.id);
             const isUpdate = l.action === 'update';
             return (
@@ -792,12 +897,13 @@ export default function HistoricoPage() {
             Exibindo {exibidos.length} de {filtered.length} registros
             {visibleLogs.length !== filtered.length && ` (total visível: ${visibleLogs.length})`}
           </div>
-          {temMais && (
+          {podeCarregarMais && (
             <button
-              onClick={() => setQtdExibir((prev) => prev + 100)}
-              className="inline-flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-teal-500 to-cyan-500 text-white rounded-xl font-semibold text-sm hover:shadow-lg transition-all"
+              onClick={handleCarregarMais}
+              disabled={carregandoMais}
+              className="inline-flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-teal-500 to-cyan-500 text-white rounded-xl font-semibold text-sm hover:shadow-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Carregar mais 100 registros
+              {carregandoMais ? 'Carregando...' : 'Carregar mais 100 registros'}
             </button>
           )}
         </div>

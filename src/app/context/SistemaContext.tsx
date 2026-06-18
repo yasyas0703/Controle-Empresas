@@ -422,7 +422,8 @@ interface SistemaContextValue extends SistemaState {
   removerLogsSelecionados: (ids: UUID[]) => Promise<void>;
 
   // Loaders sob demanda (lazy) — chamar no mount das páginas /historico e /lixeira
-  loadLogs: () => Promise<void>;
+  loadLogs: (opts?: db.FetchLogsOptions) => Promise<number>;
+  loadMoreLogs: (opts: db.FetchLogsOptions) => Promise<number>;
   loadLixeira: () => Promise<void>;
 }
 
@@ -507,12 +508,33 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   );
 
   // -- Loaders sob demanda (chamados pelas páginas /historico e /lixeira) --
-  const loadLogs = useCallback(async () => {
+  const loadLogs = useCallback(async (opts?: db.FetchLogsOptions): Promise<number> => {
     try {
-      const logs = await db.fetchLogs();
+      const logs = await db.fetchLogs(opts);
       setState((prev) => ({ ...prev, logs }));
+      return logs.length;
     } catch (err) {
       console.error('Erro ao carregar logs:', err);
+      return 0;
+    }
+  }, []);
+
+  // Paginação "carregar mais": busca uma página mais antiga e ANEXA (dedup por id).
+  // Não substitui o que já está carregado — permite navegar o histórico pra trás
+  // sem rebaixar tudo.
+  const loadMoreLogs = useCallback(async (opts: db.FetchLogsOptions): Promise<number> => {
+    try {
+      const olderLogs = await db.fetchLogs(opts);
+      setState((prev) => {
+        const existentes = new Set(prev.logs.map((l) => l.id));
+        const novos = olderLogs.filter((l) => !existentes.has(l.id));
+        if (novos.length === 0) return prev;
+        return { ...prev, logs: [...prev.logs, ...novos] };
+      });
+      return olderLogs.length;
+    } catch (err) {
+      console.error('Erro ao carregar mais logs:', err);
+      return 0;
     }
   }, []);
 
@@ -1957,6 +1979,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     limparHistorico,
     removerLogsSelecionados,
     loadLogs,
+    loadMoreLogs,
     loadLixeira,
   };
 
