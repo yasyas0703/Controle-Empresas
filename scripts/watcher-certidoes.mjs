@@ -123,8 +123,9 @@ const log = {
 // ─── Alvos de leitura ─────────────────────────────────────────────────────────
 // Cada alvo é { dir, subpasta }. Os arquivos são lidos só desses diretórios
 // (não recursivo — as subpastas FGTS/TRABALHISTA são alvos próprios).
-// Pasta de ENTRADA (estilo fiscal): solta os PDFs aqui. A competência vira o
-// MÊS DO RUN (mesIso). Escaneada SEMPRE — inclusive no loop contínuo (60s).
+// Pasta de ENTRADA (estilo fiscal): solta os PDFs aqui. A competência é o mês
+// da EMISSÃO lida do PDF (a rota decide); mesIso vai junto só como FALLBACK pra
+// quando o texto não traz data. Escaneada SEMPRE — inclusive no loop contínuo (60s).
 // É pequena (só os novos), então re-varrer é barato. Flat (tipo pelo texto) +
 // subpastas opcionais. Pasta inexistente é ignorada.
 const PASTA_ENTRADA = '1- GUIAS A ENVIAR';

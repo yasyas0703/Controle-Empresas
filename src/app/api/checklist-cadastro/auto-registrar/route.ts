@@ -11,7 +11,7 @@ import { NextResponse } from 'next/server';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { getSupabaseAdmin, extrairTextoPdfServidor } from '../../checklist-fiscal/_shared';
 import { identificarEmpresa } from '../../checklist-fiscal/auto-enviar/_identificar';
-import { certidaoDoArquivo, tipoDoTexto, resultadoDoTexto, resultadoDoNome, emissaoDoTexto, cnpjBaseDoTexto, extrairDetalhesCertidao } from './_detectar';
+import { certidaoDoArquivo, tipoDoTexto, resultadoDoTexto, resultadoDoNome, emissaoDoTexto, competenciaDoTexto, cnpjBaseDoTexto, extrairDetalhesCertidao } from './_detectar';
 import { autoEnviarCertidao, type AutoEnvioResultado } from './_auto-enviar';
 import { resolveBaseUrl } from '../_pixel';
 import { ufDaEmpresa } from '@/app/utils/certidoes';
@@ -100,7 +100,6 @@ export async function POST(req: Request) {
   }
 
   const caminhoServidor = meta.caminhoServidor;
-  const mes = meta.mes;
   const nomeArquivo = nomeDoCaminho(caminhoServidor);
   const fileBuffer = Buffer.from(await file.arrayBuffer());
   const hashArquivo = createHash('sha256').update(fileBuffer).digest('hex');
@@ -115,6 +114,12 @@ export async function POST(req: Request) {
   // 4. Texto do PDF (base da identificação por conteúdo)
   let texto = '';
   try { texto = await extrairTextoPdfServidor(fileBuffer); } catch { texto = ''; }
+
+  // Competência = mês da EMISSÃO lida do PDF (a certidão cai no mês em que foi
+  // emitida — ex.: Trabalhista expedida 14/05 → maio; Estadual MG 06/06 → junho).
+  // Sem emissão reconhecida no texto, cai no mês do run (meta.mes).
+  const emissao = emissaoDoTexto(texto);
+  const mes = competenciaDoTexto(texto) ?? meta.mes;
 
   // 5. Certidão: 1º pelo TOKEN do nome (formato antigo cnd-*), senão pelo TEXTO
   //    (pastas renomeadas: "Certidão Negativa - CNPJ X.pdf", "HEDRONS P.E.N.pdf").
@@ -172,9 +177,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema, certidao: det.certidao } });
   }
 
-  // 7. Resultado: texto do PDF; reforço pelo nome do arquivo. Emissão do texto.
+  // 7. Resultado: texto do PDF; reforço pelo nome do arquivo. (Emissão/competência
+  //    já calculadas no passo 4.)
   const resultado = resultadoDoTexto(texto) ?? resultadoDoNome(nomeArquivo);
-  const emissao = emissaoDoTexto(texto);
 
   // Auto-envio (opt-in via --auto-enviar). Best-effort — falha aqui NÃO reverte o
   // registro/anexo. Travas (Positiva, e-mail de cadastro, dedup) ficam dentro.

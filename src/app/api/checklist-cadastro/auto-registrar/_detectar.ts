@@ -299,25 +299,45 @@ export function cnpjBaseDoTexto(texto: string): string | null {
   return null;
 }
 
+// Rótulos de emissão/expedição, em ordem de preferência. Cada um captura
+// DD/MM/AAAA. O "do dia" cobre o FEDERAL ("Emitida às 03:40:06 do dia
+// 04/06/2026"): o horário no meio tem dígitos e quebra o rótulo "emitida".
+const EMISSAO_LABELS: RegExp[] = [
+  /data\s+de\s+emissao[^0-9]{0,20}(\d{2})\/(\d{2})\/(\d{4})/,
+  /data\s+e\s+hora\s+da\s+emissao[^0-9]{0,20}(\d{2})\/(\d{2})\/(\d{4})/,
+  /emitida[^0-9]{0,40}(\d{2})\/(\d{2})\/(\d{4})/,
+  /expedicao[^0-9]{0,20}(\d{2})\/(\d{2})\/(\d{4})/,
+  /informacao\s+obtida\s+em[^0-9]{0,20}(\d{2})\/(\d{2})\/(\d{4})/,
+  /do\s+dia\s+(\d{2})\/(\d{2})\/(\d{4})/,
+];
+
+function emissaoLabeled(t: string): string | null {
+  for (const re of EMISSAO_LABELS) {
+    const m = t.match(re);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`; // YYYY-MM-DD
+  }
+  return null;
+}
+
 /**
  * Extrai a data de emissão do PDF (metadado). Best-effort: procura rótulos de
  * emissão/expedição e cai na 1ª data DD/MM/AAAA do texto. Retorna 'YYYY-MM-DD'.
  */
 export function emissaoDoTexto(texto: string): string | null {
   const t = norm(texto);
-  const DATA = /(\d{2})\/(\d{2})\/(\d{4})/;
-  const labels = [
-    /data\s+de\s+emissao[^0-9]{0,20}(\d{2})\/(\d{2})\/(\d{4})/,
-    /data\s+e\s+hora\s+da\s+emissao[^0-9]{0,20}(\d{2})\/(\d{2})\/(\d{4})/,
-    /emitida[^0-9]{0,40}(\d{2})\/(\d{2})\/(\d{4})/,
-    /expedicao[^0-9]{0,20}(\d{2})\/(\d{2})\/(\d{4})/,
-    /informacao\s+obtida\s+em[^0-9]{0,20}(\d{2})\/(\d{2})\/(\d{4})/,
-  ];
-  for (const re of labels) {
-    const m = t.match(re);
-    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-  }
-  const any = t.match(DATA);
-  if (any) return `${any[3]}-${any[2]}-${any[1]}`;
-  return null;
+  const lab = emissaoLabeled(t);
+  if (lab) return lab;
+  const any = t.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  return any ? `${any[3]}-${any[2]}-${any[1]}` : null;
+}
+
+/**
+ * Mês de COMPETÊNCIA da certidão = mês da data de EMISSÃO lida do PDF
+ * ('YYYY-MM'). Usa SÓ os rótulos confiáveis (sem o fallback da "1ª data solta",
+ * que poderia pegar uma validade ou data de lei). Retorna null se nenhum rótulo
+ * casar — nesse caso a rota usa o mês do run como competência.
+ */
+export function competenciaDoTexto(texto: string): string | null {
+  const lab = emissaoLabeled(norm(texto));
+  return lab ? lab.slice(0, 7) : null;
 }
