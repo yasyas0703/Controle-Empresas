@@ -58,6 +58,24 @@ export function celulasDaColuna(
 }
 
 /**
+ * Colunas que exibem um slot de RELATÓRIO ao lado da certidão na tabela
+ * (Federal: situação fiscal federal; Estadual: ex. planilha do MG). O relatório
+ * fica na linha da própria coluna ('FEDERAL' / 'ESTADUAL'), separado das
+ * sub-células de certidão — em SP, ESTADUAL_ADM/ESTADUAL_DA guardam o resultado
+ * e a linha 'ESTADUAL' carrega só o relatório (sem colisão).
+ */
+export const COLUNAS_COM_RELATORIO = ['ESTADUAL', 'FEDERAL'] as const;
+
+export function colunaTemRelatorio(coluna: CadastroCertidaoColuna): boolean {
+  return (COLUNAS_COM_RELATORIO as readonly string[]).includes(coluna);
+}
+
+/** Chave de certidão onde o relatório da coluna é guardado. */
+export function certidaoDoRelatorio(coluna: CadastroCertidaoColuna): CadastroCertidao {
+  return coluna as CadastroCertidao; // 'ESTADUAL' | 'FEDERAL'
+}
+
+/**
  * Regra do escritório sobre o que pode ser enviado ao cliente:
  *   - Negativa: sempre envia.
  *   - PEN (positiva com efeito de negativa): envia, EXCETO Trabalhista e FGTS

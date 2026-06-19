@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ListChecks, Search, XCircle, ChevronLeft, ChevronRight, Check, X, Calendar,
   Paperclip, FileText, MessageSquare, Send, Upload, Trash2, Eye, Loader2, ShieldAlert,
-  History, MailCheck, MailX,
+  History, MailCheck, MailX, ClipboardList, Copy,
 } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import type {
@@ -22,7 +22,8 @@ import { extrairTextoPdf } from '@/app/utils/extrairTextoPdf';
 import { extrairDetalhesCertidao, emissaoDoTexto, resultadoDoTexto } from '@/app/api/checklist-cadastro/auto-registrar/_detectar';
 import {
   celulasDaColuna, colunaDaCertidao, corCelulaCadastro, certidaoPodeEnviar, ufDaEmpresa,
-  resultadosPermitidos, buildCadastroKey, type CelulaCertidao, type CorCelulaCadastro,
+  resultadosPermitidos, buildCadastroKey, colunaTemRelatorio, certidaoDoRelatorio,
+  type CelulaCertidao, type CorCelulaCadastro,
 } from '@/app/utils/certidoes';
 import { useFileDropZone } from '@/app/hooks/useFileDropZone';
 import { formatBR, formatDateTimeBR } from '@/app/utils/date';
@@ -90,6 +91,10 @@ export default function ControleCadastroPage() {
   const [filtroUf, setFiltroUf] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<'todos' | 'negativa' | 'pen' | 'positiva' | 'falta'>('todos');
   const [paginaTamanho, setPaginaTamanho] = useState(50);
+  // Painel "Faltantes": escolhe tipo + UF e lista as empresas que estão sem aquela certidão.
+  const [verFaltantes, setVerFaltantes] = useState(false);
+  const [faltTipo, setFaltTipo] = useState<CadastroCertidaoColuna | ''>('');
+  const [faltUf, setFaltUf] = useState('');
 
   // Modal da célula
   const [target, setTarget] = useState<CellTarget | null>(null);
@@ -461,6 +466,20 @@ export default function ControleCadastroPage() {
     return { negativa, pen, positiva, falta, total };
   }, [linhas, items]);
 
+  // Empresas que estão SEM a certidão escolhida (cor 'falta' = nada anexado/marcado),
+  // opcionalmente restritas a uma UF. Independente dos filtros da tabela.
+  const faltantes = useMemo(() => {
+    if (!verFaltantes || !faltTipo) return [] as Empresa[];
+    const list = empresas.filter((e) => {
+      if (e.cadastrada === false) return false;
+      if (faltUf && ufDaEmpresa(e) !== faltUf) return false;
+      return celulasDaColuna(faltTipo, e).some(
+        (cel) => corCelulaCadastro(items.get(buildCadastroKey(e.id, cel.certidao))) === 'falta',
+      );
+    });
+    return sortByPtBr(list, (e) => e.apelido || e.razao_social || e.codigo || '');
+  }, [verFaltantes, faltTipo, faltUf, empresas, items]);
+
   // ── Guards (depois de todos os hooks) ───────────────────────────────────────
   if (!authReady) return null;
   if (!podeVer) {
@@ -476,6 +495,29 @@ export default function ControleCadastroPage() {
   }
 
   const isMesAtual = mes === currentMonth();
+
+  const abrirCelulaFaltante = (e: Empresa) => {
+    if (!faltTipo) return;
+    const cels = celulasDaColuna(faltTipo, e);
+    const cel =
+      cels.find((c) => corCelulaCadastro(items.get(buildCadastroKey(e.id, c.certidao))) === 'falta') ?? cels[0];
+    abrirCelula(e, cel.certidao, faltTipo, cel.subLabel);
+  };
+
+  const copiarFaltantes = async () => {
+    const txt = faltantes
+      .map((e) => {
+        const uf = ufDaEmpresa(e);
+        return [e.codigo ?? '', e.apelido || e.razao_social || '', uf].filter(Boolean).join('\t');
+      })
+      .join('\n');
+    try {
+      await navigator.clipboard.writeText(txt);
+      mostrarAlerta('Copiado', `${faltantes.length} empresa(s) copiada(s) para a área de transferência.`, 'sucesso');
+    } catch {
+      mostrarAlerta('Erro', 'Não foi possível copiar a lista.', 'erro');
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -574,7 +616,83 @@ export default function ControleCadastroPage() {
           <option value="positiva">Positiva</option>
           <option value="falta">Falta</option>
         </select>
+        <button
+          onClick={() => setVerFaltantes((v) => !v)}
+          className={`inline-flex items-center justify-center gap-1.5 rounded-[var(--radius)] border px-3 py-2.5 text-sm font-semibold transition-colors ${
+            verFaltantes
+              ? 'border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-strong)]'
+              : 'border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-2)] hover:bg-[var(--surface-3)]'
+          }`}
+          title="Listar empresas que estão sem uma certidão"
+        >
+          <ClipboardList size={16} /> Faltantes
+        </button>
       </div>
+
+      {/* Painel de faltantes */}
+      {verFaltantes && (
+        <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] p-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <span className="text-sm font-semibold text-[var(--text-1)]">Certidões faltantes</span>
+            <select
+              value={faltTipo}
+              onChange={(e) => setFaltTipo(e.target.value as CadastroCertidaoColuna | '')}
+              className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-[var(--text-1)]"
+            >
+              <option value="">Escolha o tipo…</option>
+              {CADASTRO_CERTIDAO_COLUNAS.map((c) => (
+                <option key={c} value={c}>{CADASTRO_CERTIDAO_LABEL[c]}</option>
+              ))}
+            </select>
+            <select
+              value={faltUf}
+              onChange={(e) => setFaltUf(e.target.value)}
+              className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-[var(--text-1)]"
+            >
+              <option value="">Todas as UF</option>
+              {ufOptions.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
+            </select>
+            {faltTipo && (
+              <span className="text-sm text-[var(--text-2)]">
+                Faltando: <strong className="text-[var(--text-1)]">{faltantes.length}</strong> empresa(s)
+              </span>
+            )}
+            {faltTipo && faltantes.length > 0 && (
+              <button
+                onClick={copiarFaltantes}
+                className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-xs font-semibold text-[var(--text-2)] hover:bg-[var(--surface-3)] sm:ml-auto"
+              >
+                <Copy size={14} /> Copiar lista
+              </button>
+            )}
+          </div>
+          {faltTipo && (
+            faltantes.length === 0 ? (
+              <div className="mt-3 text-sm text-[var(--text-3)]">
+                Nenhuma empresa faltando {CADASTRO_CERTIDAO_LABEL[faltTipo]}{faltUf ? ` em ${faltUf}` : ''}.
+              </div>
+            ) : (
+              <div className="mt-3 max-h-72 overflow-y-auto rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-1)]">
+                {faltantes.map((e) => (
+                  <button
+                    key={e.id}
+                    onClick={() => abrirCelulaFaltante(e)}
+                    className="flex w-full items-center justify-between gap-3 border-b border-[var(--border)] px-3 py-2 text-left last:border-b-0 hover:bg-[var(--surface-3)]"
+                  >
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate text-sm font-medium text-[var(--text-1)]">{e.apelido || e.razao_social || '—'}</span>
+                      <span className="text-xs text-[var(--text-3)]">{e.codigo}{ufDaEmpresa(e) ? ` · ${ufDaEmpresa(e)}` : ''}</span>
+                    </span>
+                    {e.cnpj && (
+                      <span className="shrink-0 font-mono text-[11px] text-[var(--text-3)]">{formatarDocumento(e.cnpj, 'CNPJ')}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )
+          )}
+        </div>
+      )}
 
       {/* Legenda */}
       <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-2)]">
@@ -599,11 +717,16 @@ export default function ControleCadastroPage() {
                 <th className="sticky left-0 top-0 z-30 min-w-[220px] border-b border-r border-[var(--border)] bg-[var(--surface-3)] px-3 py-2 text-left text-xs font-semibold text-[var(--text-2)]">
                   Empresa
                 </th>
-                {CADASTRO_CERTIDAO_COLUNAS.map((coluna) => (
-                  <th key={coluna} className="sticky top-0 z-20 min-w-[120px] border-b border-r border-[var(--border)] bg-[var(--surface-3)] px-2 py-2 text-center text-xs font-semibold text-[var(--text-2)]">
-                    {CADASTRO_CERTIDAO_LABEL[coluna]}
-                  </th>
-                ))}
+                {CADASTRO_CERTIDAO_COLUNAS.map((coluna) => {
+                  const temRel = colunaTemRelatorio(coluna);
+                  const mw = coluna === 'ESTADUAL' ? 'min-w-[188px]' : temRel ? 'min-w-[150px]' : 'min-w-[120px]';
+                  return (
+                    <th key={coluna} className={`sticky top-0 z-20 ${mw} border-b border-r border-[var(--border)] bg-[var(--surface-3)] px-2 py-2 text-center text-xs font-semibold text-[var(--text-2)]`}>
+                      {CADASTRO_CERTIDAO_LABEL[coluna]}
+                      {temRel && <div className="mt-0.5 text-[9px] font-normal text-[var(--text-3)]">Certidão · Relatório</div>}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -618,9 +741,13 @@ export default function ControleCadastroPage() {
                   </td>
                   {CADASTRO_CERTIDAO_COLUNAS.map((coluna) => {
                     const celulas = celulasDaColuna(coluna, empresa);
+                    const temRel = colunaTemRelatorio(coluna);
+                    const relCert = temRel ? certidaoDoRelatorio(coluna) : null;
+                    const totalSub = celulas.length + (temRel ? 1 : 0);
+                    const colsClass = totalSub >= 3 ? 'grid-cols-3' : totalSub === 2 ? 'grid-cols-2' : 'grid-cols-1';
                     return (
                       <td key={coluna} className="border-b border-r border-[var(--border)] px-1 py-1 align-middle">
-                        <div className={`grid gap-1 ${celulas.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        <div className={`grid gap-1 ${colsClass}`}>
                           {celulas.map((cel) => (
                             <CelulaBtn
                               key={cel.certidao}
@@ -631,6 +758,13 @@ export default function ControleCadastroPage() {
                               onClick={() => abrirCelula(empresa, cel.certidao, coluna, cel.subLabel)}
                             />
                           ))}
+                          {relCert && (
+                            <RelatorioCelulaBtn
+                              key={`${relCert}-rel`}
+                              item={items.get(buildCadastroKey(empresa.id, relCert))}
+                              onClick={() => abrirCelula(empresa, relCert, coluna, 'Relatório')}
+                            />
+                          )}
                         </div>
                       </td>
                     );
@@ -698,10 +832,12 @@ function CelulaBtn({ empresa, coluna, cel, item, onClick }: {
   empresa: Empresa; coluna: CadastroCertidaoColuna; cel: CelulaCertidao;
   item: ChecklistCadastroItem | undefined; onClick: () => void;
 }) {
-  void empresa; void coluna;
+  void empresa;
   const cor = corCelulaCadastro(item);
   const cls = CELL_STYLE[cor];
   const resultado = item?.resultado ?? null;
+  // Federal/Estadual têm célula de relatório própria — não duplica o ícone aqui.
+  const mostrarIconeRelatorio = !colunaTemRelatorio(coluna);
   return (
     <button
       onClick={onClick}
@@ -712,10 +848,31 @@ function CelulaBtn({ empresa, coluna, cel, item, onClick }: {
       <span>{resultado ? RESULTADO_ABBR[resultado] : '—'}</span>
       <span className="mt-0.5 flex items-center gap-0.5 opacity-80">
         {item?.arquivoUrl && <Paperclip size={10} />}
-        {(item?.relatorioUrl || item?.relatorioTexto) && <FileText size={10} />}
+        {mostrarIconeRelatorio && (item?.relatorioUrl || item?.relatorioTexto) && <FileText size={10} />}
         {item?.observacao && <MessageSquare size={10} />}
         {(item?.enviosHistorico?.some((e) => e.sucesso)) && <Check size={10} />}
       </span>
+    </button>
+  );
+}
+
+// ── Célula de relatório (Federal/Estadual) ─────────────────────────────────────
+function RelatorioCelulaBtn({ item, onClick }: {
+  item: ChecklistCadastroItem | undefined; onClick: () => void;
+}) {
+  const tem = !!(item?.relatorioUrl || (item?.relatorioTexto && item.relatorioTexto.trim()));
+  return (
+    <button
+      onClick={onClick}
+      title="Relatório"
+      className={`flex w-full flex-col items-center justify-center rounded-md border px-1 py-1.5 text-[11px] font-semibold transition-colors ${
+        tem
+          ? 'bg-sky-50 border-sky-300 hover:border-sky-400 text-sky-700'
+          : 'bg-[var(--surface-2)] border-[var(--border)] text-[var(--text-3)] hover:border-[var(--border-strong)]'
+      }`}
+    >
+      <span className="text-[9px] font-medium opacity-70">Relat.</span>
+      <span className="mt-0.5 flex items-center">{tem ? <FileText size={12} /> : '—'}</span>
     </button>
   );
 }
