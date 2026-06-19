@@ -326,11 +326,21 @@ const EMISSAO_LABELS: RegExp[] = [
   /sp\.gov\.br\s+[\d-]{8,20}\s+(\d{2})\/(\d{2})\/(\d{4})/,
 ];
 
+const MESES_PT: Record<string, string> = {
+  janeiro: '01', fevereiro: '02', marco: '03', abril: '04', maio: '05', junho: '06',
+  julho: '07', agosto: '08', setembro: '09', outubro: '10', novembro: '11', dezembro: '12',
+};
+
 function emissaoLabeled(t: string): string | null {
   for (const re of EMISSAO_LABELS) {
     const m = t.match(re);
     if (m) return `${m[3]}-${m[2]}-${m[1]}`; // YYYY-MM-DD
   }
+  // Data por EXTENSO (ex.: GO — "LOCAL E DATA: GOIANIA, 6 JUNHO DE 2026"). Ancora
+  // em "local e data" pra NÃO pegar datas de lei por extenso no corpo do texto
+  // (ex.: "16 de dezembro de 1999"). Aceita com ou sem "de" antes do mês.
+  const lf = t.match(/local\s+e\s+data[^0-9]{0,40}(\d{1,2})\s+(?:de\s+)?(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+(\d{4})/);
+  if (lf) { const mm = MESES_PT[lf[2]]; if (mm) return `${lf[3]}-${mm}-${lf[1].padStart(2, '0')}`; }
   return null;
 }
 
