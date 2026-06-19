@@ -65,6 +65,15 @@ export function tipoDoTexto(texto: string): DeteccaoCertidao | null {
   const t = norm(texto);
   if (!t.trim()) return null;
 
+  // MUNICIPAL primeiro: "prefeitura" / "fazenda pública municipal" / "secretaria
+  // municipal" são marcas EXCLUSIVAS de certidão municipal (não aparecem em
+  // federal/estadual/FGTS/trabalhista). Sem checar isso antes, certidões de
+  // prefeitura que citam termos federais no corpo (ex.: Campinas) caíam como
+  // FEDERAL — coluna errada.
+  if (/prefeitura|fazenda publica municipal|fazenda municipal|secretaria municipal/.test(t)) {
+    return { certidao: 'MUNICIPAL', uf: null, autoridade: 'municipal' };
+  }
+
   // FGTS (Caixa / Fundo de Garantia)
   if (/fundo de garantia|certificado de regularidade do fgts|regularidade do fgts/.test(t)) {
     return { certidao: 'FGTS', uf: null, autoridade: 'fgts' };
