@@ -1,0 +1,68 @@
+-- ════════════════════════════════════════════════════════════════════════
+-- Retenção do histórico (tabela `logs`) — política definida em 2026-06-18
+-- ════════════════════════════════════════════════════════════════════════
+--
+-- OBJETIVO: manter o registro de atividade de TODO MUNDO pra sempre, sem
+-- estourar o storage do Supabase.
+--
+-- COMO: o RESUMO de cada ação (quem / o quê / quando / mensagem) fica pra
+-- sempre. Só o DIFF detalhado (o "antes → depois" de cada campo — JSON de
+-- alguns KB por linha, a parte pesada) é descartado após 30 dias.
+--
+-- O diff antigo NÃO é jogado fora: antes de sair do banco ele é ARQUIVADO no
+-- Supabase Storage (bucket `logs-arquivo`, cota separada dos 500MB do banco), em
+-- arquivos NDJSON por mês. Assim nada se perde — o detalhe de 3 meses, 1 ano, etc.
+-- continua recuperável. Na página /historico, o botão "Carregar detalhes
+-- arquivados" lê de volta esse arquivo (via /api/historico-arquivo).
+--
+-- A compactação (arquivar + zerar o diff antigo) roda no código, acoplada ao cron
+-- diário /api/cron/alertar-pendencias-auto (ver src/lib/logsRetencao.ts e
+-- src/lib/logsArquivo.ts). Gatilho manual / catch-up do backlog:
+-- /api/cron/compactar-logs (use ?dry=1 pra só contar). NÃO precisa de pg_cron.
+--
+-- O bucket `logs-arquivo` é criado automaticamente pelo código na primeira
+-- execução. É PRIVADO e só o service-role (cron + rota de consulta) acessa — o
+-- browser nunca lê direto, então NÃO precisa de políticas RLS de Storage.
+--
+-- ────────────────────────────────────────────────────────────────────────
+-- ⚠️  IMPORTANTE — DESLIGAR O EXPURGO ANTIGO (se existir)
+-- ────────────────────────────────────────────────────────────────────────
+-- O código mencionava uma "retenção de 3 dias via cron" no banco. Se em algum
+-- momento foi criado um pg_cron que APAGA logs antigos, ele precisa ser
+-- DESLIGADO — senão ele continua apagando o histórico que agora queremos
+-- guardar pra sempre. Esse expurgo é a causa provável do histórico aparecer
+-- "só do dia".
+--
+-- 1) Liste os jobs agendados e procure algum DELETE em `logs`:
+--
+--      SELECT jobid, jobname, schedule, command FROM cron.job;
+--
+--    (Se der erro "relation cron.job does not exist", então pg_cron nunca foi
+--     usado e NÃO há expurgo no banco — nada a desligar aqui. Nesse caso, o
+--     histórico curto vinha do limite de leitura de 200 + filtro só no client,
+--     já corrigido com paginação por data nesta entrega.)
+--
+-- 2) Se existir um job apagando logs (algo como
+--      "DELETE FROM logs WHERE em < now() - interval '3 days'"),
+--    desligue-o pelo nome OU pelo jobid retornado acima. Descomente e ajuste:
+--
+--      -- SELECT cron.unschedule('<jobname-ou-jobid>');
+--
+-- ────────────────────────────────────────────────────────────────────────
+-- Índice de leitura (recomendado)
+-- ────────────────────────────────────────────────────────────────────────
+-- A página de histórico agora pagina por data/cursor sobre a coluna `em`
+-- (ORDER BY em DESC + filtros lt/gte/lte). Garanta o índice pra manter a
+-- leitura rápida conforme o histórico cresce:
+--
+CREATE INDEX IF NOT EXISTS idx_logs_em ON logs (em DESC);
+
+-- ────────────────────────────────────────────────────────────────────────
+-- Conferência rápida (opcional)
+-- ────────────────────────────────────────────────────────────────────────
+-- Quantos logs existem e qual o mais antigo guardado hoje:
+--    SELECT count(*) AS total,
+--           min(em)  AS mais_antigo,
+--           max(em)  AS mais_recente,
+--           count(*) FILTER (WHERE diff IS NOT NULL) AS com_diff
+--    FROM logs;
