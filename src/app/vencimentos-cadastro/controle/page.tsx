@@ -52,14 +52,14 @@ function monthLabel(mes: string): string {
 // negativa=verde · pen=âmbar · positiva=vermelho · relatório=azul · tem=cinza · falta=neutro
 const CELL_STYLE: Record<CorCelulaCadastro, { cell: string; dot: string; legenda: string }> = {
   negativa:  { cell: 'bg-emerald-50 border-emerald-300 hover:border-emerald-500 text-emerald-700', dot: 'bg-emerald-500', legenda: 'Negativa' },
-  pen:       { cell: 'bg-amber-50 border-amber-300 hover:border-amber-400 text-amber-700',         dot: 'bg-amber-500',   legenda: 'PEN' },
+  pen:       { cell: 'bg-amber-50 border-amber-300 hover:border-amber-400 text-amber-700',         dot: 'bg-amber-500',   legenda: 'P.E.N.' },
   positiva:  { cell: 'bg-red-50 border-red-300 hover:border-red-400 text-red-700',                 dot: 'bg-red-500',     legenda: 'Positiva' },
   relatorio: { cell: 'bg-sky-50 border-sky-300 hover:border-sky-400 text-sky-700',                 dot: 'bg-sky-500',     legenda: 'Relatório' },
   tem:       { cell: 'bg-slate-50 border-slate-300 hover:border-slate-400 text-slate-600',         dot: 'bg-slate-400',   legenda: 'Sem classificar' },
   falta:     { cell: 'bg-[var(--surface-2)] border-[var(--border)] hover:border-[var(--border-strong)] text-[var(--text-3)]', dot: 'bg-[var(--text-3)]', legenda: 'Falta' },
 };
 
-const RESULTADO_ABBR: Record<CadastroResultado, string> = { Negativa: 'Neg', PEN: 'PEN', Positiva: 'Pos' };
+const RESULTADO_ABBR: Record<CadastroResultado, string> = { Negativa: 'Neg', PEN: 'P.E.N.', Positiva: 'Pos' };
 
 type CellTarget = { empresa: Empresa; certidao: CadastroCertidao; coluna: CadastroCertidaoColuna; subLabel?: string };
 
@@ -536,7 +536,7 @@ export default function ControleCadastroPage() {
         {[
           { label: 'Empresas', valor: linhas.length, cor: 'text-[var(--text-1)]' },
           { label: 'Negativa', valor: stats.negativa, cor: 'text-emerald-600' },
-          { label: 'PEN', valor: stats.pen, cor: 'text-amber-600' },
+          { label: 'P.E.N.', valor: stats.pen, cor: 'text-amber-600' },
           { label: 'Positiva', valor: stats.positiva, cor: 'text-red-600' },
           { label: 'Falta', valor: stats.falta, cor: 'text-[var(--text-3)]' },
         ].map((s) => (
@@ -570,7 +570,7 @@ export default function ControleCadastroPage() {
         <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as typeof filtroStatus)} className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-sm text-[var(--text-1)]">
           <option value="todos">Todos os resultados</option>
           <option value="negativa">Negativa</option>
-          <option value="pen">PEN</option>
+          <option value="pen">P.E.N.</option>
           <option value="positiva">Positiva</option>
           <option value="falta">Falta</option>
         </select>
@@ -801,7 +801,7 @@ function CelulaModal(p: CelulaModalProps) {
               })}
             </div>
             {item?.resultado && !certidaoPodeEnviar(coluna, item.resultado) && (
-              <div className="mt-1.5 text-xs text-red-600">Esta certidão não é enviada ao cliente (Positiva{coluna === 'FGTS' || coluna === 'TRABALHISTA' ? ' / PEN' : ''}).</div>
+              <div className="mt-1.5 text-xs text-red-600">Esta certidão não é enviada ao cliente (Positiva{coluna === 'FGTS' || coluna === 'TRABALHISTA' ? ' / P.E.N.' : ''}).</div>
             )}
           </div>
 

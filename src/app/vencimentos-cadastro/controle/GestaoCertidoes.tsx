@@ -319,7 +319,7 @@ export default function GestaoCertidoes() {
                     <td className="whitespace-nowrap border-b border-r border-[var(--border)] px-2.5 py-1.5">
                       {l.item.resultado ? (
                         <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${RESULTADO_BADGE[l.item.resultado]}`}>
-                          {l.item.resultado === 'PEN' ? 'PEN' : l.item.resultado}
+                          {l.item.resultado === 'PEN' ? 'P.E.N.' : l.item.resultado}
                         </span>
                       ) : (l.item.relatorioUrl || l.item.relatorioTexto) ? (
                         <span className="inline-flex rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700">Relatório</span>
