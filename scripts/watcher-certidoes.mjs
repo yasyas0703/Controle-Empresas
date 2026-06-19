@@ -189,6 +189,27 @@ function moverParaEnviados(caminho) {
   }
 }
 
+// Certidão da ENTRADA que NÃO foi reconhecida (pendente_correcao) ou deu erro:
+// tira da entrada e põe em _PENDENTES, pra as meninas verem o que falhou
+// (espelha o _PENDENTES do watcher fiscal). O AVISO no sino é criado pela rota
+// (server-side, com o motivo). _PENDENTES não é re-escaneada (o scan lê só os
+// arquivos .pdf da raiz da entrada, não subpastas). SÓ mexe na entrada.
+const PASTA_PENDENTES = '_PENDENTES';
+function moverParaPendentes(caminho) {
+  try {
+    const destinoDir = join(CERTIDOES_ROOT, PASTA_ENTRADA, PASTA_PENDENTES);
+    mkdirSync(destinoDir, { recursive: true });
+    let destino = join(destinoDir, basename(caminho));
+    if (existsSync(destino)) destino = join(destinoDir, `${ts().replace(/[:.]/g, '-')}_${basename(caminho)}`);
+    renameSync(caminho, destino);
+    delete state.processados[caminho]; // saiu da entrada — libera a chave do state
+    salvarStateDebounced();
+    log.info(`→ _PENDENTES: ${basename(caminho)}`);
+  } catch (err) {
+    log.warn(`não movi ${basename(caminho)} p/ _PENDENTES (${err.code || err.message}) — tento depois`);
+  }
+}
+
 // ─── Fila / processamento ─────────────────────────────────────────────────────
 let processando = false;
 const fila = []; // { caminho, subpasta }
@@ -290,10 +311,11 @@ async function processarArquivo(caminho, subpasta) {
   state.processados[caminho] = { hash, status: resultado.status, ultimaTentativa: ts() };
   salvarStateDebounced();
 
-  // Guia da ENTRADA que já entrou no sistema → move pro ENVIADOS. Pendência
-  // (não reconhecida) FICA na entrada, pra você ver e resolver.
-  if (!DRY_RUN && caminho.includes(PASTA_ENTRADA) && FEITO_STATUSES.has(resultado.status)) {
-    moverParaEnviados(caminho);
+  // Guia da ENTRADA: entrou no sistema → ENVIADOS. Não reconhecida (pendente)
+  // ou erro → _PENDENTES (sai da entrada; o aviso no sino vem da rota).
+  if (!DRY_RUN && caminho.includes(PASTA_ENTRADA)) {
+    if (FEITO_STATUSES.has(resultado.status)) moverParaEnviados(caminho);
+    else if (resultado.status === 'erro' || String(resultado.status).startsWith('pendente')) moverParaPendentes(caminho);
   }
 }
 
@@ -349,7 +371,7 @@ function cabecalho() {
   if (AUTO_ENVIAR) console.log(`  ${C.amarelo}⚠ AUTO-ENVIAR LIGADO — envia Negativa/PEN pro e-mail de Cadastro (conta ghost).${C.reset}`);
   if (Number.isFinite(LIMIT)) console.log(`  ${C.amarelo}LIMIT: ${LIMIT} arquivos${C.reset}`);
   if (ONCE) console.log(`  ${C.amarelo}ONCE: processa o que tem e sai${C.reset}`);
-  console.log(`  ${C.dim}Pastas de dados: só leitura. Entrada: já-processados vão pra ENVIADOS.${C.reset}`);
+  console.log(`  ${C.dim}Pastas de dados: só leitura. Entrada: processados → ENVIADOS, não-reconhecidos → _PENDENTES.${C.reset}`);
   console.log('');
 }
 

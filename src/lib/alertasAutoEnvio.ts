@@ -56,6 +56,20 @@ export function rotuloTipoProblema(tipo: string): string {
   return LABEL_TIPO_PROBLEMA[tipo] ?? tipo;
 }
 
+/** Rótulos dos problemas do watcher de CERTIDÕES (cadastro). */
+export const LABEL_TIPO_PROBLEMA_CADASTRO: Record<string, string> = {
+  empresa_nao_encontrada: 'Empresa não reconhecida no PDF',
+  empresa_ambigua: 'Mais de uma empresa casou com o PDF (ambíguo)',
+  certidao_desconhecida: 'Tipo de certidão não reconhecido',
+  resultado_indefinido: 'Resultado (negativa/positiva) não identificado',
+  nome_fora_padrao: 'Nome do arquivo fora do padrão',
+  erro: 'Erro inesperado no processamento',
+};
+
+export function rotuloProblemaCadastro(tipo: string): string {
+  return LABEL_TIPO_PROBLEMA_CADASTRO[tipo] ?? tipo;
+}
+
 export function severidadeDoProblema(tipo: string): 'erro' | 'aviso' {
   return TIPOS_BLOQUEIO.has(tipo) ? 'erro' : 'aviso';
 }
@@ -157,6 +171,53 @@ export async function resolverDestinatariosFiscais(
     }
   }
 
+  return [...porId.values()];
+}
+
+/** Acha os ids do departamento Cadastro pelo nome (normalizado). */
+function acharDeptosCadastro(deptos: DeptoRow[]): string[] {
+  const norm = (s: string) => s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  return deptos.filter((d) => { const n = norm(d.nome); return n === 'cadastro' || n === 'cadastros'; }).map((d) => d.id);
+}
+
+/**
+ * Quem recebe o alerta de uma certidão não-processada: as MENINAS do Cadastro —
+ * todos os usuários ativos do depto Cadastro (principal ou extras), de QUALQUER
+ * role (são data-entry, não só gerentes) + admins. Respeita o MODO TESTE (manda
+ * só pra usuária de teste enquanto o auto-envio está em validação). Fallback:
+ * admins, pra alerta nunca sumir.
+ */
+export async function resolverDestinatariosCadastro(admin: SupabaseClient): Promise<UsuarioRow[]> {
+  if (ALERTA_TESTE_SOMENTE_USER_ID) {
+    const { data } = await admin
+      .from('usuarios')
+      .select('id, nome, email, role, departamento_id, departamentos_extras_ids, ativo')
+      .eq('id', ALERTA_TESTE_SOMENTE_USER_ID)
+      .maybeSingle();
+    return data ? [data as UsuarioRow] : [];
+  }
+
+  const [{ data: deptosData }, { data: usuariosData }] = await Promise.all([
+    admin.from('departamentos').select('id, nome'),
+    admin.from('usuarios').select('id, nome, email, role, departamento_id, departamentos_extras_ids, ativo'),
+  ]);
+  const deptos = (deptosData ?? []) as DeptoRow[];
+  const usuarios = (usuariosData ?? []) as UsuarioRow[];
+  const cadastroIds = acharDeptosCadastro(deptos);
+
+  const porId = new Map<string, UsuarioRow>();
+  for (const u of usuarios) {
+    if (!u.ativo) continue;
+    if (u.role === 'admin') { porId.set(u.id, u); continue; }
+    const deptosU = new Set(
+      [u.departamento_id, ...(u.departamentos_extras_ids ?? [])].filter((v): v is string => !!v),
+    );
+    if (cadastroIds.some((id) => deptosU.has(id))) porId.set(u.id, u);
+  }
+
+  if (porId.size === 0) {
+    for (const u of usuarios) if (u.ativo && u.role === 'admin') porId.set(u.id, u);
+  }
   return [...porId.values()];
 }
 

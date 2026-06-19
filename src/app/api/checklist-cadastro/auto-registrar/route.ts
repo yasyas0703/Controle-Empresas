@@ -15,6 +15,7 @@ import { certidaoDoArquivo, tipoDoTexto, resultadoDoTexto, resultadoDoNome, emis
 import { autoEnviarCertidao, type AutoEnvioResultado } from './_auto-enviar';
 import { resolveBaseUrl } from '../_pixel';
 import { ufDaEmpresa } from '@/app/utils/certidoes';
+import { criarNotificacaoSistema, resolverDestinatariosCadastro, rotuloProblemaCadastro, severidadeDoProblema } from '@/lib/alertasAutoEnvio';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
 
@@ -53,11 +54,15 @@ async function registrarProcessado(admin: SupabaseClient, p: {
   }, { onConflict: 'caminho_servidor,hash_arquivo' }).then(() => undefined, (e) => console.error('[auto-registrar] processadas:', e));
 }
 
+// Retorna true se o problema é NOVO (não existia esse arquivo/hash) — usado pra
+// disparar o aviso no sino só uma vez por arquivo.
 async function registrarProblema(admin: SupabaseClient, p: {
   caminhoServidor: string; nomeArquivo: string; hashArquivo: string; empresaId: string | null;
   tipoProblema: string; detalhes: Record<string, unknown>;
   competenciaParseada: string | null; certidaoParseada: string | null; resultadoParseado: string | null;
-}): Promise<void> {
+}): Promise<boolean> {
+  const { data: existente } = await admin.from('certidoes_auto_problemas')
+    .select('id').eq('caminho_servidor', p.caminhoServidor).eq('hash_arquivo', p.hashArquivo).maybeSingle();
   await admin.from('certidoes_auto_problemas').upsert({
     caminho_servidor: p.caminhoServidor,
     nome_arquivo: p.nomeArquivo,
@@ -70,6 +75,27 @@ async function registrarProblema(admin: SupabaseClient, p: {
     resultado_parseado: p.resultadoParseado,
     criado_em: new Date().toISOString(),
   }, { onConflict: 'caminho_servidor,hash_arquivo' }).then(() => undefined, (e) => console.error('[auto-registrar] problemas:', e));
+  return !existente;
+}
+
+// Aviso no sino pras meninas do cadastro: certidão não processada + o motivo.
+// Respeita o modo-teste do alertasAutoEnvio (vai pro usuário Testes enquanto valida).
+async function notificarProblemaCadastro(admin: SupabaseClient, p: {
+  nomeArquivo: string; tipoProblema: string; motivo: string; empresaId: string | null;
+}): Promise<void> {
+  try {
+    const dest = await resolverDestinatariosCadastro(admin);
+    if (dest.length === 0) return;
+    await criarNotificacaoSistema(admin, {
+      titulo: 'Certidão não processada',
+      mensagem: `${p.nomeArquivo}: ${rotuloProblemaCadastro(p.tipoProblema)}. ${p.motivo} (foi pra pasta _PENDENTES)`,
+      tipo: severidadeDoProblema(p.tipoProblema),
+      empresaId: p.empresaId,
+      destinatarios: dest.map((u) => u.id),
+    });
+  } catch (e) {
+    console.error('[auto-registrar] falha ao notificar problema:', e instanceof Error ? e.message : e);
+  }
 }
 
 export async function POST(req: Request) {
@@ -125,13 +151,15 @@ export async function POST(req: Request) {
   //    (pastas renomeadas: "Certidão Negativa - CNPJ X.pdf", "HEDRONS P.E.N.pdf").
   const det = certidaoDoArquivo(nomeArquivo, meta.subpasta) ?? tipoDoTexto(texto);
   if (!det) {
-    await registrarProblema(admin, {
+    const motivo = 'Não reconheci o tipo de certidão (nem pelo nome nem pelo texto do PDF).';
+    const novo = await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo, empresaId: null,
       tipoProblema: 'certidao_desconhecida',
-      detalhes: { motivo: 'Não reconheci o tipo de certidão (nem pelo nome nem pelo texto do PDF).', subpasta: meta.subpasta ?? null },
+      detalhes: { motivo, subpasta: meta.subpasta ?? null },
       competenciaParseada: mes, certidaoParseada: null, resultadoParseado: null,
     });
     await registrarProcessado(admin, { caminhoServidor, hashArquivo, empresaId: null, competencia: mes, certidao: null, resultado: null, nomeArquivo, status: 'pendente_correcao', detalhes: { tipoProblema: 'certidao_desconhecida' } });
+    if (novo) await notificarProblemaCadastro(admin, { nomeArquivo, tipoProblema: 'certidao_desconhecida', motivo, empresaId: null });
     return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'certidao_desconhecida' } });
   }
 
@@ -168,12 +196,14 @@ export async function POST(req: Request) {
   }
   if (!empresa) {
     const tipoProblema = identEmpresa.ambiguo ? 'empresa_ambigua' : 'empresa_nao_encontrada';
-    await registrarProblema(admin, {
+    const motivo = identEmpresa.ambiguo ? 'Mais de uma empresa casou com o PDF.' : 'Nenhuma empresa reconhecida no PDF nem no nome.';
+    const novo = await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo, empresaId: null, tipoProblema,
-      detalhes: { motivo: identEmpresa.ambiguo ? 'Mais de uma empresa casou com o PDF.' : 'Nenhuma empresa reconhecida no PDF nem no nome.', certidao: det.certidao },
+      detalhes: { motivo, certidao: det.certidao },
       competenciaParseada: mes, certidaoParseada: det.certidao, resultadoParseado: null,
     });
     await registrarProcessado(admin, { caminhoServidor, hashArquivo, empresaId: null, competencia: mes, certidao: det.certidao, resultado: null, nomeArquivo, status: 'pendente_correcao', detalhes: { tipoProblema } });
+    if (novo) await notificarProblemaCadastro(admin, { nomeArquivo, tipoProblema, motivo, empresaId: null });
     return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema, certidao: det.certidao } });
   }
 
