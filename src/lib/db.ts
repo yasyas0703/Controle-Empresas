@@ -882,7 +882,11 @@ export function mapEmpresaScalars(
   };
 }
 
-export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: UUID[]): Promise<string> {
+export async function insertEmpresa(
+  payload: Partial<Empresa>,
+  departamentoIds: UUID[],
+  opts: { skipIfExists?: boolean } = {},
+): Promise<string> {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const isRetryableMessage = (msg: string) => /\b429\b|too many requests|rate limit|timed out|timeout|fetch failed|network|connection|econnreset|service unavailable|\b503\b/i.test(msg);
   const isRetryableSupabaseError = (err: unknown) => {
@@ -906,6 +910,12 @@ export async function insertEmpresa(payload: Partial<Empresa>, departamentoIds: 
       .maybeSingle();
     if (existingErr) throw existingErr;
     if (existing?.id) empresaId = existing.id as string;
+  }
+
+  // Importação em massa: se a empresa já existe, NÃO altera nada dela (dados nem
+  // responsáveis) — devolve o id existente e sai. Protege empresas já cadastradas.
+  if (empresaId && opts.skipIfExists) {
+    return empresaId;
   }
 
   if (!empresaId) {

@@ -117,6 +117,21 @@ function canonicalDeptFromHeader(header: string): CanonicalDept | null {
   return null;
 }
 
+/** Extrai mensagem legível de um erro do Supabase (PostgrestError tem message/code/details/hint) */
+function readImportError(err: unknown): string {
+  if (err && typeof err === 'object') {
+    const e = err as { message?: string; code?: string; details?: string; hint?: string };
+    const base = [e.message, e.details, e.hint].filter(Boolean).join(' — ') || String(err);
+    return e.code ? `[${e.code}] ${base}` : base;
+  }
+  return String(err);
+}
+
+/** Detecta negação de RLS (sem permissão no banco) — o caso típico do depto Cadastro sem policy */
+function isRlsDenial(message: string): boolean {
+  return /row-level security|\b42501\b|insufficient.privilege|violates row-level/i.test(message);
+}
+
 function formatCnpjCpf(raw: string): string {
   const digits = raw.replace(/\D/g, '');
   if (digits.length === 11) {
@@ -251,6 +266,8 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState({ done: 0, total: 0, phase: '' });
   const [result, setResult] = useState<{ created: number; descartadas: number; errors: number; deptCreated: string[] } | null>(null);
+  // Detalhe de cada empresa que falhou — pra usuária saber QUAL e POR QUÊ (antes só tinha o total)
+  const [failedRows, setFailedRows] = useState<Array<{ codigo: string; razao_social: string; message: string }>>([]);
 
   // Ref pra ler empresas mais recentes dentro do handleFile (que é useCallback estável).
   const empresasRef = useRef(empresas);
@@ -261,6 +278,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
   const handleFile = useCallback((file: File) => {
     setFileName(file.name);
     setResult(null);
+    setFailedRows([]);
 
     // Tentar UTF-8 primeiro; se o resultado tiver caracteres corrompidos, retenta com Windows-1252
     const tryRead = (encoding: string) => {
@@ -305,6 +323,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
     setTotalDoArquivo(0);
     setDescartadas(0);
     setFileName('');
+    setFailedRows([]);
   };
 
   const handleImport = async () => {
@@ -520,6 +539,11 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
     let created = 0;
     let errors = 0;
     let failedUsers = 0;
+    let skippedExisting = 0; // já existia no banco — importação NÃO altera nada dela
+    const failures: Array<{ codigo: string; razao_social: string; message: string }> = [];
+    // Só as empresas REALMENTE criadas agora (novas). O re-link só pode tocar nestas —
+    // jamais nas que já existiam, senão sobrescreveria responsáveis de empresa existente.
+    const createdRows: ParsedRow[] = [];
     const allDeptIds = Array.from(deptIdByName.values());
 
     setImportProgress({ done: 0, total: editing.length, phase: 'Criando empresas...' });
@@ -540,6 +564,28 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
     // CRIAR empresas — todas as linhas em editing são novas (duplicadas foram filtradas no upload)
     for (let i = 0; i < editing.length; i++) {
       const row = editing[i];
+
+      // GUARDA DURA: empresa que JÁ EXISTE no banco não pode ser tocada pela
+      // importação (nem 1 campo). A dedup do upload depende da lista visível
+      // (RLS pode esconder empresas), então re-checamos direto no banco aqui.
+      try {
+        const supa = (await import('@/lib/supabase')).supabase;
+        const { data: jaExiste } = await supa
+          .from('empresas')
+          .select('id')
+          .eq('codigo', row.codigo)
+          .limit(1)
+          .maybeSingle();
+        if (jaExiste?.id) {
+          skippedExisting++;
+          setImportProgress({ done: i + 1, total: editing.length, phase: `Criando empresas... (${i + 1}/${editing.length})` });
+          if (i < editing.length - 1) await new Promise((r) => setTimeout(r, 50));
+          continue;
+        }
+      } catch {
+        // Se a checagem falhar, o skipIfExists do insertEmpresa ainda protege.
+      }
+
       const { resolved: responsaveis, issues } = debugResolution(row, deptIdByName, userIdByName, norm);
       for (const iss of issues) {
         if (iss.reason.includes('usuário')) failedUsers++;
@@ -565,21 +611,27 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
       };
 
       try {
-        await withRetry(() => db.insertEmpresa(payload, allDeptIds), `Criar ${row.codigo}`);
+        // skipIfExists: backstop final — se por corrida a empresa já existir,
+        // insertEmpresa devolve o id existente SEM alterar nada dela.
+        await withRetry(() => db.insertEmpresa(payload, allDeptIds, { skipIfExists: true }), `Criar ${row.codigo}`);
         created++;
+        createdRows.push(row);
       } catch (err) {
         console.error(`[IMPORT] ERRO ao criar empresa ${row.codigo}:`, err);
         errors++;
+        failures.push({ codigo: row.codigo, razao_social: row.razao_social, message: readImportError(err) });
       }
 
       setImportProgress({ done: i + 1, total: editing.length, phase: `Criando empresas... (${i + 1}/${editing.length})` });
       if (i < editing.length - 1) await new Promise((r) => setTimeout(r, 200));
     }
 
-    // RE-LINK: garante que responsáveis foram gravados nas empresas recém-criadas
+    // RE-LINK: garante que responsáveis foram gravados nas empresas recém-criadas.
+    // IMPORTANTE: só percorre createdRows (as criadas AGORA) — nunca as que já
+    // existiam, pra não sobrescrever responsável de empresa existente.
     setImportProgress((prev) => ({ ...prev, phase: 'Re-vinculando responsáveis...' }));
     let relinked = 0;
-    for (const row of editing) {
+    for (const row of createdRows) {
       const { resolved: responsaveis } = debugResolution(row, deptIdByName, userIdByName, norm);
       const hasAnyUser = Object.values(responsaveis).some((v) => !!v);
       if (!hasAnyUser) continue;
@@ -625,14 +677,17 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
       try { await reloadData(); } catch (reloadErr2) { console.error('[IMPORT] reload retry falhou:', reloadErr2); }
     }
 
-    setResult({ created, descartadas, errors, deptCreated });
+    // "já existentes ignoradas" = descartadas no upload + as puladas na hora do insert
+    const totalIgnoradas = descartadas + skippedExisting;
+    setFailedRows(failures);
+    setResult({ created, descartadas: totalIgnoradas, errors, deptCreated });
     setImporting(false);
 
     const parts: string[] = [];
     if (created > 0) parts.push(`${created} criada(s)`);
     if (relinked > 0) parts.push(`${relinked} re-vinculada(s)`);
     if (errors > 0) parts.push(`${errors} erro(s)`);
-    if (descartadas > 0) parts.push(`${descartadas} já existente(s) ignorada(s)`);
+    if (totalIgnoradas > 0) parts.push(`${totalIgnoradas} já existente(s) ignorada(s)`);
     if (parts.length > 0) {
       mostrarAlerta('Importação concluída', parts.join(' • '), errors > 0 ? 'aviso' : 'sucesso');
     }
@@ -643,6 +698,7 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
 
   const showDropZone = totalDoArquivo === 0 && !result;
   const showPreview = totalDoArquivo > 0 && !result;
+  const hasRlsDenial = failedRows.some((f) => isRlsDenial(f.message));
 
   return (
     <ModalBase isOpen={true} onClose={onClose} dialogClassName="w-full max-w-5xl rounded-[var(--radius-md)] bg-[var(--surface-2)] border border-[var(--border)] shadow-[0_8px_24px_rgba(0,0,0,0.18)] p-4 sm:p-6">
@@ -842,6 +898,49 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
               </div>
             )}
           </div>
+
+          {/* Lista das empresas que falharam — qual e por quê */}
+          {failedRows.length > 0 && (
+            <div className="rounded-[var(--radius-md)] border border-[var(--danger)]/40 bg-[var(--danger-soft,rgba(220,38,38,0.06))] p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <X size={16} className="text-[var(--danger)]" />
+                <span className="text-sm font-bold text-[var(--text-1)]">
+                  {failedRows.length} empresa(s) não importada(s)
+                </span>
+              </div>
+
+              {hasRlsDenial && (
+                <div className="text-xs text-[var(--text-2)] mb-3 leading-relaxed">
+                  O banco recusou a gravação por falta de permissão (RLS). O departamento Cadastro pode
+                  abrir a tela, mas ainda não tem permissão no banco para gravar empresas/responsáveis.
+                  É preciso liberar essa permissão no Supabase — peça pro responsável técnico rodar a
+                  migração de permissão do Cadastro.
+                </div>
+              )}
+
+              <div className="max-h-56 overflow-auto rounded-md border border-[var(--border-subtle)] bg-[var(--surface-2)]">
+                <table className="w-full text-xs">
+                  <thead className="bg-[var(--surface-3)] sticky top-0">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left font-semibold text-[var(--text-2)] w-20">Código</th>
+                      <th className="px-2 py-1.5 text-left font-semibold text-[var(--text-2)]">Razão Social</th>
+                      <th className="px-2 py-1.5 text-left font-semibold text-[var(--text-2)]">Motivo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {failedRows.map((f, i) => (
+                      <tr key={`${f.codigo}-${i}`} className="border-t border-[var(--border-subtle)]">
+                        <td className="px-2 py-1.5 font-mono text-[var(--text-1)]">{f.codigo || '—'}</td>
+                        <td className="px-2 py-1.5 text-[var(--text-1)]">{f.razao_social || '—'}</td>
+                        <td className="px-2 py-1.5 text-[var(--danger)] break-words">{f.message}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-end">
             <button onClick={onClose} className="ct-btn-primary">
               Fechar
