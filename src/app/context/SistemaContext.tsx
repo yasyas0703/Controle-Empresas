@@ -15,6 +15,7 @@ import type {
 } from '@/app/types';
 import { formatBR, isoNow } from '@/app/utils/date';
 import { criarHistoricoVencimentoItem, garantirVencimentosFiscais, limparTagVencimento, normalizarHistoricoVencimento } from '@/app/utils/vencimentos';
+import { getDepartamentoSlugsDoUsuario } from '@/app/utils/departamento';
 import * as db from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 
@@ -355,6 +356,7 @@ interface SistemaContextValue extends SistemaState {
   currentUser: Usuario | null;
   canManage: boolean;
   canAdmin: boolean;
+  canCriarEmpresa: boolean;
   isGhost: boolean;
   isDeveloper: boolean;
   isPrivileged: boolean;
@@ -897,6 +899,10 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
   const canManage = currentUser?.role === 'gerente' || currentUser?.role === 'admin';
   const canAdmin = currentUser?.role === 'admin';
+  // Cadastro de empresas liberado pro depto Cadastro (principal ou extra), além de gerente/admin.
+  // Não usa canManage pra não dar de bônus edição/exclusão/admin que o Cadastro não deve ter.
+  const isCadastro = getDepartamentoSlugsDoUsuario(currentUser, state.departamentos).includes('cadastro');
+  const canCriarEmpresa = canManage || isCadastro;
   const empresasVisiveisTodas = useMemo(
     () => filtrarEmpresasPorPermissaoDocumentos(state.empresas, currentUser),
     [currentUser, state.empresas]
@@ -1299,7 +1305,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   // -- Empresas --
 
   const criarEmpresa = async (payload: Partial<Empresa>) => {
-    if (!canManage) throw new Error('Apenas gerentes podem criar empresas.');
+    if (!canCriarEmpresa) throw new Error('Você não tem permissão para cadastrar empresas.');
     const depIds = state.departamentos.map((d) => d.id);
     try {
       const empresaId = await db.insertEmpresa(payload, depIds);
@@ -1933,6 +1939,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     currentUser,
     canManage,
     canAdmin,
+    canCriarEmpresa,
     isGhost: privileges.isGhost,
     isDeveloper: privileges.isDeveloper,
     isPrivileged: privileges.isPrivileged,

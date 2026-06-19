@@ -26,7 +26,7 @@ function canEditEmpresa(currentUserId: UUID | null, canManage: boolean, empresa:
 }
 
 export default function EmpresasPage() {
-  const { empresas, currentUserId, canManage, removerEmpresa, tags: tagsCadastradas } = useSistema();
+  const { empresas, currentUserId, canManage, canCriarEmpresa, removerEmpresa, tags: tagsCadastradas } = useSistema();
 
   const [limiares] = useLocalStorageState<Limiares>('triar-limiares', LIMIARES_DEFAULTS);
 
@@ -148,7 +148,7 @@ export default function EmpresasPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {canManage && (
+            {canCriarEmpresa && (
               <button
                 onClick={() => setModalEncontrarCnpjs(true)}
                 className="ct-btn-secondary"
@@ -158,19 +158,19 @@ export default function EmpresasPage() {
                 <span className="hidden sm:inline">Encontrar</span> CNPJs
               </button>
             )}
-            {canManage && (
+            {canCriarEmpresa && (
               <button onClick={() => setModalImportPorDep(true)} className="ct-btn-secondary">
                 <Users size={16} />
                 <span className="hidden sm:inline">Importar</span> por DEP
               </button>
             )}
-            {canManage && (
+            {canCriarEmpresa && (
               <button onClick={() => setModalImport(true)} className="ct-btn-secondary">
                 <Upload size={16} />
                 <span className="hidden sm:inline">Importar</span> Planilha
               </button>
             )}
-            {canManage && (
+            {canCriarEmpresa && (
               <button onClick={() => setModalCreate(true)} className="ct-btn-primary">
                 <Plus size={16} />
                 Nova Empresa
