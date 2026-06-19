@@ -302,6 +302,11 @@ export function cnpjBaseDoTexto(texto: string): string | null {
 // Rótulos de emissão/expedição, em ordem de preferência. Cada um captura
 // DD/MM/AAAA. O "do dia" cobre o FEDERAL ("Emitida às 03:40:06 do dia
 // 04/06/2026"): o horário no meio tem dígitos e quebra o rótulo "emitida".
+// O último (SP) é POSICIONAL: a certidão SP Administrativa é 2 colunas, o pdfjs
+// embaralha (rótulos juntos, valores juntos), então a emissão fica solta logo
+// depois da URL do SP + nº da certidão ("…sp.gov.br 26060440364-81 06/06/2026").
+// Vai por último pra só agir quando nenhum rótulo de verdade casou (não mexe na
+// SP Dívida Ativa, que já é reconhecida por outro rótulo).
 const EMISSAO_LABELS: RegExp[] = [
   /data\s+de\s+emissao[^0-9]{0,20}(\d{2})\/(\d{2})\/(\d{4})/,
   /data\s+e\s+hora\s+da\s+emissao[^0-9]{0,20}(\d{2})\/(\d{2})\/(\d{4})/,
@@ -309,6 +314,7 @@ const EMISSAO_LABELS: RegExp[] = [
   /expedicao[^0-9]{0,20}(\d{2})\/(\d{2})\/(\d{4})/,
   /informacao\s+obtida\s+em[^0-9]{0,20}(\d{2})\/(\d{2})\/(\d{4})/,
   /do\s+dia\s+(\d{2})\/(\d{2})\/(\d{4})/,
+  /sp\.gov\.br\s+[\d-]{8,20}\s+(\d{2})\/(\d{2})\/(\d{4})/,
 ];
 
 function emissaoLabeled(t: string): string | null {
