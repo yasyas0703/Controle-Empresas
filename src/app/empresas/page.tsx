@@ -19,8 +19,10 @@ import { usePagination } from '@/app/hooks/usePagination';
 import { sortResponsaveisByNome, sortStringsPtBr } from '@/lib/sort';
 import { DEPT_COLORS } from '@/app/utils/constants';
 
-function canEditEmpresa(currentUserId: UUID | null, canManage: boolean, empresa: Empresa): boolean {
-  if (canManage) return true;
+// canEditAll: quem edita QUALQUER empresa (gerente/admin via canManage, e o
+// depto Cadastro via canCriarEmpresa). Os demais só editam onde são responsáveis.
+function canEditEmpresa(currentUserId: UUID | null, canEditAll: boolean, empresa: Empresa): boolean {
+  if (canEditAll) return true;
   if (!currentUserId) return false;
   return Object.values(empresa.responsaveis || {}).some((uid) => uid === currentUserId);
 }
@@ -250,7 +252,7 @@ export default function EmpresasPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredVisivel.map((e) => {
           const nome = e.razao_social || e.apelido || '-';
-          const canEdit = canEditEmpresa(currentUserId, canManage, e);
+          const canEdit = canEditEmpresa(currentUserId, canCriarEmpresa, e);
           const checked = selectedVisibleIds.includes(e.id);
           const totalVencidos = e.documentos.filter((d) => { const dias = daysUntil(d.validade); return dias !== null && dias < 0; }).length
             + e.rets.filter((r) => { if (isRetRenovado(r.vencimento, r.ultimaRenovacao)) return false; const dias = daysUntil(r.vencimento); return dias !== null && dias < 0; }).length;
@@ -496,7 +498,12 @@ export default function EmpresasPage() {
       )}
 
       {modalCreate && <ModalCadastrarEmpresa onClose={() => setModalCreate(false)} />}
-      {modalImport && <ModalImportarPlanilha onClose={() => setModalImport(false)} />}
+      {modalImport && (
+        <ModalImportarPlanilha
+          onClose={() => setModalImport(false)}
+          onBuscarCnpjs={() => setModalEncontrarCnpjs(true)}
+        />
+      )}
       {empresaEdit && <ModalCadastrarEmpresa empresa={empresaEdit} onClose={() => setEmpresaEdit(null)} />}
       {empresaView && <ModalDetalhesEmpresa empresa={empresaView} onClose={() => setEmpresaView(null)} />}
       {modalImportPorDep && <ModalImportarResponsabilidadesPorDep onClose={() => setModalImportPorDep(false)} />}

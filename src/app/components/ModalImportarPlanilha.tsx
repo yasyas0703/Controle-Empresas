@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Upload, FileSpreadsheet, X, Check, Loader2, Trash2 } from 'lucide-react';
+import { Upload, FileSpreadsheet, X, Check, Loader2, Trash2, Search } from 'lucide-react';
 import { useSistema } from '@/app/context/SistemaContext';
 import type { Empresa } from '@/app/types';
 import ModalBase from '@/app/components/ModalBase';
@@ -253,9 +253,12 @@ function parseFile(text: string): ParsedRow[] {
 
 interface ModalImportarPlanilhaProps {
   onClose: () => void;
+  // Abre o fluxo "Encontrar CNPJs" (busca endereço/dados na Receita). Recebido do
+  // pai pra fazer a busca "junto" logo depois de importar.
+  onBuscarCnpjs?: () => void;
 }
 
-export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilhaProps) {
+export default function ModalImportarPlanilha({ onClose, onBuscarCnpjs }: ModalImportarPlanilhaProps) {
   const { empresas, departamentos, criarDepartamento, usuarios, mostrarAlerta, reloadData } = useSistema();
 
   // editing = só as novas (já filtradas), com edições do usuário aplicadas.
@@ -938,6 +941,26 @@ export default function ModalImportarPlanilha({ onClose }: ModalImportarPlanilha
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* Buscar endereço/dados na Receita pras recém-criadas — abre o fluxo
+              "Encontrar CNPJs" (com delay/limite tratados lá). */}
+          {result.created > 0 && onBuscarCnpjs && (
+            <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-1)] p-4 flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-sm text-[var(--text-2)] min-w-0">
+                <span className="font-semibold text-[var(--text-1)]">Buscar endereço e dados na Receita?</span>
+                <span className="block text-xs text-[var(--text-3)] mt-0.5">
+                  Preenche endereço, abertura e fantasia das empresas com CNPJ que estão sem esses dados (a Receita limita a velocidade, então roda aos poucos).
+                </span>
+              </div>
+              <button
+                onClick={() => { onClose(); onBuscarCnpjs(); }}
+                className="ct-btn-secondary shrink-0"
+              >
+                <Search size={16} />
+                Buscar na Receita
+              </button>
             </div>
           )}
 
