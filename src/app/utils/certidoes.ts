@@ -135,13 +135,19 @@ export function corCadastro(item: ChecklistCadastroItem | undefined): CorCadastr
  */
 export type CorCelulaCadastro = 'negativa' | 'pen' | 'positiva' | 'relatorio' | 'tem' | 'falta';
 
-export function corCelulaCadastro(item: ChecklistCadastroItem | undefined): CorCelulaCadastro {
+export function corCelulaCadastro(
+  item: ChecklistCadastroItem | undefined,
+  // ignorarRelatorio: nas colunas com célula de relatório própria (Federal/Estadual),
+  // a célula da CERTIDÃO não deve ficar azul por causa do relatório — o azul vive na
+  // coluninha do relatório. Sem isso, "só relatório" cairia como 'falta' (neutro).
+  opts?: { ignorarRelatorio?: boolean },
+): CorCelulaCadastro {
   const r = item?.resultado;
   if (r === 'Negativa') return 'negativa';
   if (r === 'PEN') return 'pen';
   if (r === 'Positiva') return 'positiva';
   if (item?.status === 'tem' || item?.arquivoUrl) return 'tem';
-  if (item?.status === 'relatorio' || item?.relatorioUrl || (item?.relatorioTexto && item.relatorioTexto.trim())) return 'relatorio';
+  if (!opts?.ignorarRelatorio && (item?.status === 'relatorio' || item?.relatorioUrl || (item?.relatorioTexto && item.relatorioTexto.trim()))) return 'relatorio';
   return 'falta';
 }
 

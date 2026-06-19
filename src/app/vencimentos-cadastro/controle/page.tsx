@@ -833,11 +833,13 @@ function CelulaBtn({ empresa, coluna, cel, item, onClick }: {
   item: ChecklistCadastroItem | undefined; onClick: () => void;
 }) {
   void empresa;
-  const cor = corCelulaCadastro(item);
+  // Federal/Estadual têm célula de relatório própria — a célula da certidão ignora
+  // o relatório (não fica azul) e não duplica o ícone aqui.
+  const temRel = colunaTemRelatorio(coluna);
+  const cor = corCelulaCadastro(item, { ignorarRelatorio: temRel });
   const cls = CELL_STYLE[cor];
   const resultado = item?.resultado ?? null;
-  // Federal/Estadual têm célula de relatório própria — não duplica o ícone aqui.
-  const mostrarIconeRelatorio = !colunaTemRelatorio(coluna);
+  const mostrarIconeRelatorio = !temRel;
   return (
     <button
       onClick={onClick}
