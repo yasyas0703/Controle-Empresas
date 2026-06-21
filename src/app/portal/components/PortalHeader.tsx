@@ -7,6 +7,7 @@ import { Clock, LogOut, Moon, Sun, User } from 'lucide-react';
 import { usePortal } from '@/app/portal/PortalContext';
 import { useTheme } from '@/app/context/ThemeContext';
 import { useEffect, useState } from 'react';
+import { useDemoMode, fakeEmpresaApelido } from '@/app/utils/demoMode';
 
 type Props = {
   /** Mostrar link "Voltar" no canto esquerdo em vez do logo (páginas internas) */
@@ -22,7 +23,9 @@ export default function PortalHeader({ backHref }: Props) {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && theme === 'dark';
 
-  const displayName = empresa?.apelido || empresa?.razaoSocial || 'sua empresa';
+  const demo = useDemoMode();
+  const nomeReal = empresa?.apelido || empresa?.razaoSocial || 'sua empresa';
+  const displayName = demo ? (empresa?.id ? fakeEmpresaApelido(empresa.id) : 'Minha Empresa') : nomeReal;
 
   async function handleLogout() {
     await logout();
@@ -41,7 +44,11 @@ export default function PortalHeader({ backHref }: Props) {
           </Link>
         ) : (
           <Link href="/portal" className="flex items-center gap-2">
-            <Image src="/triar.png" alt="Triar" width={32} height={32} className="rounded-full" />
+            {demo ? (
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 text-[11px] font-bold text-white">CE</div>
+            ) : (
+              <Image src="/triar.png" alt="Logo" width={32} height={32} className="rounded-full" />
+            )}
             <div className="leading-tight">
               <p className="text-[10px] uppercase tracking-wide text-cyan-600 dark:text-cyan-400">Portal do Cliente</p>
               <p className="text-sm font-semibold">{displayName}</p>

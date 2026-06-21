@@ -12,6 +12,25 @@ import AutoBackup from '@/app/components/AutoBackup';
 import BotaoTarefas from '@/app/components/BotaoTarefas';
 import ThemeToggle from '@/app/components/ThemeToggle';
 import AlertaGuiasPendentes from '@/app/components/AlertaGuiasPendentes';
+import DemoModeBanner from '@/app/components/DemoModeBanner';
+import { useDemoMode } from '@/app/utils/demoMode';
+
+// Logo da empresa. No modo demonstração (gravação de vídeo) troca o logo da
+// Triar por um placeholder neutro, sem expor a marca.
+function BrandLogo({ size, className, priority }: { size: number; className?: string; priority?: boolean }) {
+  const demo = useDemoMode();
+  if (demo) {
+    return (
+      <div
+        className={`flex items-center justify-center bg-gradient-to-br from-cyan-500 to-blue-600 text-white font-bold ${className ?? ''}`}
+        style={{ width: size, height: size, fontSize: Math.round(size * 0.4) }}
+      >
+        CE
+      </div>
+    );
+  }
+  return <Image src="/triar.png" alt="Logo" width={size} height={size} priority={priority} className={className} />;
+}
 
 type NavItem = {
   href: string;
@@ -380,7 +399,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="text-center">
           <div className="h-12 w-12 mx-auto mb-4 rounded-2xl bg-cyan-50 flex items-center justify-center overflow-hidden shadow-sm ring-1 ring-cyan-100">
-            <Image src="/triar.png" alt="Triar" width={48} height={48} priority />
+            <BrandLogo size={48} priority />
           </div>
           <div className="text-sm text-gray-500 animate-pulse">Carregando...</div>
         </div>
@@ -509,6 +528,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-gray-100 flex">
+      <DemoModeBanner />
       {/* ── Mobile Top Bar ── */}
       <div className="fixed top-0 left-0 right-0 z-50 md:hidden bg-white border-b border-gray-200 shadow-sm max-w-full">
         <div className="flex items-center justify-between gap-2 px-2 py-2 min-w-0">
@@ -521,7 +541,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           </button>
           <Link href="/dashboard" className="flex items-center gap-2 min-w-0 flex-1 justify-center">
             <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0">
-              <Image src="/triar.png" alt="Triar" width={32} height={32} priority className="w-8 h-8 object-contain" />
+              <BrandLogo size={32} priority className="w-8 h-8 object-contain" />
             </div>
             {/* Texto some em telas muito estreitas pra não empurrar os ícones pra fora */}
             <span className="text-sm font-bold text-gray-900 truncate hidden xs:inline">Controle de Empresas</span>
@@ -559,7 +579,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100">
           <Link href="/dashboard" className="flex items-center gap-3" onClick={() => setMobileMenuOpen(false)}>
             <div className="w-10 h-10 rounded-md overflow-hidden">
-              <Image src="/triar.png" alt="Logo Triar" width={40} height={40} priority className="w-10 h-10 object-contain" />
+              <BrandLogo size={40} priority className="w-10 h-10 object-contain" />
             </div>
             <div className="leading-tight">
               <span className="block text-[10px] font-semibold text-[var(--text-3)] tracking-widest uppercase">Controle de</span>
@@ -659,7 +679,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         <div className={`flex items-center border-b border-gray-100 py-5 ${sidebarOpen ? 'px-4 gap-4' : 'justify-center px-0'}`}>
           <Link href="/dashboard" className="flex items-center gap-4 min-w-0">
             <div className="w-16 h-16 rounded-md overflow-hidden shrink-0">
-              <Image src="/triar.png" alt="Logo Triar" width={64} height={64} priority className="w-16 h-16 object-contain" />
+              <BrandLogo size={64} priority className="w-16 h-16 object-contain" />
             </div>
             {sidebarOpen && (
               <div className="leading-tight min-w-0 overflow-hidden">
@@ -826,7 +846,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
             <div className="border-b border-[var(--border-subtle)] p-6">
               <div className="flex items-center gap-3">
                 <div className="h-12 w-12 rounded-[var(--radius)] bg-[var(--surface-3)] flex items-center justify-center">
-                  <Image src="/triar.png" alt="Triar" width={36} height={36} />
+                  <BrandLogo size={36} />
                 </div>
                 <div>
                   <div className="text-lg font-bold text-[var(--text-1)]">

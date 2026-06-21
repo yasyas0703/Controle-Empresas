@@ -16,6 +16,7 @@ import type {
 import { formatBR, isoNow } from '@/app/utils/date';
 import { criarHistoricoVencimentoItem, garantirVencimentosFiscais, limparTagVencimento, normalizarHistoricoVencimento } from '@/app/utils/vencimentos';
 import { getDepartamentoSlugsDoUsuario } from '@/app/utils/departamento';
+import { useDemoMode, anonimizarEmpresa, anonimizarUsuario, anonimizarCurrentUser, anonimizarLog } from '@/app/utils/demoMode';
 import * as db from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 
@@ -914,6 +915,35 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   const empresasVisiveisDesligadas = useMemo(
     () => empresasVisiveisTodas.filter((e) => !!e.desligada_em),
     [empresasVisiveisTodas]
+  );
+
+  // ── Modo demonstração (gravação de vídeo) ──
+  // Anonimiza SÓ o que é exibido — os dados crus em state.* (e o `currentUser`
+  // interno usado em logs/mutações) continuam reais. Ver src/app/utils/demoMode.ts.
+  const demoOn = useDemoMode();
+  const empresasOut = useMemo(
+    () => (demoOn ? empresasVisiveis.map(anonimizarEmpresa) : empresasVisiveis),
+    [demoOn, empresasVisiveis]
+  );
+  const empresasDesligadasOut = useMemo(
+    () => (demoOn ? empresasVisiveisDesligadas.map(anonimizarEmpresa) : empresasVisiveisDesligadas),
+    [demoOn, empresasVisiveisDesligadas]
+  );
+  const empresasTodasOut = useMemo(
+    () => (demoOn ? empresasVisiveisTodas.map(anonimizarEmpresa) : empresasVisiveisTodas),
+    [demoOn, empresasVisiveisTodas]
+  );
+  const usuariosOut = useMemo(
+    () => (demoOn ? usuariosVisiveis.map(anonimizarUsuario) : usuariosVisiveis),
+    [demoOn, usuariosVisiveis]
+  );
+  const logsOut = useMemo(
+    () => (demoOn ? logsVisiveis.map(anonimizarLog) : logsVisiveis),
+    [demoOn, logsVisiveis]
+  );
+  const currentUserOut = useMemo(
+    () => (demoOn && currentUser ? anonimizarCurrentUser(currentUser) : currentUser),
+    [demoOn, currentUser]
   );
 
   const pushLog = async (entry: Omit<LogEntry, 'id' | 'em' | 'userId' | 'userNome'> & { diff?: LogEntry['diff'] }, nomeOverride?: string | null, userIdOverride?: string | null) => {
@@ -1931,12 +1961,12 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
 
   const value: SistemaContextValue = {
     ...state,
-    empresas: empresasVisiveis,
-    empresasDesligadas: empresasVisiveisDesligadas,
-    empresasTodas: empresasVisiveisTodas,
-    usuarios: usuariosVisiveis,
-    logs: logsVisiveis,
-    currentUser,
+    empresas: empresasOut,
+    empresasDesligadas: empresasDesligadasOut,
+    empresasTodas: empresasTodasOut,
+    usuarios: usuariosOut,
+    logs: logsOut,
+    currentUser: currentUserOut,
     canManage,
     canAdmin,
     canCriarEmpresa,

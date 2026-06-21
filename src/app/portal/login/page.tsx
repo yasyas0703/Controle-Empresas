@@ -6,6 +6,7 @@ import { Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
 import Image from 'next/image';
 import { usePortal } from '@/app/portal/PortalContext';
 import InstallPrompt from '@/app/portal/components/InstallPrompt';
+import { useDemoMode } from '@/app/utils/demoMode';
 
 export default function PortalLoginPage() {
   const router = useRouter();
@@ -16,6 +17,7 @@ export default function PortalLoginPage() {
   const [showSenha, setShowSenha] = useState(false);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const demo = useDemoMode();
 
   useEffect(() => {
     // Se cliente já selecionado OU se tem acessos (logado mas escolhendo
@@ -71,9 +73,13 @@ export default function PortalLoginPage() {
       <div className="w-full max-w-sm">
         <InstallPrompt />
         <div className="mb-6 mt-4 flex flex-col items-center text-center">
-          <Image src="/triar.png" alt="Triar" width={56} height={56} className="rounded" />
+          {demo ? (
+            <div className="flex h-14 w-14 items-center justify-center rounded bg-gradient-to-br from-cyan-500 to-blue-600 text-lg font-bold text-white">CE</div>
+          ) : (
+            <Image src="/triar.png" alt="Logo" width={56} height={56} className="rounded" />
+          )}
           <h1 className="mt-3 text-xl font-semibold text-slate-900 dark:text-slate-100">Portal do Cliente</h1>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Triar Contabilidade</p>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{demo ? 'Sua Contabilidade' : 'Triar Contabilidade'}</p>
         </div>
 
         <form
