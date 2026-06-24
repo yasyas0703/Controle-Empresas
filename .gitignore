@@ -39,6 +39,7 @@ FISCAL/
 
 # planilhas e outputs com CNPJs reais e códigos de receita por empresa
 CODIGOS EMPRESAS.xlsx
+emailscadastrofiscal.xlsx
 scripts/output-*.csv
 
 # scratch local por máquina (convenção: prefixo _ em scripts/ = dados reais e
