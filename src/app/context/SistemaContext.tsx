@@ -1402,20 +1402,6 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
           }
         : {}),
     };
-    // DIAGNÓSTICO TEMPORÁRIO (remover após investigar histórico de RET): mostra
-    // o que entra/sai do enrich. Se este log NÃO aparecer no Console, a aba está
-    // rodando bundle antigo. hist = nº de eventos na timeline daquele RET.
-    if (patch.rets !== undefined) {
-      // eslint-disable-next-line no-console
-      console.log('[DIAG-HIST]', JSON.stringify({
-        empresaId: id,
-        isGhost: privileges.isGhost,
-        isDeveloper: privileges.isDeveloper,
-        before: before.rets.map((r) => ({ id: r.id, venc: r.vencimento, hist: r.historicoVencimento?.length ?? 0 })),
-        patch: (patch.rets ?? []).map((r) => ({ id: r.id, venc: r.vencimento, hist: r.historicoVencimento?.length ?? 0 })),
-        enriched: ((patchPreparado.rets as RetItem[] | undefined) ?? []).map((r) => ({ id: r.id, venc: r.vencimento, hist: r.historicoVencimento?.length ?? 0 })),
-      }));
-    }
     // regime_federal é o source of truth — o form manda regime_federal NOVO + tributacao VELHA juntos,
     // então quando regime_federal vier no patch, sempre derivamos tributacao a partir dele (mesmo que tributacao venha junto).
     const sincRegimeTributacao: Partial<Empresa> = {};
