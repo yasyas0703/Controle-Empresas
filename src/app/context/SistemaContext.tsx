@@ -1377,7 +1377,12 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   const atualizarEmpresa = async (id: UUID, patch: Partial<Empresa>) => {
     const before = state.empresas.find((e) => e.id === id);
     if (!before) return false;
-    const skipHistorico = privileges.isGhost || privileges.isDeveloper;
+    // O histórico de vencimento (linha do tempo do RET/fiscal) é uma feature de
+    // domínio que a equipe QUER ver — NÃO é log de auditoria. Por isso só o ghost
+    // (envios automáticos em lote) pula, pra não floodar a timeline. O developer
+    // é gente mexendo na UI e precisa ver "Vencimento atualizado para X / Antes:
+    // Y" — o skip de auditoria do developer fica isolado no pushLog, à parte.
+    const skipHistorico = privileges.isGhost;
     const patchPreparado: Partial<Empresa> = {
       ...patch,
       ...(patch.rets !== undefined
@@ -1678,7 +1683,9 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       finalPatch.usuariosPermitidos = controleAcesso.usuariosPermitidos;
       finalPatch.visibilidade = controleAcesso.visibilidade;
       finalPatch.criadoPorId = controleAcesso.criadoPorId;
-      const patchPreparado = (privileges.isGhost || privileges.isDeveloper)
+      // Mesma regra do RET/fiscal: só o ghost pula o histórico de validade do
+      // documento. Developer mexendo na UI precisa do registro na timeline.
+      const patchPreparado = privileges.isGhost
         ? finalPatch
         : enriquecerDocumentoComHistorico(doc, finalPatch, {
             autorId: state.currentUserId,
