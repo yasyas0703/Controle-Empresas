@@ -1377,33 +1377,28 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
   const atualizarEmpresa = async (id: UUID, patch: Partial<Empresa>) => {
     const before = state.empresas.find((e) => e.id === id);
     if (!before) return false;
-    // O histórico de vencimento (linha do tempo do RET/fiscal) é uma feature de
-    // domínio que a equipe QUER ver — NÃO é log de auditoria. Por isso só o ghost
-    // (envios automáticos em lote) pula, pra não floodar a timeline. O developer
-    // é gente mexendo na UI e precisa ver "Vencimento atualizado para X / Antes:
-    // Y" — o skip de auditoria do developer fica isolado no pushLog, à parte.
-    const skipHistorico = privileges.isGhost;
+    // A linha do tempo de vencimento (RET/fiscal) é uma FEATURE de domínio que a
+    // equipe quer ver — NÃO é log de auditoria. Por isso registramos SEMPRE,
+    // independente de quem está logado (developer/ghost inclusos). O skip de
+    // auditoria do developer/ghost fica isolado no pushLog, à parte. (Antes isto
+    // pulava developer/ghost e engolia "Vencimento atualizado para X / Antes: Y".)
     const patchPreparado: Partial<Empresa> = {
       ...patch,
       ...(patch.rets !== undefined
         ? {
-            rets: skipHistorico
-              ? patch.rets
-              : enriquecerRetsComHistorico(before.rets, patch.rets, {
-                  autorId: state.currentUserId,
-                  autorNome: currentUser?.nome,
-                }),
+            rets: enriquecerRetsComHistorico(before.rets, patch.rets, {
+              autorId: state.currentUserId,
+              autorNome: currentUser?.nome,
+            }),
           }
         : {}),
       ...(patch.vencimentosFiscais !== undefined
         ? {
-            vencimentosFiscais: skipHistorico
-              ? patch.vencimentosFiscais
-              : enriquecerVencimentosFiscaisComHistorico(
-                  before.vencimentosFiscais ?? [],
-                  patch.vencimentosFiscais,
-                  { autorId: state.currentUserId, autorNome: currentUser?.nome }
-                ),
+            vencimentosFiscais: enriquecerVencimentosFiscaisComHistorico(
+              before.vencimentosFiscais ?? [],
+              patch.vencimentosFiscais,
+              { autorId: state.currentUserId, autorNome: currentUser?.nome }
+            ),
           }
         : {}),
     };
@@ -1683,14 +1678,13 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       finalPatch.usuariosPermitidos = controleAcesso.usuariosPermitidos;
       finalPatch.visibilidade = controleAcesso.visibilidade;
       finalPatch.criadoPorId = controleAcesso.criadoPorId;
-      // Mesma regra do RET/fiscal: só o ghost pula o histórico de validade do
-      // documento. Developer mexendo na UI precisa do registro na timeline.
-      const patchPreparado = privileges.isGhost
-        ? finalPatch
-        : enriquecerDocumentoComHistorico(doc, finalPatch, {
-            autorId: state.currentUserId,
-            autorNome: currentUser?.nome,
-          });
+      // Mesma regra do RET/fiscal: a linha do tempo de validade é feature de
+      // domínio — sempre registra, independente do usuário (skip de auditoria
+      // fica no pushLog, à parte).
+      const patchPreparado = enriquecerDocumentoComHistorico(doc, finalPatch, {
+        autorId: state.currentUserId,
+        autorNome: currentUser?.nome,
+      });
       await db.updateDocumento(docId, patchPreparado);
       await pushLog({ action: 'update', entity: 'documento', entityId: docId, message: `Atualizou documento: ${doc?.nome ?? docId} (empresa ${empresa?.codigo ?? empresaId})` });
       setState((prev) => ({
