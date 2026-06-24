@@ -217,8 +217,9 @@ export async function enviarLote(
   let refreshToken: string;
   try { refreshToken = decryptToken(tokenRow.refresh_token_enc); } catch { return falha('gmail_nao_conectado'); }
 
+  // Guia fiscal vai SÓ pro e-mail tipo 'fiscal' (não vaza pro e-mail do Cadastro).
   const { data: emailsRes } = await admin
-    .from('empresa_emails_cliente').select('email').eq('empresa_id', params.empresa.id).eq('ativo', true);
+    .from('empresa_emails_cliente').select('email').eq('empresa_id', params.empresa.id).eq('ativo', true).eq('tipo', 'fiscal');
   const emails = ((emailsRes ?? []) as Array<{ email: string }>).map((r) => r.email).filter(Boolean);
   if (emails.length === 0) return falha('sem_emails');
 

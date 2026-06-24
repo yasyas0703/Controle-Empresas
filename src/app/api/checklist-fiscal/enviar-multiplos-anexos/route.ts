@@ -290,7 +290,8 @@ export async function POST(req: Request) {
     // 5. Empresa completa + emails + role do user (pra forçar)
     const [empresaResult, emailsRes, userRoleRes] = await Promise.all([
       carregarEmpresaCompleta(admin, body.empresaId),
-      admin.from('empresa_emails_cliente').select('email').eq('empresa_id', body.empresaId).eq('ativo', true),
+      // Guia fiscal vai SÓ pro e-mail tipo 'fiscal' (não vaza pro e-mail do Cadastro).
+      admin.from('empresa_emails_cliente').select('email').eq('empresa_id', body.empresaId).eq('ativo', true).eq('tipo', 'fiscal'),
       admin.from('usuarios').select('role').eq('id', userId).maybeSingle(),
     ]);
     if (isErroApi(empresaResult)) {

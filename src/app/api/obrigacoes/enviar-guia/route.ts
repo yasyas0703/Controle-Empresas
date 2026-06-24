@@ -191,7 +191,8 @@ export async function POST(req: Request) {
     const [empresaRes, obrigacaoRes, emailsRes] = await Promise.all([
       admin.from('empresas').select('id, codigo, razao_social, apelido, cnpj').eq('id', body.empresaId).maybeSingle(),
       admin.from('obrigacoes').select('id, nome, codigo, template_email_assunto, template_email_corpo, notificar_cliente').eq('id', body.obrigacaoId).maybeSingle(),
-      admin.from('empresa_emails_cliente').select('email').eq('empresa_id', body.empresaId).eq('ativo', true),
+      // Guia fiscal vai SÓ pro e-mail tipo 'fiscal' (não vaza pro e-mail do Cadastro).
+      admin.from('empresa_emails_cliente').select('email').eq('empresa_id', body.empresaId).eq('ativo', true).eq('tipo', 'fiscal'),
     ]);
 
     if (empresaRes.error || !empresaRes.data) {

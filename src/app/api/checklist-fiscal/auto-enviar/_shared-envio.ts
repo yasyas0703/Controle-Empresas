@@ -285,12 +285,13 @@ export async function enviarGuia(
     return { ok: false, motivo: 'gmail_nao_conectado', erro: 'Falha ao decodificar token Gmail.' };
   }
 
-  // 2. Emails da empresa
+  // 2. Emails da empresa — guia fiscal vai SÓ pro tipo 'fiscal' (não vaza pro Cadastro).
   const { data: emailsRes } = await admin
     .from('empresa_emails_cliente')
     .select('email')
     .eq('empresa_id', params.empresa.id)
-    .eq('ativo', true);
+    .eq('ativo', true)
+    .eq('tipo', 'fiscal');
 
   const emails = ((emailsRes ?? []) as Array<{ email: string }>).map((r) => r.email).filter(Boolean);
   if (emails.length === 0) {
