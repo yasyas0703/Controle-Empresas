@@ -12,6 +12,7 @@ import { getOAuthClient, decryptToken } from '@/lib/googleOAuth';
 import { sendPushToCliente } from '@/lib/webPush';
 import { vencimentoDoMes, vencimentoDoMesSn } from '@/app/utils/regrasVencimentosFiscais';
 import { ehObrigacaoSempreInterna } from '@/app/types';
+import { buscarResponsavelFiscal } from '@/lib/alertasAutoEnvio';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
 
@@ -350,29 +351,51 @@ export async function enviarGuia(
       checklistIdPixel = (criado as { id?: string } | null)?.id ?? null;
     }
   }
-  const pixelTag = (params.baseUrl && checklistIdPixel)
-    ? `<img src="${params.baseUrl.replace(/\/+$/, '')}/api/checklist-fiscal/track-open/${checklistIdPixel}/${envioId}.gif" width="1" height="1" alt="" style="display:none;border:0;outline:none;text-decoration:none;" />`
-    : '';
-  const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(bodyText)}</div>${pixelTag}`;
-
   const oauth2 = getOAuthClient();
   oauth2.setCredentials({ refresh_token: refreshToken });
   const gmail = google.gmail({ version: 'v1', auth: oauth2 });
 
-  const mime = buildMime({
-    from: tokenRow.email, to: emails, subject, bodyText, bodyHtml,
-    attachment: { filename: params.nomeArquivo, mime: mimeTypeFromFilename(params.nomeArquivo), content: params.fileBuffer },
-  });
-  const raw = Buffer.from(mime, 'utf8').toString('base64')
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-  let gmailMessageId: string | undefined;
-  try {
-    const sendRes = await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
-    gmailMessageId = sendRes.data.id ?? undefined;
-  } catch (err) {
-    return { ok: false, motivo: 'gmail_send_failed', erro: err instanceof Error ? err.message : 'Falha Gmail' };
+  // Um email por destinatário (não um único "To" com todos juntos) — mesma
+  // lógica do envio manual em enviar-anexo/route.ts: cada cópia leva seu
+  // próprio pixel, então sabemos QUAL endereço abriu em vez de marcar
+  // "aberto" pra todos os emails cadastrados da empresa de uma vez.
+  interface EnvioPorDestinatario {
+    destId: string; email: string; sucesso: boolean; erro?: string;
+    gmailMessageId?: string; gmailThreadId?: string;
   }
+  const destinatariosDetalhe: EnvioPorDestinatario[] = [];
+
+  for (const email of emails) {
+    const destId = randomUUID();
+    const pixelTag = (params.baseUrl && checklistIdPixel)
+      ? `<img src="${params.baseUrl.replace(/\/+$/, '')}/api/checklist-fiscal/track-open/${checklistIdPixel}/${envioId}/${destId}.gif" width="1" height="1" alt="" style="display:none;border:0;outline:none;text-decoration:none;" />`
+      : '';
+    const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(bodyText)}</div>${pixelTag}`;
+
+    const mime = buildMime({
+      from: tokenRow.email, to: [email], subject, bodyText, bodyHtml,
+      attachment: { filename: params.nomeArquivo, mime: mimeTypeFromFilename(params.nomeArquivo), content: params.fileBuffer },
+    });
+    const raw = Buffer.from(mime, 'utf8').toString('base64')
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    try {
+      const sendRes = await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
+      destinatariosDetalhe.push({
+        destId, email, sucesso: true,
+        gmailMessageId: sendRes.data.id ?? undefined,
+        gmailThreadId: sendRes.data.threadId ?? undefined,
+      });
+    } catch (err) {
+      destinatariosDetalhe.push({ destId, email, sucesso: false, erro: err instanceof Error ? err.message : 'Falha Gmail' });
+    }
+  }
+
+  const primeiroSucesso = destinatariosDetalhe.find((d) => d.sucesso);
+  if (!primeiroSucesso) {
+    return { ok: false, motivo: 'gmail_send_failed', erro: destinatariosDetalhe[0]?.erro ?? 'Falha Gmail' };
+  }
+  const gmailMessageId = primeiroSucesso.gmailMessageId;
 
   const nowIso = new Date().toISOString();
   await admin.from('usuario_gmail_tokens').update({ last_used_at: nowIso }).eq('usuario_id', params.ghostUserId);
@@ -388,6 +411,7 @@ export async function enviarGuia(
     fonte: 'auto-enviado',
     destinatarios: emails,
     gmailMessageId,
+    destinatariosDetalhe,
     enviadoPorIdOverride: params.enviadoPorIdOverride,
     enviadoPorNomeOverride: params.enviadoPorNomeOverride,
     envioId,
@@ -479,6 +503,11 @@ export async function marcarChecklistComoFeito(
     fonte: 'auto-enviado' | 'auto-interna' | 'aprovado-admin';
     destinatarios?: string[];
     gmailMessageId?: string;
+    /** Quebra por destinatário (1 e-mail = 1 envio Gmail + pixel próprio). */
+    destinatariosDetalhe?: Array<{
+      destId: string; email: string; sucesso: boolean; erro?: string;
+      gmailMessageId?: string; gmailThreadId?: string;
+    }>;
     enviadoPorIdOverride?: string;
     enviadoPorNomeOverride?: string;
     /** Id do evento de envio — passar o MESMO usado no pixel de tracking, pra
@@ -488,12 +517,25 @@ export async function marcarChecklistComoFeito(
 ): Promise<string | null> {
   const nowIso = new Date().toISOString();
 
-  const { data: ghostRow } = await admin
-    .from('usuarios').select('nome').eq('id', payload.ghostUserId).maybeSingle();
-  const ghostNome = (ghostRow as { nome?: string } | null)?.nome ?? 'Sistema (automático)';
-
-  const enviadoPorId = payload.enviadoPorIdOverride ?? payload.ghostUserId;
-  const enviadoPorNome = payload.enviadoPorNomeOverride ?? ghostNome;
+  // Sem override explícito (aprovação manual já manda o nome de quem aprovou):
+  // mostra o responsável Fiscal da empresa em vez do nome da conta fantasma
+  // (GHOST_USER_ID hoje aponta pro usuário "Testes" — confunde no checklist).
+  let enviadoPorId = payload.enviadoPorIdOverride;
+  let enviadoPorNome = payload.enviadoPorNomeOverride;
+  if (!enviadoPorId || !enviadoPorNome) {
+    const responsavel = await buscarResponsavelFiscal(admin, payload.empresaId);
+    if (responsavel) {
+      enviadoPorId = enviadoPorId ?? responsavel.id;
+      enviadoPorNome = enviadoPorNome ?? responsavel.nome;
+    }
+  }
+  if (!enviadoPorId || !enviadoPorNome) {
+    const { data: ghostRow } = await admin
+      .from('usuarios').select('nome').eq('id', payload.ghostUserId).maybeSingle();
+    const ghostNome = (ghostRow as { nome?: string } | null)?.nome ?? 'Sistema (automático)';
+    enviadoPorId = enviadoPorId ?? payload.ghostUserId;
+    enviadoPorNome = enviadoPorNome ?? ghostNome;
+  }
 
   const { data: existente } = await admin
     .from('checklist_fiscal')
@@ -514,6 +556,15 @@ export async function marcarChecklistComoFeito(
     gmail_message_id: payload.gmailMessageId,
     automatico: payload.fonte !== 'aprovado-admin',
     fonte: payload.fonte,
+    destinatarios_detalhe: payload.destinatariosDetalhe?.map((d) => ({
+      dest_id: d.destId,
+      email: d.email,
+      sucesso: d.sucesso,
+      erro: d.erro ?? null,
+      gmail_message_id: d.gmailMessageId ?? null,
+      gmail_thread_id: d.gmailThreadId ?? null,
+      entrega_status: d.sucesso ? 'pendente' : null,
+    })) ?? null,
   };
 
   const camposChecklist = {

@@ -12,6 +12,7 @@ import AutoBackup from '@/app/components/AutoBackup';
 import BotaoTarefas from '@/app/components/BotaoTarefas';
 import ThemeToggle from '@/app/components/ThemeToggle';
 import AlertaGuiasPendentes from '@/app/components/AlertaGuiasPendentes';
+import AlertaVencimentoUrgente from '@/app/components/AlertaVencimentoUrgente';
 
 type NavItem = {
   href: string;
@@ -808,6 +809,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         className={`flex-1 min-w-0 min-h-screen transition-all duration-200 ease-in-out pt-14 md:pt-0 ${sidebarOpen ? 'md:ml-64' : 'md:ml-[72px]'}`}
       >
         <main className="px-3 py-3 sm:px-4 sm:py-4 md:py-6 min-w-0 max-w-full">
+          <AlertaVencimentoUrgente />
           <AlertaGuiasPendentes />
           {children}
         </main>

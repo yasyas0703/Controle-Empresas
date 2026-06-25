@@ -396,49 +396,77 @@ export async function POST(req: Request) {
       `Atenciosamente.`;
     const escapeHtml = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
 
-    // Pixel de tracking de abertura (1x1 transparente). Só embeda se temos
-    // checklistId — sem ele a rota de tracking não consegue achar o evento.
     const envioId = randomUUID();
     const baseUrl = resolveBaseUrl(req);
-    const pixelTag = (body.checklistId && UUID_RE.test(body.checklistId) && baseUrl)
-      ? `<img src="${baseUrl}/api/checklist-fiscal/track-open/${body.checklistId}/${envioId}.gif" width="1" height="1" alt="" style="display:none;border:0;outline:none;text-decoration:none;" />`
-      : '';
 
-    const bodyHtml =
-      `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(bodyText)}</div>` +
-      pixelTag;
-
-    // 5. Renova access token e envia
+    // 5. Renova access token e envia — UM email por destinatário (não um
+    // único "To" com todos juntos). É o que permite saber QUAL endereço
+    // abriu: cada cópia leva seu próprio pixel, único por destinatário
+    // (antes, abrir em qualquer um dos e-mails cadastrados marcava "aberto"
+    // pra todos, porque era o mesmo pixel no mesmo corpo compartilhado).
     const oauth2 = getOAuthClient();
     oauth2.setCredentials({ refresh_token: refreshToken });
     const gmail = google.gmail({ version: 'v1', auth: oauth2 });
 
-    const mime = buildMime({
-      from: tokenRow.email,
-      to: emails,
-      subject,
-      bodyText,
-      bodyHtml,
-      attachment: {
-        filename: body.arquivoNome,
-        mime: mimeTypeFromFilename(body.arquivoNome),
-        content: fileBuffer,
-      },
-    });
-
-    const raw = Buffer.from(mime, 'utf8').toString('base64')
-      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-    let gmailMessageId: string | undefined;
-    let gmailThreadId: string | undefined;
-    try {
-      const sendRes = await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
-      gmailMessageId = sendRes.data.id ?? undefined;
-      gmailThreadId = sendRes.data.threadId ?? undefined;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Falha ao enviar pelo Gmail.';
-      return NextResponse.json({ error: `Gmail: ${message}` }, { status: 502 });
+    interface EnvioPorDestinatario {
+      destId: string;
+      email: string;
+      sucesso: boolean;
+      erro?: string;
+      gmailMessageId?: string;
+      gmailThreadId?: string;
     }
+    const destinatariosDetalhe: EnvioPorDestinatario[] = [];
+
+    for (const email of emails) {
+      const destId = randomUUID();
+      const pixelTag = (body.checklistId && UUID_RE.test(body.checklistId) && baseUrl)
+        ? `<img src="${baseUrl}/api/checklist-fiscal/track-open/${body.checklistId}/${envioId}/${destId}.gif" width="1" height="1" alt="" style="display:none;border:0;outline:none;text-decoration:none;" />`
+        : '';
+      const bodyHtml =
+        `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(bodyText)}</div>` +
+        pixelTag;
+
+      const mime = buildMime({
+        from: tokenRow.email,
+        to: [email],
+        subject,
+        bodyText,
+        bodyHtml,
+        attachment: {
+          filename: body.arquivoNome,
+          mime: mimeTypeFromFilename(body.arquivoNome),
+          content: fileBuffer,
+        },
+      });
+      const raw = Buffer.from(mime, 'utf8').toString('base64')
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+      try {
+        const sendRes = await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
+        destinatariosDetalhe.push({
+          destId, email, sucesso: true,
+          gmailMessageId: sendRes.data.id ?? undefined,
+          gmailThreadId: sendRes.data.threadId ?? undefined,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Falha ao enviar pelo Gmail.';
+        destinatariosDetalhe.push({ destId, email, sucesso: false, erro: message });
+      }
+    }
+
+    const algumSucesso = destinatariosDetalhe.some((d) => d.sucesso);
+    if (!algumSucesso) {
+      const primeiroErro = destinatariosDetalhe[0]?.erro ?? 'Falha ao enviar pelo Gmail.';
+      return NextResponse.json({ error: `Gmail: ${primeiroErro}` }, { status: 502 });
+    }
+    // gmailMessageId/gmailThreadId no nível do evento ficam com o primeiro
+    // envio bem-sucedido — só pra manter compatibilidade com código antigo
+    // que assumia 1 mensagem por evento. O detalhe completo está em
+    // destinatariosDetalhe (1 gmailMessageId por destinatário).
+    const primeiroSucesso = destinatariosDetalhe.find((d) => d.sucesso);
+    const gmailMessageId = primeiroSucesso?.gmailMessageId;
+    const gmailThreadId = primeiroSucesso?.gmailThreadId;
 
     const nowIso = new Date().toISOString();
     await admin
@@ -536,13 +564,14 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      enviadoPara: emails,
+      enviadoPara: destinatariosDetalhe.filter((d) => d.sucesso).map((d) => d.email),
       de: tokenRow.email,
       enviadoEm: nowIso,
       gmailMessageId,
       gmailThreadId,
       envioId,
-      pixelEmbedado: pixelTag !== '',
+      pixelEmbedado: !!(body.checklistId && UUID_RE.test(body.checklistId) && baseUrl),
+      destinatariosDetalhe,
       portalDocumentoId,
     });
   } catch (err) {

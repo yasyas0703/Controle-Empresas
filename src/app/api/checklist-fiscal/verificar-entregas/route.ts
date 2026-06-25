@@ -4,6 +4,7 @@ import { google } from 'googleapis';
 import { getOAuthClient, decryptToken } from '@/lib/googleOAuth';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { getBearerToken } from '@/lib/apiAuth';
+import { resolverDestinatariosFiscais, criarNotificacaoSistema } from '@/lib/alertasAutoEnvio';
 
 export const runtime = 'nodejs';
 
@@ -15,6 +16,10 @@ const SCAN_LOOKBACK_DAYS = 14;
 interface EnvioPendente {
   rowId: string;             // id da linha em checklist_fiscal
   eventoId: string;          // id do evento dentro de envios_historico
+  /** Presente quando o evento tem quebra por destinatário (destinatarios_detalhe) —
+   *  o update se aplica só a esse destinatário, não ao evento inteiro. */
+  destId?: string;
+  email?: string;
   threadId?: string;
   messageId?: string;
   enviadoEm: string;
@@ -105,10 +110,17 @@ export async function POST(req: Request) {
     const limiteIso = new Date(Date.now() - SCAN_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
     const { data: rows, error: rowsErr } = await admin
       .from('checklist_fiscal')
-      .select('id, envios_historico')
+      .select('id, envios_historico, empresa_id, obrigacao, mes')
       .gte('atualizado_em', limiteIso);
     if (rowsErr) {
       return NextResponse.json({ error: 'Erro ao listar envios pendentes.' }, { status: 500 });
+    }
+
+    const metaPorRow = new Map<string, { empresaId: string | null; obrigacao: string | null; mes: string | null }>();
+    for (const row of rows ?? []) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const r = row as any;
+      metaPorRow.set(String(r.id), { empresaId: r.empresa_id ?? null, obrigacao: r.obrigacao ?? null, mes: r.mes ?? null });
     }
 
     const pendentes: EnvioPendente[] = [];
@@ -118,20 +130,48 @@ export async function POST(req: Request) {
       for (const e of envios) {
         if (!e || typeof e !== 'object') continue;
         if (e.sucesso !== true) continue;
-        const status = e.entrega_status ?? e.entregaStatus;
-        // Já finalizado (entregue/bounced) — pula
-        if (status === 'entregue' || status === 'bounced') continue;
-        // Sem qualquer rastreio — também pula (não conseguimos fazer match sem messageId/threadId)
-        const messageId = e.gmail_message_id ?? e.gmailMessageId;
-        const threadId = e.gmail_thread_id ?? e.gmailThreadId;
-        if (!messageId && !threadId) continue;
         const enviadoEm = e.enviado_em ?? e.enviadoEm;
         if (!enviadoEm || typeof enviadoEm !== 'string') continue;
         // Limita ao usuário que está pedindo verificação (envios da própria conta)
         if (e.enviado_por_id && e.enviado_por_id !== userId) continue;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const rowId = String((row as any).id);
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const detalhes: any[] = Array.isArray(e.destinatarios_detalhe) ? e.destinatarios_detalhe : [];
+        if (detalhes.length > 0) {
+          // Evento NOVO (1 email por destinatário) — verifica cada um na sua
+          // própria granularidade, já que cada destinatário tem seu próprio
+          // gmail_message_id/thread (mensagens separadas).
+          for (const d of detalhes) {
+            if (!d || typeof d !== 'object' || d.sucesso !== true) continue;
+            const dStatus = d.entrega_status ?? d.entregaStatus;
+            if (dStatus === 'entregue' || dStatus === 'bounced') continue;
+            const dMessageId = d.gmail_message_id ?? d.gmailMessageId;
+            const dThreadId = d.gmail_thread_id ?? d.gmailThreadId;
+            if (!dMessageId && !dThreadId) continue;
+            pendentes.push({
+              rowId,
+              eventoId: String(e.id ?? ''),
+              destId: String(d.dest_id ?? d.destId ?? ''),
+              email: typeof d.email === 'string' ? d.email : undefined,
+              threadId: typeof dThreadId === 'string' ? dThreadId : undefined,
+              messageId: typeof dMessageId === 'string' ? dMessageId : undefined,
+              enviadoEm,
+              destinatarios: typeof d.email === 'string' ? [d.email] : [],
+            });
+          }
+          continue;
+        }
+
+        // Evento LEGADO (sem quebra por destinatário) — mesmo comportamento de antes.
+        const status = e.entrega_status ?? e.entregaStatus;
+        if (status === 'entregue' || status === 'bounced') continue;
+        const messageId = e.gmail_message_id ?? e.gmailMessageId;
+        const threadId = e.gmail_thread_id ?? e.gmailThreadId;
+        if (!messageId && !threadId) continue;
         pendentes.push({
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          rowId: String((row as any).id),
+          rowId,
           eventoId: String(e.id ?? ''),
           threadId: typeof threadId === 'string' ? threadId : undefined,
           messageId: typeof messageId === 'string' ? messageId : undefined,
@@ -189,7 +229,8 @@ export async function POST(req: Request) {
     }
 
     // 4. Faz match entre bounces e envios pendentes
-    const updatesPorRow = new Map<string, Map<string, { entregaStatus: 'entregue' | 'bounced'; bounceMotivo?: string; bounceDestinatarios?: string[] }>>();
+    type UpdateEntrega = { destId?: string; email?: string; entregaStatus: 'entregue' | 'bounced'; bounceMotivo?: string; bounceDestinatarios?: string[] };
+    const updatesPorRow = new Map<string, Map<string, UpdateEntrega>>();
 
     for (const env of pendentes) {
       // Procura bounce que case por threadId ou messageId
@@ -207,7 +248,7 @@ export async function POST(req: Request) {
       if (matchedBounce) {
         novaEntrega = 'bounced';
         bounceMotivo = matchedBounce.motivo;
-        bounceDestinatarios = matchedBounce.enderecosFalha.length > 0 ? matchedBounce.enderecosFalha : undefined;
+        bounceDestinatarios = matchedBounce.enderecosFalha.length > 0 ? matchedBounce.enderecosFalha : (env.email ? [env.email] : undefined);
       }
       // Sem bounce → mantém 'pendente'. A promoção pra 'entregue' acontece
       // só quando o pixel de abertura dispara (track-open), o que prova que
@@ -215,7 +256,10 @@ export async function POST(req: Request) {
 
       if (novaEntrega) {
         const inner = updatesPorRow.get(env.rowId) ?? new Map();
-        inner.set(env.eventoId, {
+        // Chave composta: vários destinatários podem compartilhar o mesmo eventoId.
+        inner.set(`${env.eventoId}|${env.destId ?? ''}`, {
+          destId: env.destId,
+          email: env.email,
           entregaStatus: novaEntrega,
           bounceMotivo,
           bounceDestinatarios,
@@ -227,6 +271,7 @@ export async function POST(req: Request) {
     // 5. Aplica updates por linha — read-modify-write do JSONB
     let entregues = 0;
     let bouncedCount = 0;
+    const bouncesNovos: Array<{ rowId: string; bounceMotivo?: string; bounceDestinatarios?: string[] }> = [];
 
     for (const [rowId, eventosUpdates] of updatesPorRow) {
       const { data: rowData, error: getErr } = await admin
@@ -240,11 +285,53 @@ export async function POST(req: Request) {
       const verificadoEm = new Date().toISOString();
       const atualizado = envios.map((e) => {
         if (!e || typeof e !== 'object') return e;
-        const id = String(e.id ?? '');
-        const upd = eventosUpdates.get(id);
+        const eventoId = String(e.id ?? '');
+
+        // Caso 1: update é de um destinatário específico (evento novo, com quebra).
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const detalhes: any[] = Array.isArray(e.destinatarios_detalhe) ? [...e.destinatarios_detalhe] : [];
+        let detalhesMudaram = false;
+        if (detalhes.length > 0) {
+          for (let i = 0; i < detalhes.length; i++) {
+            const d = detalhes[i];
+            const destId = String(d?.dest_id ?? d?.destId ?? '');
+            const upd = eventosUpdates.get(`${eventoId}|${destId}`);
+            if (!upd) continue;
+            detalhesMudaram = true;
+            if (upd.entregaStatus === 'entregue') entregues++;
+            else if (upd.entregaStatus === 'bounced') {
+              bouncedCount++;
+              const statusAnterior = d.entrega_status ?? d.entregaStatus;
+              if (statusAnterior !== 'bounced') {
+                bouncesNovos.push({
+                  rowId,
+                  bounceMotivo: upd.bounceMotivo,
+                  bounceDestinatarios: upd.bounceDestinatarios ?? (upd.email ? [upd.email] : undefined),
+                });
+              }
+            }
+            detalhes[i] = {
+              ...d,
+              entrega_status: upd.entregaStatus,
+              entrega_verificada_em: verificadoEm,
+              ...(upd.bounceMotivo ? { bounce_motivo: upd.bounceMotivo } : {}),
+            };
+          }
+          if (detalhesMudaram) return { ...e, destinatarios_detalhe: detalhes };
+          return e;
+        }
+
+        // Caso 2: evento legado (sem quebra por destinatário) — update no nível do evento.
+        const upd = eventosUpdates.get(`${eventoId}|`);
         if (!upd) return e;
         if (upd.entregaStatus === 'entregue') entregues++;
-        else if (upd.entregaStatus === 'bounced') bouncedCount++;
+        else if (upd.entregaStatus === 'bounced') {
+          bouncedCount++;
+          const statusAnterior = e.entrega_status ?? e.entregaStatus;
+          if (statusAnterior !== 'bounced') {
+            bouncesNovos.push({ rowId, bounceMotivo: upd.bounceMotivo, bounceDestinatarios: upd.bounceDestinatarios });
+          }
+        }
         return {
           ...e,
           entrega_status: upd.entregaStatus,
@@ -257,6 +344,39 @@ export async function POST(req: Request) {
         .from('checklist_fiscal')
         .update({ envios_historico: atualizado })
         .eq('id', rowId);
+    }
+
+    // 6. Alerta no sino pra cada bounce NOVO — sem isso, ninguém fica sabendo
+    // que um e-mail não chegou (endereço inválido, caixa cheia etc).
+    for (const b of bouncesNovos) {
+      const meta = metaPorRow.get(b.rowId);
+      try {
+        const destinatarios = await resolverDestinatariosFiscais(admin, meta?.empresaId ?? null);
+        if (destinatarios.length === 0) continue;
+        let empresaNome: string | null = null;
+        if (meta?.empresaId) {
+          const { data: empData } = await admin
+            .from('empresas').select('apelido, razao_social, codigo').eq('id', meta.empresaId).maybeSingle();
+          empresaNome = empData?.apelido || empData?.razao_social || empData?.codigo || null;
+        }
+        const partes = [
+          empresaNome ? `Empresa: ${empresaNome}.` : 'Empresa não identificada.',
+          meta?.obrigacao ? `Obrigação: ${meta.obrigacao}.` : null,
+          meta?.mes ? `Competência: ${meta.mes}.` : null,
+          b.bounceDestinatarios?.length ? `Endereço(s) com falha: ${b.bounceDestinatarios.join(', ')}.` : null,
+          b.bounceMotivo ? `Motivo: ${b.bounceMotivo}.` : null,
+          'O e-mail NÃO chegou ao cliente — verifique o cadastro de e-mails.',
+        ].filter(Boolean);
+        await criarNotificacaoSistema(admin, {
+          titulo: 'E-mail não entregue (bounce)',
+          mensagem: partes.join(' '),
+          tipo: 'erro',
+          empresaId: meta?.empresaId ?? null,
+          destinatarios: destinatarios.map((u) => u.id),
+        });
+      } catch (err) {
+        console.error('[verificar-entregas] falha ao alertar bounce:', err);
+      }
     }
 
     return NextResponse.json({

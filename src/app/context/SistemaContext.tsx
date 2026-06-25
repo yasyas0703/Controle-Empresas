@@ -15,7 +15,7 @@ import type {
 } from '@/app/types';
 import { formatBR, isoNow } from '@/app/utils/date';
 import { criarHistoricoVencimentoItem, garantirVencimentosFiscais, limparTagVencimento, normalizarHistoricoVencimento } from '@/app/utils/vencimentos';
-import { getDepartamentoSlugsDoUsuario } from '@/app/utils/departamento';
+import { getDepartamentoSlugsDoUsuario, podeVerDepartamento } from '@/app/utils/departamento';
 import * as db from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 
@@ -369,6 +369,9 @@ interface SistemaContextValue extends SistemaState {
   // Contagem compartilhada de guias-auto NÃO enviadas (problemas + pendências de
   // aprovação). Um único poll aqui substitui os que existiam espalhados.
   guiasAutoContagem: { problemasPendentes: number; pendenciasAprovacao: number };
+  // Guias que vencem em até 3 dias (ou já venceram) e ainda não foram
+  // enviadas — base do alerta piscante. Só Fiscal/Fiscal-SN + admin.
+  guiasUrgentesContagem: { total: number; itens: { empresaNome: string; obrigacao: string; vencimento: string; dias: number }[] };
   reloadData: () => Promise<void>;
 
   login: (email: string, senha: string) => Promise<boolean | 'rate_limited'>;
@@ -455,6 +458,10 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     problemasPendentes: 0,
     pendenciasAprovacao: 0,
   });
+  const [guiasUrgentesContagem, setGuiasUrgentesContagem] = useState<{
+    total: number;
+    itens: { empresaNome: string; obrigacao: string; vencimento: string; dias: number }[];
+  }>({ total: 0, itens: [] });
 
   const loadForUser = useCallback(
     async (userId: UUID) => {
@@ -607,6 +614,32 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       // best-effort — badge/alerta só não atualiza
     }
   }, []);
+
+  // Guias vencendo em até 3 dias (ou já vencidas) sem envio — alerta piscante.
+  // Roda pra admin + qualquer usuário do depto Fiscal/Fiscal-SN (não só gerente:
+  // "as meninas do Fiscal" precisam ver isso, não só quem gerencia).
+  const loadGuiasUrgentesContagem = useCallback(async () => {
+    const { currentUserId, usuarios, departamentos } = stateRef.current;
+    if (!currentUserId) return;
+    const me = usuarios.find((u) => u.id === currentUserId);
+    const podeVer = me?.role === 'admin' || podeVerDepartamento('fiscal', me, departamentos);
+    if (!podeVer) return;
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      if (!token) return;
+      const res = await fetch('/api/admin/guias-auto/vencendo-sem-envio', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const j = await res.json();
+      setGuiasUrgentesContagem({
+        total: Number(j.total) || 0,
+        itens: Array.isArray(j.itens) ? j.itens : [],
+      });
+    } catch {
+      // best-effort — alerta só não atualiza
+    }
+  }, []);
   // -- Load all data from Supabase --
   const reloadData = useCallback(async () => {
     try {
@@ -755,6 +788,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     const refresh = () => {
       loadManutencao();
       loadGuiasAutoContagem();
+      loadGuiasUrgentesContagem();
     };
     refresh();
 
@@ -771,7 +805,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
       window.clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [state.currentUserId, loadManutencao, loadGuiasAutoContagem]);
+  }, [state.currentUserId, loadManutencao, loadGuiasAutoContagem, loadGuiasUrgentesContagem]);
 
   const fetchPrivileges = useCallback(async (token: string) => {
     try {
@@ -1949,6 +1983,7 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     authReady,
     manutencao,
     guiasAutoContagem,
+    guiasUrgentesContagem,
     reloadData,
     login,
     logout,

@@ -86,7 +86,7 @@ type UsuarioRow = {
 };
 
 /** Acha os ids dos departamentos Fiscal e Fiscal-SN pelo nome. */
-function acharDeptosFiscais(deptos: DeptoRow[]): string[] {
+export function acharDeptosFiscais(deptos: DeptoRow[]): string[] {
   const fiscal = deptos.find((d) => d.nome.trim().toLowerCase() === FISCAL_DEPT_NOME)
     ?? deptos.find((d) => {
       const n = d.nome.trim().toLowerCase();
@@ -94,6 +94,36 @@ function acharDeptosFiscais(deptos: DeptoRow[]): string[] {
     });
   const fiscalSn = deptos.find((d) => d.nome.trim().toLowerCase() === FISCAL_SN_DEPT_NOME);
   return [fiscal?.id, fiscalSn?.id].filter((v): v is string => !!v);
+}
+
+/**
+ * Nome do responsável Fiscal cadastrado pra empresa (tabela `responsaveis`).
+ * Usado pra exibir "quem enviou" no checklist em vez do nome da conta
+ * fantasma (`GHOST_USER_ID`) que hoje aponta pro usuário de testes.
+ * Retorna `null` se a empresa não tem responsável Fiscal cadastrado.
+ */
+export async function buscarResponsavelFiscal(
+  admin: SupabaseClient,
+  empresaId: string,
+): Promise<{ id: string; nome: string } | null> {
+  const { data: deptosData } = await admin.from('departamentos').select('id, nome');
+  const fiscalDeptIds = acharDeptosFiscais((deptosData ?? []) as DeptoRow[]);
+  if (!fiscalDeptIds.length) return null;
+
+  const { data: respData } = await admin
+    .from('responsaveis')
+    .select('departamento_id, usuario_id')
+    .eq('empresa_id', empresaId)
+    .in('departamento_id', fiscalDeptIds);
+  const usuarioId = (respData ?? [])
+    .map((r) => (r as { usuario_id: string | null }).usuario_id)
+    .find((id): id is string => !!id);
+  if (!usuarioId) return null;
+
+  const { data: usuarioRow } = await admin
+    .from('usuarios').select('id, nome').eq('id', usuarioId).eq('ativo', true).maybeSingle();
+  const nome = (usuarioRow as { nome?: string } | null)?.nome;
+  return nome ? { id: usuarioId, nome } : null;
 }
 
 // ⚠️ MODO TESTE (PROVISÓRIO — remover quando a usuária terminar de testar):

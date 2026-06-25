@@ -1241,6 +1241,28 @@ function ModalDetalheObrigacao({
                               para <span className="font-medium">{ev.destinatarios.join(', ')}</span>
                             </div>
                           )}
+                          {/* Quebra por destinatário: cada email tem seu próprio pixel, então
+                              sabemos QUAL endereço abriu (não um borrão único pra todos). */}
+                          {(ev.destinatariosDetalhe?.length ?? 0) > 1 && (
+                            <div className="mt-1 space-y-0.5">
+                              {ev.destinatariosDetalhe?.map((d) => (
+                                <div key={d.destId} className="flex items-center gap-1.5 text-[10px]">
+                                  <span className="text-slate-600 dark:text-slate-300 truncate">{d.email}</span>
+                                  {!d.sucesso ? (
+                                    <span className="text-red-600 dark:text-red-400 font-semibold">falhou</span>
+                                  ) : d.entregaStatus === 'bounced' ? (
+                                    <span className="text-red-600 dark:text-red-400 font-semibold">não entregue</span>
+                                  ) : (d.aberturas ?? 0) > 0 ? (
+                                    <span className="text-sky-600 dark:text-sky-400 font-semibold">
+                                      visualizado{d.abertoEmUltimo ? ` em ${new Date(d.abertoEmUltimo).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}
+                                    </span>
+                                  ) : (
+                                    <span className="text-amber-600 dark:text-amber-400">enviado</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                           {ev.motivoReenvio && (
                             <div className="mt-1 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 px-1.5 py-1 text-[10px] text-amber-800 dark:text-amber-200">
                               <span className="font-semibold">Motivo do reenvio:</span> {ev.motivoReenvio}
@@ -1726,6 +1748,7 @@ function ModalEnviarGuia({
           gmailMessageId: env.ok ? env.gmailMessageId : undefined,
           gmailThreadId: env.ok ? env.gmailThreadId : undefined,
           entregaStatus: env.ok ? 'pendente' : undefined,
+          destinatariosDetalhe: env.ok ? env.destinatariosDetalhe : undefined,
         },
         marcarComoFeito: env.ok,
         autor: { autorId: null, autorNome: currentUserNome ?? undefined },

@@ -14,6 +14,7 @@ import type {
   ObrigacaoTarefaStatus,
   ObrigacaoTipoData,
   ChecklistEnvioEvento,
+  ChecklistDestinatarioDetalhe,
   ChecklistFiscalItem,
   CadastroCertidao,
   CadastroResultado,
@@ -1894,8 +1895,57 @@ function normalizarEnviosHistorico(raw: unknown): ChecklistEnvioEvento[] {
         aberturas: typeof e.aberturas === 'number' ? e.aberturas : undefined,
         abertoUserAgent: typeof e.aberto_user_agent === 'string' ? e.aberto_user_agent : (typeof e.abertoUserAgent === 'string' ? e.abertoUserAgent : undefined),
         abertoIp: typeof e.aberto_ip === 'string' ? e.aberto_ip : (typeof e.abertoIp === 'string' ? e.abertoIp : undefined),
+        destinatariosDetalhe: normalizarDestinatariosDetalhe(e.destinatarios_detalhe ?? e.destinatariosDetalhe),
       };
     });
+}
+
+function normalizarDestinatariosDetalhe(raw: unknown): ChecklistDestinatarioDetalhe[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const lista = (raw as any[])
+    .filter((d) => d && typeof d === 'object' && typeof (d.email ?? d.destId) !== 'undefined')
+    .map((d) => {
+      const entregaRaw = d.entrega_status ?? d.entregaStatus;
+      const entregaStatus = entregaRaw === 'entregue' || entregaRaw === 'bounced' || entregaRaw === 'pendente'
+        ? (entregaRaw as 'entregue' | 'bounced' | 'pendente')
+        : undefined;
+      return {
+        destId: String(d.dest_id ?? d.destId ?? newUUID()),
+        email: String(d.email ?? ''),
+        sucesso: d.sucesso === true,
+        erro: d.erro ?? undefined,
+        gmailMessageId: d.gmail_message_id ?? d.gmailMessageId ?? undefined,
+        gmailThreadId: d.gmail_thread_id ?? d.gmailThreadId ?? undefined,
+        entregaStatus,
+        bounceMotivo: d.bounce_motivo ?? d.bounceMotivo ?? undefined,
+        abertoEm: typeof d.aberto_em === 'string' ? d.aberto_em : (typeof d.abertoEm === 'string' ? d.abertoEm : undefined),
+        abertoEmUltimo: typeof d.aberto_em_ultimo === 'string' ? d.aberto_em_ultimo : (typeof d.abertoEmUltimo === 'string' ? d.abertoEmUltimo : undefined),
+        aberturas: typeof d.aberturas === 'number' ? d.aberturas : undefined,
+        abertoUserAgent: typeof d.aberto_user_agent === 'string' ? d.aberto_user_agent : (typeof d.abertoUserAgent === 'string' ? d.abertoUserAgent : undefined),
+        abertoIp: typeof d.aberto_ip === 'string' ? d.aberto_ip : (typeof d.abertoIp === 'string' ? d.abertoIp : undefined),
+      };
+    });
+  return lista.length > 0 ? lista : undefined;
+}
+
+function persistirDestinatariosDetalhe(lista: ChecklistDestinatarioDetalhe[] | undefined): Record<string, unknown>[] | null {
+  if (!lista || lista.length === 0) return null;
+  return lista.map((d) => ({
+    dest_id: d.destId,
+    email: d.email,
+    sucesso: d.sucesso,
+    erro: d.erro ?? null,
+    gmail_message_id: d.gmailMessageId ?? null,
+    gmail_thread_id: d.gmailThreadId ?? null,
+    entrega_status: d.entregaStatus ?? (d.sucesso ? 'pendente' : null),
+    bounce_motivo: d.bounceMotivo ?? null,
+    aberto_em: d.abertoEm ?? null,
+    aberto_em_ultimo: d.abertoEmUltimo ?? null,
+    aberturas: d.aberturas ?? 0,
+    aberto_user_agent: d.abertoUserAgent ?? null,
+    aberto_ip: d.abertoIp ?? null,
+  }));
 }
 
 export function toChecklistItem(row: ChecklistFiscalRow): ChecklistFiscalItem {
@@ -3001,6 +3051,8 @@ export interface EnviarAnexoChecklistResultado {
   envioId?: UUID;
   /** Indica se o pixel de tracking foi de fato embedado no email. */
   pixelEmbedado?: boolean;
+  /** Quebra por destinatário (1 email = 1 envio Gmail individual + pixel próprio). */
+  destinatariosDetalhe?: ChecklistDestinatarioDetalhe[];
 }
 
 export interface EnviarAnexoChecklistFalha {
@@ -3049,6 +3101,7 @@ export async function enviarAnexoChecklist(
     gmailThreadId: typeof json.gmailThreadId === 'string' ? json.gmailThreadId : undefined,
     envioId: typeof json.envioId === 'string' ? json.envioId : undefined,
     pixelEmbedado: json.pixelEmbedado === true,
+    destinatariosDetalhe: normalizarDestinatariosDetalhe(json.destinatariosDetalhe),
   };
 }
 
@@ -3106,6 +3159,7 @@ export async function registrarEnvioChecklist(input: RegistrarEnvioInput): Promi
     aberturas: e.aberturas ?? 0,
     aberto_user_agent: e.abertoUserAgent ?? null,
     aberto_ip: e.abertoIp ?? null,
+    destinatarios_detalhe: persistirDestinatariosDetalhe(e.destinatariosDetalhe),
   });
 
   const novoEventoPersistido = persistirEvento(novoEvento);
@@ -3237,6 +3291,7 @@ export async function removerEnvioChecklist(
     aberturas: e.aberturas ?? 0,
     aberto_user_agent: e.abertoUserAgent ?? null,
     aberto_ip: e.abertoIp ?? null,
+    destinatarios_detalhe: persistirDestinatariosDetalhe(e.destinatariosDetalhe),
   });
 
   const now = new Date().toISOString();

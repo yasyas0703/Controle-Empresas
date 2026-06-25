@@ -743,6 +743,7 @@ export default function ChecklistFiscalPage() {
           gmailMessageId: env.ok ? env.gmailMessageId : undefined,
           gmailThreadId: env.ok ? env.gmailThreadId : undefined,
           entregaStatus: env.ok ? 'pendente' : undefined,
+          destinatariosDetalhe: env.ok ? env.destinatariosDetalhe : undefined,
         },
         marcarComoFeito: env.ok,
         autor: { autorId: currentUserId, autorNome: currentUser?.nome },
@@ -908,6 +909,7 @@ export default function ChecklistFiscalPage() {
           gmailMessageId: env.ok ? env.gmailMessageId : undefined,
           gmailThreadId: env.ok ? env.gmailThreadId : undefined,
           entregaStatus: env.ok ? 'pendente' : undefined,
+          destinatariosDetalhe: env.ok ? env.destinatariosDetalhe : undefined,
         },
         marcarComoFeito: env.ok,
         autor: { autorId: currentUserId, autorNome: currentUser?.nome },
@@ -2294,6 +2296,28 @@ export default function ChecklistFiscalPage() {
                                 {ev.destinatarios.length > 0 && (
                                   <div className="text-[10px] text-gray-600 truncate" title={ev.destinatarios.join(', ')}>
                                     para <span className="font-medium">{ev.destinatarios.join(', ')}</span>
+                                  </div>
+                                )}
+                                {/* Quebra por destinatário: cada email tem seu próprio pixel, então
+                                    sabemos QUAL endereço abriu (não um borrão único pra todos). */}
+                                {(ev.destinatariosDetalhe?.length ?? 0) > 1 && (
+                                  <div className="mt-1 space-y-0.5">
+                                    {ev.destinatariosDetalhe?.map((d) => (
+                                      <div key={d.destId} className="flex items-center gap-1.5 text-[10px]">
+                                        <span className="text-gray-600 truncate">{d.email}</span>
+                                        {!d.sucesso ? (
+                                          <span className="text-red-600 font-semibold">falhou</span>
+                                        ) : d.entregaStatus === 'bounced' ? (
+                                          <span className="text-red-600 font-semibold">não entregue</span>
+                                        ) : (d.aberturas ?? 0) > 0 ? (
+                                          <span className="text-sky-600 font-semibold">
+                                            visualizado{d.abertoEmUltimo ? ` em ${new Date(d.abertoEmUltimo).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}
+                                          </span>
+                                        ) : (
+                                          <span className="text-amber-600">enviado</span>
+                                        )}
+                                      </div>
+                                    ))}
                                   </div>
                                 )}
                                 {ev.erro && (

@@ -170,6 +170,29 @@ export type ChecklistFiscalStatus = 'feito' | 'sem_obrigacao' | null;
  */
 export type ChecklistEntregaStatus = 'pendente' | 'entregue' | 'bounced';
 
+/**
+ * Rastreio de abertura/entrega POR destinatário individual. Cada destinatário
+ * recebe seu próprio email (mesmo conteúdo, enviado separadamente) com um
+ * pixel único — assim "abriu" não vira um borrão único pra todos os emails
+ * cadastrados da empresa. `destId` é o token usado na URL do pixel
+ * (/track-open/.../[destId].gif) — opaco de propósito, não é o email cru.
+ */
+export interface ChecklistDestinatarioDetalhe {
+  destId: UUID;
+  email: string;
+  sucesso: boolean;
+  erro?: string;
+  gmailMessageId?: string;
+  gmailThreadId?: string;
+  entregaStatus?: ChecklistEntregaStatus;
+  bounceMotivo?: string;
+  abertoEm?: string;
+  abertoEmUltimo?: string;
+  aberturas?: number;
+  abertoUserAgent?: string;
+  abertoIp?: string;
+}
+
 /** Evento gravado em `checklist_fiscal.envios_historico` quando o anexo é enviado por email. */
 export interface ChecklistEnvioEvento {
   id: UUID;
@@ -202,6 +225,11 @@ export interface ChecklistEnvioEvento {
   aberturas?: number;           // contador de hits no pixel
   abertoUserAgent?: string;     // UA da última abertura
   abertoIp?: string;            // IP da última abertura
+  // Quando o envio teve >1 destinatário, cada um ganha seu próprio sub-envio
+  // (email + pixel individuais) — ver ChecklistDestinatarioDetalhe. Os campos
+  // agregados acima (abertoEm, aberturas etc.) ficam como fallback/legado
+  // pra eventos antigos que não tinham essa quebra por destinatário.
+  destinatariosDetalhe?: ChecklistDestinatarioDetalhe[];
 }
 
 export interface ChecklistFiscalItem {
