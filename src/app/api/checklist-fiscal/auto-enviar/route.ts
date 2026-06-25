@@ -85,15 +85,28 @@ function regimePastaDaEmpresa(empresa: Empresa): 'FECHAMENTO' | 'SIMPLES NACIONA
   return empresa.tributacao === 'simples_nacional' ? 'SIMPLES NACIONAL' : 'FECHAMENTO';
 }
 
+// Algumas obrigações têm pasta PRÓPRIA na empresa (fora de FECHAMENTO/SIMPLES
+// NACIONAL) — convenção confirmada no T: (2026-06-25): LIVROS FISCAIS fica na
+// pasta "LIVROS FISCAIS" da empresa (com subpasta por ano), e os SPED's ficam
+// dentro de "SPED/<tipo>". `path.join` aceita "/" mesmo no Windows, então a
+// barra aqui funciona igual no daemon. Sem entrada aqui → cai no regime normal.
+const SUBPASTA_POR_OBRIGACAO: Record<string, string> = {
+  'LIVROS FISCAIS': 'LIVROS FISCAIS',
+  'SPED ICMS/IPI': 'SPED/EFD-FISCAL',
+  'SPED CONTRIBUIÇÕES': 'SPED/EFD-CONTRIBUIÇÕES',
+  REINF: 'SPED/EFD-REINF',
+};
+
 /**
  * Monta o bloco `destino` que o daemon usa pra mover o PDF da pasta de entrada
  * pra pasta definitiva da empresa: T:/Fiscal/EMPRESA/<EMPRESA>/<REGIME>/<ANO>/.
  * O daemon resolve a pasta real da empresa por fuzzy match dos candidatos.
  */
-function montarDestino(empresa: Empresa, competencia: string, nomeArquivo: string) {
+function montarDestino(empresa: Empresa, competencia: string, nomeArquivo: string, obrigacao?: string) {
+  const subpasta = (obrigacao && SUBPASTA_POR_OBRIGACAO[obrigacao]) || regimePastaDaEmpresa(empresa);
   return {
     candidatosPasta: [empresa.apelido, empresa.razao_social, empresa.codigo].filter((v): v is string => !!v),
-    regime: regimePastaDaEmpresa(empresa),
+    regime: subpasta,
     ano: competencia.slice(0, 4),
     nomeArquivo,
   };
@@ -698,7 +711,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       status: 'interno_marcado_feito',
       detalhes: { empresa: empresa.codigo || empresa.razao_social, obrigacao, competencia },
-      destino: montarDestino(empresa, competencia, nomeCanonico),
+      destino: montarDestino(empresa, competencia, nomeCanonico, obrigacao),
     });
   }
 
@@ -764,7 +777,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       status: 'aguardando_lote',
       detalhes: { empresa: empresa.codigo || empresa.razao_social, obrigacao, competencia, tipoLivro, loteId: r.loteId },
-      destino: montarDestino(empresa, competencia, nomeCanonico),
+      destino: montarDestino(empresa, competencia, nomeCanonico, obrigacao),
     });
   }
 
@@ -845,6 +858,6 @@ export async function POST(req: Request) {
       portalDocumentoId: envio.portalDocumentoId,
       checklistId: envio.checklistId,
     },
-    destino: montarDestino(empresa, competencia, nomeCanonico),
+    destino: montarDestino(empresa, competencia, nomeCanonico, obrigacao),
   });
 }
