@@ -93,10 +93,29 @@ export async function GET(
       entrega_status: statusPromovido,
     };
 
+    // Também atualiza os campos agregados do EVENTO (nível topo) — é o que a
+    // tela do Checklist usa pro badge "Visualizado" quando o envio tem só 1
+    // destinatário (o detalhe por destinatário só aparece na UI quando há
+    // mais de 1). Sem isso, abrir o email não refletia em nada visível pra
+    // quem manda pra um único e-mail (ex.: modo teste, tudo pra 1 endereço).
+    const aberturasEventoAtual = typeof evento.aberturas === 'number' ? evento.aberturas : 0;
+    const primeiraAberturaEvento = typeof evento.aberto_em === 'string' && evento.aberto_em ? evento.aberto_em : nowIso;
+    const statusEventoAtual = evento.entrega_status;
+    const statusEventoPromovido = statusEventoAtual === 'bounced' || statusEventoAtual === 'entregue' ? statusEventoAtual : 'entregue';
+
     // Best-effort: race entre hits concorrentes pode perder uma contagem —
     // aceitável, pixel tracking é lossy por natureza (mesma observação da
     // rota antiga).
-    envios[idxEvento] = { ...evento, destinatarios_detalhe: detalhes };
+    envios[idxEvento] = {
+      ...evento,
+      destinatarios_detalhe: detalhes,
+      aberto_em: primeiraAberturaEvento,
+      aberto_em_ultimo: nowIso,
+      aberturas: aberturasEventoAtual + 1,
+      aberto_user_agent: ua,
+      aberto_ip: ip,
+      entrega_status: statusEventoPromovido,
+    };
     await admin.from('checklist_fiscal').update({ envios_historico: envios }).eq('id', checklistId);
 
     return pixelResponse();
