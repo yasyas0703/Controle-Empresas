@@ -38,7 +38,7 @@ import ModalBase from '@/app/components/ModalBase';
 import ModalMotivoReenvio from '@/app/components/ModalMotivoReenvio';
 import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
 import type {
-  ChecklistFiscalItem, Departamento, Empresa, EmpresaEmailCliente, EmpresaObrigacaoConfig, Tributacao, UUID, VencimentoFiscal,
+  ChecklistFiscalItem, ChecklistDestinatarioDetalhe, Departamento, Empresa, EmpresaEmailCliente, EmpresaObrigacaoConfig, Tributacao, UUID, VencimentoFiscal,
 } from '@/app/types';
 import { VENCIMENTOS_FISCAIS_NOMES, VENCIMENTOS_FISCAIS_SN_NOMES, ehObrigacaoSempreInterna } from '@/app/types';
 
@@ -1627,6 +1627,7 @@ function ModalEnviarGuia({
         enviadoPara: string[]; de: string; enviadoEm: string;
         gmailMessageId?: string; gmailThreadId?: string;
         envioId?: string;
+        destinatariosDetalhe?: ChecklistDestinatarioDetalhe[];
       };
 
       // 4. Registra evento usando o envioId retornado (essencial pra o pixel
@@ -1649,6 +1650,7 @@ function ModalEnviarGuia({
           gmailMessageId: env.gmailMessageId,
           gmailThreadId: env.gmailThreadId,
           entregaStatus: 'pendente',
+          destinatariosDetalhe: env.destinatariosDetalhe,
         },
         marcarComoFeito: true,
         autor: { autorId: null, autorNome: currentUserNome ?? undefined },

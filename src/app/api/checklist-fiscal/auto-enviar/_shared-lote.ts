@@ -259,33 +259,55 @@ export async function enviarLote(
       checklistIdPixel = (criado as { id?: string } | null)?.id ?? null;
     }
   }
-  const pixelTag = (params.baseUrl && checklistIdPixel)
-    ? `<img src="${params.baseUrl.replace(/\/+$/, '')}/api/checklist-fiscal/track-open/${checklistIdPixel}/${envioId}.gif" width="1" height="1" alt="" style="display:none;border:0;outline:none;text-decoration:none;" />`
-    : '';
-  const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(bodyText)}</div>${pixelTag}`;
-
   const oauth2 = getOAuthClient();
   oauth2.setCredentials({ refresh_token: refreshToken });
   const gmail = google.gmail({ version: 'v1', auth: oauth2 });
-  const mime = buildMimeMulti({ from: tokenRow.email, to: emails, subject, bodyText, bodyHtml, attachments: anexos.map((a) => ({ filename: a.filename, mime: a.mime, content: a.content })) });
-  const raw = Buffer.from(mime, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-  let gmailMessageId: string | undefined;
-  try {
-    const sendRes = await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
-    gmailMessageId = sendRes.data.id ?? undefined;
-  } catch (err) {
-    return falha(err instanceof Error ? `gmail_send_failed: ${err.message}` : 'gmail_send_failed');
+  // Um email por destinatário (não um único "To" com todos juntos) — mesmo
+  // padrão do envio de obrigação única: cada cópia leva seu próprio pixel,
+  // pra saber QUAL endereço abriu em vez de marcar "aberto" pra todos juntos.
+  interface EnvioPorDestinatario {
+    destId: string; email: string; sucesso: boolean; erro?: string;
+    gmailMessageId?: string; gmailThreadId?: string;
   }
+  const destinatariosDetalhe: EnvioPorDestinatario[] = [];
+
+  for (const email of emails) {
+    const destId = randomUUID();
+    const pixelTag = (params.baseUrl && checklistIdPixel)
+      ? `<img src="${params.baseUrl.replace(/\/+$/, '')}/api/checklist-fiscal/track-open/${checklistIdPixel}/${envioId}/${destId}.gif" width="1" height="1" alt="" style="display:none;border:0;outline:none;text-decoration:none;" />`
+      : '';
+    const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(bodyText)}</div>${pixelTag}`;
+    const mime = buildMimeMulti({ from: tokenRow.email, to: [email], subject, bodyText, bodyHtml, attachments: anexos.map((a) => ({ filename: a.filename, mime: a.mime, content: a.content })) });
+    const raw = Buffer.from(mime, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    try {
+      const sendRes = await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
+      destinatariosDetalhe.push({
+        destId, email, sucesso: true,
+        gmailMessageId: sendRes.data.id ?? undefined,
+        gmailThreadId: sendRes.data.threadId ?? undefined,
+      });
+    } catch (err) {
+      destinatariosDetalhe.push({ destId, email, sucesso: false, erro: err instanceof Error ? err.message : 'Falha Gmail' });
+    }
+  }
+
+  const primeiroSucesso = destinatariosDetalhe.find((d) => d.sucesso);
+  if (!primeiroSucesso) {
+    return falha(`gmail_send_failed: ${destinatariosDetalhe[0]?.erro ?? 'Falha Gmail'}`);
+  }
+  const gmailMessageId = primeiroSucesso.gmailMessageId;
 
   const nowIso = new Date().toISOString();
   await admin.from('usuario_gmail_tokens').update({ last_used_at: nowIso }).eq('usuario_id', params.ghostUserId);
 
-  // Marca o checklist UMA vez (1 evento/pixel).
+  // Marca o checklist UMA vez (1 evento, pixels individuais por destinatário).
   const checklistId = await marcarChecklistComoFeito(admin, {
     empresaId: params.empresa.id, mes: params.lote.competencia, obrigacao: OBRIGACAO_LIVROS,
     ghostUserId: params.ghostUserId, arquivoNome: `Livros Fiscais (${anexos.length} arquivos)`,
-    arquivoUrl: anexos[0].storagePath, fonte: 'auto-enviado', destinatarios: emails, gmailMessageId, envioId,
+    arquivoUrl: anexos[0].storagePath, fonte: 'auto-enviado', destinatarios: emails, gmailMessageId,
+    destinatariosDetalhe, envioId,
   });
 
   // Portal: 1 documento por livro (best-effort) + 1 push.
