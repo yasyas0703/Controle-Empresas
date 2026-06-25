@@ -161,6 +161,15 @@ export async function POST(req: Request) {
     }
     const userId = auth.userId;
 
+    // Todos os envios (manual ou automático) saem da MESMA conta Gmail central
+    // (envio@triarcontabilidade.com.br, conectada sob o ghost user) — decisão
+    // da Yasmin 2026-06-25: não é mais "cada usuária envia da própria conta".
+    // `userId` continua valendo pra permissão/rate-limit/"enviado por".
+    const envioUserId = process.env.GHOST_USER_ID;
+    if (!envioUserId) {
+      return NextResponse.json({ error: 'GHOST_USER_ID não configurado no servidor.' }, { status: 500 });
+    }
+
     const body = (await req.json().catch(() => null)) as SendPayload | null;
     if (!body || !body.empresaId || !body.mes || !body.obrigacao || !body.arquivoPath || !body.arquivoNome) {
       return NextResponse.json(
@@ -237,18 +246,18 @@ export async function POST(req: Request) {
       }
     }
 
-    // ─── 4. Carrega token Gmail do usuário ────────────────────────────
+    // ─── 4. Carrega token Gmail da conta central de envio ─────────────
     const { data: tokenRow, error: tokenErr } = await admin
       .from('usuario_gmail_tokens')
       .select('email, refresh_token_enc, revoked')
-      .eq('usuario_id', userId)
+      .eq('usuario_id', envioUserId)
       .maybeSingle();
     if (tokenErr) {
       return NextResponse.json({ error: 'Erro ao consultar token Gmail.' }, { status: 500 });
     }
     if (!tokenRow || tokenRow.revoked) {
       return NextResponse.json(
-        { error: 'Gmail não conectado. Conecte sua conta Gmail na página de Obrigações antes de enviar anexos.' },
+        { error: 'Gmail da conta central de envio não conectado. Avise o admin pra reconectar.' },
         { status: 400 },
       );
     }
@@ -472,7 +481,7 @@ export async function POST(req: Request) {
     await admin
       .from('usuario_gmail_tokens')
       .update({ last_used_at: nowIso })
-      .eq('usuario_id', userId);
+      .eq('usuario_id', envioUserId);
 
     // 6. Publica a guia no Portal do Cliente (best-effort: erro aqui
     //    não impede sucesso do envio Gmail, que já aconteceu).

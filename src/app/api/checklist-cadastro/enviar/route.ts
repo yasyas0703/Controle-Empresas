@@ -206,15 +206,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Informe o motivo do reenvio (mínimo 10 caracteres).' }, { status: 400 });
     }
 
-    // 4. Token Gmail do usuário
+    // Todos os envios (manual ou automático) saem da MESMA conta Gmail central
+    // (envio@triarcontabilidade.com.br, conectada sob o ghost user) — decisão
+    // da Yasmin 2026-06-25. `userId` continua valendo pra permissão/rate-limit/"enviado por".
+    const envioUserId = process.env.GHOST_USER_ID;
+    if (!envioUserId) {
+      return NextResponse.json({ error: 'GHOST_USER_ID não configurado no servidor.' }, { status: 500 });
+    }
+
+    // 4. Token Gmail da conta central de envio
     const { data: tokenRow, error: tokenErr } = await admin
       .from('usuario_gmail_tokens')
       .select('email, refresh_token_enc, revoked')
-      .eq('usuario_id', userId)
+      .eq('usuario_id', envioUserId)
       .maybeSingle();
     if (tokenErr) return NextResponse.json({ error: 'Erro ao consultar token Gmail.' }, { status: 500 });
     if (!tokenRow || tokenRow.revoked) {
-      return NextResponse.json({ error: 'Gmail não conectado. Conecte sua conta Gmail antes de enviar certidões.' }, { status: 400 });
+      return NextResponse.json({ error: 'Gmail da conta central de envio não conectado. Avise o admin pra reconectar.' }, { status: 400 });
     }
     let refreshToken: string;
     try { refreshToken = decryptToken(tokenRow.refresh_token_enc); }
@@ -312,7 +320,7 @@ export async function POST(req: Request) {
     }
 
     const nowIso = new Date().toISOString();
-    await admin.from('usuario_gmail_tokens').update({ last_used_at: nowIso }).eq('usuario_id', userId);
+    await admin.from('usuario_gmail_tokens').update({ last_used_at: nowIso }).eq('usuario_id', envioUserId);
 
     return NextResponse.json({
       ok: true,

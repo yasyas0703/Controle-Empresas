@@ -179,6 +179,14 @@ export async function POST(req: Request) {
     }
     const userId = auth.userId;
 
+    // Todos os envios (manual ou automático) saem da MESMA conta Gmail central
+    // (envio@triarcontabilidade.com.br, conectada sob o ghost user) — decisão
+    // da Yasmin 2026-06-25. `userId` continua valendo pra permissão/rate-limit/"enviado por".
+    const envioUserId = process.env.GHOST_USER_ID;
+    if (!envioUserId) {
+      return NextResponse.json({ error: 'GHOST_USER_ID não configurado no servidor.' }, { status: 500 });
+    }
+
     const body = (await req.json().catch(() => null)) as SendPayload | null;
     if (!body || !body.empresaId || !body.mes || !body.obrigacao || !Array.isArray(body.arquivos) || body.arquivos.length === 0) {
       return NextResponse.json(
@@ -269,15 +277,15 @@ export async function POST(req: Request) {
       }
     }
 
-    // ─── 4. Token Gmail ────────────────────────────────────────────────
+    // ─── 4. Token Gmail da conta central de envio ─────────────────────
     const { data: tokenRow, error: tokenErr } = await admin
       .from('usuario_gmail_tokens')
       .select('email, refresh_token_enc, revoked')
-      .eq('usuario_id', userId)
+      .eq('usuario_id', envioUserId)
       .maybeSingle();
     if (tokenErr) return NextResponse.json({ error: 'Erro ao consultar token Gmail.' }, { status: 500 });
     if (!tokenRow || tokenRow.revoked) {
-      return NextResponse.json({ error: 'Gmail não conectado. Conecte na página de Obrigações.' }, { status: 400 });
+      return NextResponse.json({ error: 'Gmail da conta central de envio não conectado. Avise o admin pra reconectar.' }, { status: 400 });
     }
 
     let refreshToken: string;
@@ -413,7 +421,7 @@ export async function POST(req: Request) {
     }
 
     const nowIso = new Date().toISOString();
-    await admin.from('usuario_gmail_tokens').update({ last_used_at: nowIso }).eq('usuario_id', userId);
+    await admin.from('usuario_gmail_tokens').update({ last_used_at: nowIso }).eq('usuario_id', envioUserId);
 
     // 7. Sobe cada arquivo no portal_documentos (1 linha por arquivo)
     // Soft-delete envios anteriores ativos
