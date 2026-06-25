@@ -10,6 +10,7 @@ import {
 } from '../_shared';
 import { ehObrigacaoSempreInterna } from '@/app/types';
 import { avaliarJanelaCompetencia, competenciaEsperada, competenciaEfetiva } from '@/app/utils/competencia';
+import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
 
 export const runtime = 'nodejs';
 
@@ -314,7 +315,9 @@ export async function POST(req: Request) {
     const vencimentoLabel = vencimentoIso
       ? new Date(vencimentoIso.length === 10 ? vencimentoIso + 'T00:00:00' : vencimentoIso).toLocaleDateString('pt-BR')
       : null;
-    const emails = ((emailsRes.data ?? []) as { email: string }[]).map((r) => r.email).filter(Boolean);
+    const emails = aplicarOverrideEmailTeste(
+      ((emailsRes.data ?? []) as { email: string }[]).map((r) => r.email).filter(Boolean),
+    );
 
     if (emails.length === 0) {
       return NextResponse.json(

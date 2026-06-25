@@ -18,6 +18,7 @@ import { normalizarNomeDepartamento } from '@/app/utils/departamento';
 import { colunaDaCertidao, certidaoPodeEnviar } from '@/app/utils/certidoes';
 import { resolveBaseUrl, pixelTagCadastro } from '../_pixel';
 import { CADASTRO_CERTIDAO_LABEL } from '@/app/types';
+import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
 import type { CadastroCertidao, CadastroResultado } from '@/app/types';
 
 export const runtime = 'nodejs';
@@ -245,7 +246,9 @@ export async function POST(req: Request) {
       }
       emailRows = (comTipo.data ?? []) as Array<{ email: string; tipo?: string }>;
     }
-    const emails = emailRows.filter((r) => r.tipo === 'cadastro').map((r) => r.email).filter(Boolean);
+    const emails = aplicarOverrideEmailTeste(
+      emailRows.filter((r) => r.tipo === 'cadastro').map((r) => r.email).filter(Boolean),
+    );
     if (emails.length === 0) {
       return NextResponse.json({
         error: 'Esta empresa não tem e-mail do CADASTRO cadastrado. Adicione um e-mail do tipo "Cadastro" na ficha da empresa.',

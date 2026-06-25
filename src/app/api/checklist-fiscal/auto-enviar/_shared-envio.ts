@@ -13,6 +13,7 @@ import { sendPushToCliente } from '@/lib/webPush';
 import { vencimentoDoMes, vencimentoDoMesSn } from '@/app/utils/regrasVencimentosFiscais';
 import { ehObrigacaoSempreInterna } from '@/app/types';
 import { buscarResponsavelFiscal } from '@/lib/alertasAutoEnvio';
+import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
 
@@ -294,7 +295,9 @@ export async function enviarGuia(
     .eq('ativo', true)
     .eq('tipo', 'fiscal');
 
-  const emails = ((emailsRes ?? []) as Array<{ email: string }>).map((r) => r.email).filter(Boolean);
+  const emails = aplicarOverrideEmailTeste(
+    ((emailsRes ?? []) as Array<{ email: string }>).map((r) => r.email).filter(Boolean),
+  );
   if (emails.length === 0) {
     return { ok: false, motivo: 'sem_emails', erro: 'Empresa sem emails de cliente cadastrados.' };
   }

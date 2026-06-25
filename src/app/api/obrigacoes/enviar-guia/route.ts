@@ -5,6 +5,7 @@ import { getOAuthClient, decryptToken } from '@/lib/googleOAuth';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { getBearerToken } from '@/lib/apiAuth';
 import { checkRateLimit, isErroApi } from '../../checklist-fiscal/_shared';
+import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
 
 export const runtime = 'nodejs';
 
@@ -221,7 +222,9 @@ export async function POST(req: Request) {
       template_email_corpo?: string | null;
       notificar_cliente?: boolean;
     };
-    const emails = ((emailsRes.data ?? []) as { email: string }[]).map((r) => r.email).filter(Boolean);
+    const emails = aplicarOverrideEmailTeste(
+      ((emailsRes.data ?? []) as { email: string }[]).map((r) => r.email).filter(Boolean),
+    );
 
     if (emails.length === 0) {
       return NextResponse.json({ error: 'Empresa não tem emails cadastrados (ative no cadastro da empresa).' }, { status: 400 });

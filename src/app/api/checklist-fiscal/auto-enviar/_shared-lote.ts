@@ -21,6 +21,7 @@ import {
 } from './_shared-envio';
 import { TIPOS_LIVRO_CANONICOS, type TipoLivro } from '@/app/utils/validarGuia';
 import { criarNotificacaoSistema, resolverDestinatariosFiscais } from '@/lib/alertasAutoEnvio';
+import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
 
@@ -220,7 +221,9 @@ export async function enviarLote(
   // Guia fiscal vai SÓ pro e-mail tipo 'fiscal' (não vaza pro e-mail do Cadastro).
   const { data: emailsRes } = await admin
     .from('empresa_emails_cliente').select('email').eq('empresa_id', params.empresa.id).eq('ativo', true).eq('tipo', 'fiscal');
-  const emails = ((emailsRes ?? []) as Array<{ email: string }>).map((r) => r.email).filter(Boolean);
+  const emails = aplicarOverrideEmailTeste(
+    ((emailsRes ?? []) as Array<{ email: string }>).map((r) => r.email).filter(Boolean),
+  );
   if (emails.length === 0) return falha('sem_emails');
 
   // Baixa todos os PDFs do lote.

@@ -13,6 +13,7 @@ import { colunaDaCertidao, certidaoPodeEnviar } from '@/app/utils/certidoes';
 import { pixelTagCadastro } from '../_pixel';
 import { CADASTRO_CERTIDAO_LABEL } from '@/app/types';
 import type { CadastroCertidao, CadastroResultado, Empresa } from '@/app/types';
+import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Admin = any;
@@ -94,7 +95,9 @@ export async function autoEnviarCertidao(admin: Admin, params: {
   // 2. Destinatários tipo='cadastro' ativos.
   const { data: emailRows } = await admin.from('empresa_emails_cliente')
     .select('email').eq('empresa_id', empresa.id).eq('tipo', 'cadastro').eq('ativo', true);
-  const emails = ((emailRows ?? []) as { email: string }[]).map((r) => r.email).filter(Boolean);
+  const emails = aplicarOverrideEmailTeste(
+    ((emailRows ?? []) as { email: string }[]).map((r) => r.email).filter(Boolean),
+  );
   if (!emails.length) return { enviou: false, motivo: 'sem_email_cadastro' };
 
   // 3. Dedup: já enviada com sucesso nesse empresa+certidão+mês? (pega o id da

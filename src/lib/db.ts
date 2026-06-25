@@ -15,6 +15,9 @@ import type {
   ObrigacaoTipoData,
   ChecklistEnvioEvento,
   ChecklistDestinatarioDetalhe,
+} from '@/app/types';
+import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
+import {
   ChecklistFiscalItem,
   CadastroCertidao,
   CadastroResultado,
@@ -2897,7 +2900,9 @@ export async function prepararEnvioCadastro(empresaId: UUID): Promise<PrepararEn
     };
   }
   const emails = await fetchEmpresaEmailsCliente(empresaId, 'cadastro');
-  const destinatarios = emails.filter((e) => e.ativo).map((e) => e.email).filter(Boolean);
+  const destinatarios = aplicarOverrideEmailTeste(
+    emails.filter((e) => e.ativo).map((e) => e.email).filter(Boolean),
+  );
   if (destinatarios.length === 0) {
     return {
       ok: false,
@@ -3009,7 +3014,9 @@ export async function prepararEnvioChecklist(empresaId: UUID): Promise<PrepararE
     .eq('empresa_id', empresaId)
     .eq('ativo', true);
   if (emailErr) throw emailErr;
-  const destinatarios = ((emailRows ?? []) as { email: string }[]).map((r) => r.email).filter(Boolean);
+  const destinatarios = aplicarOverrideEmailTeste(
+    ((emailRows ?? []) as { email: string }[]).map((r) => r.email).filter(Boolean),
+  );
   if (destinatarios.length === 0) {
     return {
       ok: false,
