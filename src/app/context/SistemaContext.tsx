@@ -970,13 +970,13 @@ export function SistemaProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const mostrarAlerta = (title: string, message: string, type: AlertType) => {
+  const dismissAlert = useCallback((id: UUID) => setAlerts((prev) => prev.filter((a) => a.id !== id)), []);
+
+  const mostrarAlerta = useCallback((title: string, message: string, type: AlertType) => {
     const id = newId();
     setAlerts((prev) => [{ id, title, message, type }, ...prev].slice(0, 5));
     window.setTimeout(() => dismissAlert(id), 5000);
-  };
-
-  const dismissAlert = (id: UUID) => setAlerts((prev) => prev.filter((a) => a.id !== id));
+  }, [dismissAlert]);
 
   const getNotificationDestinatarios = useCallback((empresaId?: UUID | null) => {
     const destinatarios: UUID[] = [];
