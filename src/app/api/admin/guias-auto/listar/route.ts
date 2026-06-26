@@ -5,9 +5,16 @@
 //   - tipo=problemas|pendencias|todos (default: problemas)
 //     - problemas: guias_auto_problemas WHERE resolvido_em IS NULL
 //     - pendencias: guias_auto_processadas WHERE status IN (pendente_aprovacao_*)
-//     - todos: union de ambos
+//     - todos: union de ambos + trilha de auditoria (decisões)
 //   - limit (default 100, max 500)
 //   - empresaId (opcional)
+//
+// Trilha de auditoria ("decisões"): quando tipo=todos, retorna também quem
+// marcou-resolvido/ignorou/rejeitou cada item e o comentário que deixou —
+// pra responder "quem mexeu nisso e por quê" sem precisar de SQL direto.
+// Fica em guias_auto_problemas.resolvido_* / guias_auto_processadas.detalhes,
+// colunas que a tela de Histórico (/historico) não toca — não dá pra "sumir"
+// com essa trilha apagando um log ali.
 
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
@@ -69,8 +76,13 @@ export async function GET(req: Request) {
   const result: {
     problemas: Array<ProblemaRow & { empresa_nome: string | null; empresa_codigo: string | null }>;
     pendencias: Array<ProcessadoRow & { empresa_nome: string | null; empresa_codigo: string | null }>;
+    problemasResolvidos: Array<ProblemaRow & { empresa_nome: string | null; empresa_codigo: string | null }>;
+    pendenciasRejeitadas: Array<ProcessadoRow & { empresa_nome: string | null; empresa_codigo: string | null }>;
     contagens: { problemasPendentes: number; pendenciasAprovacao: number };
-  } = { problemas: [], pendencias: [], contagens: { problemasPendentes: 0, pendenciasAprovacao: 0 } };
+  } = {
+    problemas: [], pendencias: [], problemasResolvidos: [], pendenciasRejeitadas: [],
+    contagens: { problemasPendentes: 0, pendenciasAprovacao: 0 },
+  };
 
   if (tipo === 'problemas' || tipo === 'todos') {
     let query = admin
@@ -110,6 +122,41 @@ export async function GET(req: Request) {
         empresa_codigo: emp?.codigo ?? null,
       };
     });
+  }
+
+  if (tipo === 'todos') {
+    let queryResolvidos = admin
+      .from('guias_auto_problemas')
+      .select('*')
+      .not('resolvido_em', 'is', null)
+      .order('resolvido_em', { ascending: false })
+      .limit(limit);
+    if (empresaIdParam) queryResolvidos = queryResolvidos.eq('empresa_id', empresaIdParam);
+    const { data: resolvidosData, error: resolvidosErr } = await queryResolvidos;
+    if (!resolvidosErr) {
+      result.problemasResolvidos = ((resolvidosData ?? []) as ProblemaRow[]).map((p) => {
+        const emp = p.empresa_id ? empresasMap.get(p.empresa_id) : null;
+        return { ...p, empresa_nome: emp?.nome ?? null, empresa_codigo: emp?.codigo ?? null };
+      });
+    }
+
+    // Rejeitadas: marcadas com detalhes.motivo='rejeitada_admin' pela rota /acao
+    // (distingue de status='erro' por falha real de processamento).
+    let queryRejeitadas = admin
+      .from('guias_auto_processadas')
+      .select('*')
+      .eq('status', 'erro')
+      .contains('detalhes', { motivo: 'rejeitada_admin' })
+      .order('processado_em', { ascending: false })
+      .limit(limit);
+    if (empresaIdParam) queryRejeitadas = queryRejeitadas.eq('empresa_id', empresaIdParam);
+    const { data: rejeitadasData, error: rejeitadasErr } = await queryRejeitadas;
+    if (!rejeitadasErr) {
+      result.pendenciasRejeitadas = ((rejeitadasData ?? []) as ProcessadoRow[]).map((p) => {
+        const emp = p.empresa_id ? empresasMap.get(p.empresa_id) : null;
+        return { ...p, empresa_nome: emp?.nome ?? null, empresa_codigo: emp?.codigo ?? null };
+      });
+    }
   }
 
   // Contagens sempre — pra badge no menu mesmo quando filtra por empresa

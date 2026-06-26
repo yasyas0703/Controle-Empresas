@@ -38,6 +38,9 @@ interface Problema {
   competencia_parseada: string | null;
   obrigacao_parseada: string | null;
   criado_em: string | null;
+  resolvido_em: string | null;
+  resolvido_por_nome: string | null;
+  resolucao: string | null;
 }
 
 interface Pendencia {
@@ -57,6 +60,8 @@ interface Pendencia {
 interface Resposta {
   problemas: Problema[];
   pendencias: Pendencia[];
+  problemasResolvidos: Problema[];
+  pendenciasRejeitadas: Pendencia[];
   contagens: { problemasPendentes: number; pendenciasAprovacao: number };
 }
 
@@ -193,7 +198,7 @@ export default function AutoProblemasPage() {
   const { canManage, authReady, mostrarAlerta } = useSistema();
   const [data, setData] = useState<Resposta | null>(null);
   const [loading, setLoading] = useState(false);
-  const [aba, setAba] = useState<'problemas' | 'pendencias'>('problemas');
+  const [aba, setAba] = useState<'problemas' | 'pendencias' | 'decisoes'>('problemas');
   const [acaoEmAndamento, setAcaoEmAndamento] = useState<string | null>(null);
   const [modal, setModal] = useState<{ tipo: 'ignorar' | 'rejeitar'; id: string; nome: string } | null>(null);
   const [comentario, setComentario] = useState('');
@@ -329,6 +334,46 @@ export default function AutoProblemasPage() {
   const cntProblemas = data?.contagens.problemasPendentes ?? 0;
   const cntPendencias = data?.contagens.pendenciasAprovacao ?? 0;
 
+  // Trilha de decisões: une resolvidos/ignorados (guias_auto_problemas) e
+  // rejeitados (guias_auto_processadas), ordenado por data da decisão.
+  type Decisao = {
+    id: string;
+    quando: string | null;
+    nomeArquivo: string;
+    empresaLabel: string;
+    tipo: 'ignorado' | 'resolvido' | 'rejeitado';
+    porNome: string;
+    motivo: string;
+  };
+  const decisoes: Decisao[] = [
+    ...(data?.problemasResolvidos ?? []).map((p): Decisao => {
+      const ignorado = (p.resolucao ?? '').startsWith('[IGNORADO]');
+      return {
+        id: p.id,
+        quando: p.resolvido_em,
+        nomeArquivo: p.nome_arquivo,
+        empresaLabel: p.empresa_nome
+          ? `${p.empresa_codigo ?? '—'} · ${p.empresa_nome}`
+          : p.empresa_nome_pasta ? `(pasta T:\\) ${p.empresa_nome_pasta}` : '(empresa desconhecida)',
+        tipo: ignorado ? 'ignorado' : 'resolvido',
+        porNome: p.resolvido_por_nome ?? '—',
+        motivo: ignorado ? (p.resolucao ?? '').replace('[IGNORADO] ', '') : (p.resolucao ?? '—'),
+      };
+    }),
+    ...(data?.pendenciasRejeitadas ?? []).map((p): Decisao => {
+      const det = (p.detalhes ?? {}) as Record<string, unknown>;
+      return {
+        id: p.id,
+        quando: typeof det.rejeitada_em === 'string' ? det.rejeitada_em : p.processado_em,
+        nomeArquivo: p.nome_arquivo,
+        empresaLabel: p.empresa_nome ? `${p.empresa_codigo ?? '—'} · ${p.empresa_nome}` : '(empresa desconhecida)',
+        tipo: 'rejeitado',
+        porNome: typeof det.rejeitada_por_nome === 'string' ? det.rejeitada_por_nome : '—',
+        motivo: typeof det.comentario === 'string' ? det.comentario : '—',
+      };
+    }),
+  ].sort((a, b) => (b.quando ?? '').localeCompare(a.quando ?? ''));
+
   return (
     <div className="p-4 sm:p-6 space-y-4">
       <FiscalTabs />
@@ -432,6 +477,16 @@ export default function AutoProblemasPage() {
               {cntPendencias}
             </span>
           )}
+        </button>
+        <button
+          onClick={() => setAba('decisoes')}
+          className={`flex items-center gap-2 rounded-[var(--radius)] px-3 py-1.5 text-xs font-semibold transition-colors ${
+            aba === 'decisoes'
+              ? 'bg-[var(--surface-1)] text-[var(--text-1)] shadow-sm'
+              : 'text-[var(--text-2)] hover:text-[var(--text-1)]'
+          }`}
+        >
+          <CheckCircle2 size={14} /> Decisões (quem resolveu/rejeitou)
         </button>
       </div>
 
@@ -590,6 +645,52 @@ export default function AutoProblemasPage() {
                           <XCircle size={12} /> Rejeitar
                         </button>
                       </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Conteúdo aba decisões — trilha de auditoria: quem resolveu/ignorou/
+          rejeitou cada item e o motivo que deixou. Vem direto das colunas
+          resolvido_* / detalhes da tabela de origem, não da tela de Histórico
+          (/historico) — então não desaparece se alguém limpar logs ali. */}
+      {aba === 'decisoes' && (
+        <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-1)] overflow-hidden">
+          {decisoes.length === 0 ? (
+            <div className="p-10 text-center text-[var(--text-2)] flex flex-col items-center gap-2">
+              <CheckCircle2 size={28} className="text-emerald-500" />
+              <p className="text-sm">Nenhuma decisão registrada ainda.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-[var(--border)]">
+              {decisoes.map((d) => {
+                const badge = d.tipo === 'rejeitado'
+                  ? { label: 'Rejeitada', cls: 'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900', Icon: XCircle }
+                  : d.tipo === 'ignorado'
+                    ? { label: 'Ignorado', cls: 'text-[var(--text-2)] bg-[var(--surface-2)] border-[var(--border)]', Icon: X }
+                    : { label: 'Resolvido', cls: 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900', Icon: CheckCircle2 };
+                return (
+                  <div key={`${d.tipo}-${d.id}`} className="p-4">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`inline-flex items-center gap-1 text-[11px] font-semibold rounded-md px-2 py-0.5 border ${badge.cls}`}>
+                        <badge.Icon size={11} /> {badge.label}
+                      </span>
+                      <span className="text-[11px] text-[var(--text-3)]">{formatData(d.quando)}</span>
+                    </div>
+                    <div className="mt-1.5 text-sm font-medium text-[var(--text-1)] flex items-center gap-1.5">
+                      <FileText size={13} className="text-[var(--text-3)] shrink-0" />
+                      <span className="truncate">{d.nomeArquivo}</span>
+                    </div>
+                    <div className="mt-0.5 text-xs text-[var(--text-2)]">{d.empresaLabel}</div>
+                    <div className="mt-0.5 text-xs text-[var(--text-2)]">
+                      por <span className="font-semibold text-[var(--text-1)]">{d.porNome}</span>
+                    </div>
+                    <div className="mt-2 text-xs text-[var(--text-2)] bg-[var(--surface-2)] border border-[var(--border)] rounded-md p-2">
+                      <strong className="text-[var(--text-1)]">Motivo:</strong> {d.motivo}
                     </div>
                   </div>
                 );
