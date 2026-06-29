@@ -26,6 +26,8 @@
 //   - Pra cada PDF novo: calcula SHA-256, faz POST multipart pra API
 //   - APÓS a resposta, MOVE o arquivo:
 //       enviado/interno_marcado_feito → T:/Fiscal/EMPRESA/<EMPRESA>/<REGIME>/<ANO>/
+//       ja_processado/duplicado_periodo (guia repetida, já enviada antes)
+//                                     → T:/Fiscal/1-GUIAS A ENVIAR/_JA-ENVIADAS/
 //       qualquer outro status        → T:/Fiscal/1-GUIAS A ENVIAR/_PENDENTES/
 //   - State local em scripts/.watcher-state.json evita re-POST; o servidor também
 //     faz idempotência por hash (defesa em profundidade).
@@ -66,6 +68,10 @@ const T_ROOT = process.env.FISCAL_ROOT || 'T:\\Fiscal\\EMPRESA';
 const NOME_PASTA_ENTRADA = '1-GUIAS A ENVIAR';
 const PASTA_ENTRADA = process.env.PASTA_GUIAS_ENVIAR || resolve(dirname(T_ROOT), NOME_PASTA_ENTRADA);
 const PASTA_PENDENTES = resolve(PASTA_ENTRADA, '_PENDENTES');
+// Guia repetida (mesmo PDF jogado de novo na entrada depois de já ter sido
+// enviada) NÃO é pendência — não precisa de ação de ninguém. Pasta separada
+// pra não misturar com erro/aprovação real em _PENDENTES.
+const PASTA_JA_ENVIADAS = resolve(PASTA_ENTRADA, '_JA-ENVIADAS');
 
 // Interessa: PDF na pasta de entrada que NÃO esteja numa subpasta "_" (ex: _PENDENTES).
 function pathInteressa(caminho) {
@@ -334,6 +340,26 @@ function moverParaPendentes(caminho) {
   }
 }
 
+// Guia repetida (já foi enviada antes — mesmo hash/competência). Sai da
+// entrada sem virar pendência: ninguém precisa agir, só não pode confundir
+// com erro/aprovação real.
+function moverParaJaEnviadas(caminho) {
+  try {
+    mkdirSync(PASTA_JA_ENVIADAS, { recursive: true });
+  } catch {
+    // se nem a pasta dá pra criar, deixa o arquivo onde está
+  }
+  const alvo = caminhoSemColisao(PASTA_JA_ENVIADAS, basename(caminho));
+  try {
+    renameSync(caminho, alvo);
+    log.info(`Repetida (já enviada antes) — movida pra _JA-ENVIADAS: ${basename(alvo)}`);
+    return true;
+  } catch (err) {
+    log.err(`Falha ao mover ${basename(caminho)} pra _JA-ENVIADAS: ${err.message}`);
+    return false;
+  }
+}
+
 // Erros do Windows quando o arquivo está ABERTO/travado (visualizador de PDF,
 // antivírus, handle do chokidar ainda segurando). Não é falha de envio — o
 // arquivo só não pode ser MOVIDO enquanto está aberto.
@@ -409,7 +435,12 @@ async function moverConformeResultado(caminho, resultado) {
   if (enviou && resultado.destino) {
     return await arquivarNaEmpresa(caminho, resultado.destino);
   }
-  // pendente_*, erro, duplicado_periodo, ja_processado → sai da entrada
+  // Repetida (servidor já tinha esse hash/competência enviado antes) — não é
+  // pendência, vai pra _JA-ENVIADAS.
+  if (resultado.status === 'ja_processado' || resultado.status === 'duplicado_periodo') {
+    return moverParaJaEnviadas(caminho);
+  }
+  // pendente_*, erro → sai da entrada pra _PENDENTES (precisa de ação)
   return moverParaPendentes(caminho);
 }
 
@@ -537,8 +568,12 @@ function varrerEntrada() {
     if (st && st.status === 'dry_run') continue;
 
     if (st && SKIP_STATUSES.has(st.status)) {
-      // Desfecho terminal: só re-tenta a MOVIMENTAÇÃO presa (nunca reenvia).
-      if (st.arquivado === false && st.destino) enfileirar(caminho);
+      // Desfecho terminal: nunca reenvia, mas o arquivo ainda está aqui — ou é
+      // arquivamento preso (PDF aberto, re-tenta SÓ mover) ou é cópia repetida
+      // que chegou sem disparar o evento do chokidar (ex: watcher reiniciado).
+      // Em ambos os casos, enfileira: processarArquivo decide (retry de move
+      // ou _JA-ENVIADAS) sem nunca reenviar pra API.
+      enfileirar(caminho);
       continue;
     }
 
@@ -693,7 +728,14 @@ async function processarArquivo(caminho) {
         stEntry.destino = null;
         salvarStateDebounced();
       }
+      return;
     }
+    // Já tinha saído da entrada antes (arquivado/movido) e esse arquivo físico
+    // é uma SEGUNDA cópia que alguém jogou de novo na entrada (mesmo nome,
+    // mesmo conteúdo). Antes ficava esquecida aqui sem mover — agora some pra
+    // _JA-ENVIADAS em vez de confundir quem olha a pasta.
+    log.skip(`Repetida (já teve desfecho "${stEntry.status}" antes): ${basename(caminho)}`);
+    moverParaJaEnviadas(caminho);
     return;
   }
 
@@ -892,6 +934,7 @@ function imprimirCabecalho() {
   console.log(`  Entrada:     ${PASTA_ENTRADA}`);
   console.log(`  Arquiva em:  ${T_ROOT}\\<EMPRESA>\\<REGIME>\\<ANO>\\`);
   console.log(`  Pendências:  ${PASTA_PENDENTES}`);
+  console.log(`  Repetidas:   ${PASTA_JA_ENVIADAS}`);
   console.log(`  API:         ${API_URL}`);
   console.log(`  Token:       ${TOKEN.slice(0, 8)}...${TOKEN.slice(-4)}`);
   console.log(`  State:       ${STATE_FILE}`);
