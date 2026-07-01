@@ -3007,12 +3007,15 @@ export async function prepararEnvioChecklist(empresaId: UUID): Promise<PrepararE
     };
   }
 
-  // 2. Emails ativos da empresa
+  // 2. Emails FISCAIS ativos da empresa — a guia fiscal só vai pro tipo='fiscal'
+  //    (mesmo filtro do envio real em /enviar-anexo). Sem o filtro, o pré-check
+  //    contaria e-mail de cadastro e exibiria destinatário que o envio não usa.
   const { data: emailRows, error: emailErr } = await supabase
     .from('empresa_emails_cliente')
     .select('email')
     .eq('empresa_id', empresaId)
-    .eq('ativo', true);
+    .eq('ativo', true)
+    .eq('tipo', 'fiscal');
   if (emailErr) throw emailErr;
   const destinatarios = aplicarOverrideEmailTeste(
     ((emailRows ?? []) as { email: string }[]).map((r) => r.email).filter(Boolean),
