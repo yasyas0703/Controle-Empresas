@@ -28,6 +28,7 @@ import {
   obrigacaoSnAplicaParaEmpresa,
 } from '@/app/utils/regrasVencimentosFiscais';
 import { daysUntil } from '@/app/utils/date';
+import { ehEmpresaHistorica } from '@/app/utils/empresaHistorica';
 
 export const runtime = 'nodejs';
 
@@ -101,7 +102,7 @@ export async function GET(req: Request) {
 
   const [{ data: empresasData }, { data: respData }, { data: usuariosData }, { data: checklistData }, { data: overridesData }, { data: configData }] =
     await Promise.all([
-      admin.from('empresas').select('id, codigo, apelido, razao_social, estado, cidade').neq('cadastrada', false),
+      admin.from('empresas').select('id, codigo, apelido, razao_social, estado, cidade, desligada_em, tags').neq('cadastrada', false),
       fiscalDeptIds.length
         ? admin.from('responsaveis').select('empresa_id, departamento_id, usuario_id').in('departamento_id', fiscalDeptIds)
         : Promise.resolve({ data: [] }),
@@ -111,8 +112,13 @@ export async function GET(req: Request) {
       admin.from('empresa_obrigacoes_config').select('empresa_id, obrigacao, ativa, nao_envia_cliente'),
     ]);
 
-  type EmpresaRow = { id: string; codigo: string; apelido: string | null; razao_social: string | null; estado: string | null; cidade: string | null };
-  const empresas = (empresasData ?? []) as EmpresaRow[];
+  type EmpresaRow = { id: string; codigo: string; apelido: string | null; razao_social: string | null; estado: string | null; cidade: string | null; desligada_em: string | null; tags: string[] | null };
+  // Exclui empresas históricas (desligadas, arquivadas, código reciclado) — mesma
+  // regra do dashboard/vencimentos. Sem isto, empresa desligada (ex.: DODAVI) que
+  // ainda tem responsável fiscal vazava pro alerta de "guias vencendo".
+  const empresas = ((empresasData ?? []) as EmpresaRow[]).filter(
+    (e) => !ehEmpresaHistorica({ desligada_em: e.desligada_em, tags: e.tags ?? [], codigo: e.codigo, apelido: e.apelido ?? undefined }),
+  );
 
   const usuarioDeptoPorId = new Map<string, string | null>();
   for (const u of (usuariosData ?? []) as { id: string; departamento_id: string | null }[]) {
