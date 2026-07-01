@@ -22,6 +22,7 @@ import {
 import { TIPOS_LIVRO_CANONICOS, type TipoLivro } from '@/app/utils/validarGuia';
 import { criarNotificacaoSistema, resolverDestinatariosFiscais } from '@/lib/alertasAutoEnvio';
 import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
+import { formatarRemetente } from '@/lib/remetente';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Empresa } from '@/app/types';
 
@@ -59,7 +60,7 @@ function buildMimeMulti(params: {
   const boundary = `----=_Part_${randomUUID().slice(0, 12)}`;
   const altBoundary = `----=_Alt_${randomUUID().slice(0, 12)}`;
   const headers = [
-    `From: ${stripCrlf(params.from)}`,
+    `From: ${formatarRemetente(params.from)}`,
     `To: ${params.to.map(stripCrlf).join(', ')}`,
     `Subject: ${encodeRfc2047(params.subject)}`,
     'MIME-Version: 1.0',

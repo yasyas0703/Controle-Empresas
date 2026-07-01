@@ -22,6 +22,7 @@ import {
 import { ehObrigacaoSempreInterna } from '@/app/types';
 import { avaliarJanelaCompetencia, competenciaEsperada } from '@/app/utils/competencia';
 import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
+import { formatarRemetente } from '@/lib/remetente';
 
 export const runtime = 'nodejs';
 
@@ -117,7 +118,7 @@ function buildMimeMulti(params: {
   const altBoundary = `----=_Alt_${Math.random().toString(36).slice(2)}_${Date.now()}`;
 
   const headers = [
-    `From: ${stripCrlf(params.from)}`,
+    `From: ${formatarRemetente(params.from)}`,
     `To: ${params.to.map(stripCrlf).join(', ')}`,
     `Subject: ${encodeRfc2047(params.subject)}`,
     'MIME-Version: 1.0',

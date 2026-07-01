@@ -14,6 +14,7 @@ import { pixelTagCadastro } from '../_pixel';
 import { CADASTRO_CERTIDAO_LABEL } from '@/app/types';
 import type { CadastroCertidao, CadastroResultado, Empresa } from '@/app/types';
 import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
+import { formatarRemetente } from '@/lib/remetente';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Admin = any;
@@ -46,7 +47,7 @@ function buildMime(params: {
   const boundary = `----=_Part_${Math.random().toString(36).slice(2)}_${Date.now()}`;
   const altBoundary = `----=_Alt_${Math.random().toString(36).slice(2)}_${Date.now()}`;
   const headers = [
-    `From: ${stripCrlf(params.from)}`,
+    `From: ${formatarRemetente(params.from)}`,
     `To: ${params.to.map(stripCrlf).join(', ')}`,
     `Subject: ${encodeRfc2047(params.subject)}`,
     'MIME-Version: 1.0',

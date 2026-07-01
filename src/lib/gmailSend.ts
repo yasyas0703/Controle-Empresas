@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import { getOAuthClient, decryptToken } from '@/lib/googleOAuth';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { formatarRemetente } from './remetente';
 
 /**
  * Strip de CRLF de qualquer valor que vai pra header de email. Sem isso,
@@ -31,9 +32,8 @@ function buildSimpleMime(params: {
   // Sanitiza CRLF em TODOS os campos do header — defesa contra
   // CRLF injection (ex: razao_social com `\r\nBcc:` injetaria Bcc).
   const safeTo = params.to.map(stripCrlf).join(', ');
-  const safeFrom = stripCrlf(params.from);
   const headers = [
-    `From: ${safeFrom}`,
+    `From: ${formatarRemetente(params.from)}`,
     `To: ${safeTo}`,
     `Subject: ${encodeRfc2047(params.subject)}`,
     'MIME-Version: 1.0',
