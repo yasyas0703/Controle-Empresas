@@ -841,7 +841,7 @@ function CardObrigacao({ linha, preview, onAcao, onDetalhes }: CardObrigacaoProp
           <div className="flex items-center gap-1.5 mb-1">
             <span className={`inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded-md border px-1.5 py-0.5 ${stateStyles.badgeBg}`}>
               {stateStyles.icon}
-              {inativa ? 'Inativa' : enviada ? 'Enviada' : naoEnviaCliente ? 'Interna' : 'Pendente'}
+              {inativa ? 'Inativa' : enviada ? (naoEnviaCliente ? 'Concluída' : 'Enviada') : naoEnviaCliente ? 'Interna' : 'Pendente'}
             </span>
           </div>
           <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate" title={fiscal.nome}>
