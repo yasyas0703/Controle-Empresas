@@ -19,7 +19,7 @@ import {
   autenticarRequest, assertPodeEnviar, checkRateLimit, buscarEnvioAnterior,
   validarPdfNoServidor, carregarEmpresaCompleta, getSupabaseAdmin, isErroApi,
 } from '../_shared';
-import { ehObrigacaoSempreInterna } from '@/app/types';
+import { ehObrigacaoSempreInterna, tipoEmailDaObrigacao } from '@/app/types';
 import { avaliarJanelaCompetencia, competenciaEsperada } from '@/app/utils/competencia';
 import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
 import { formatarRemetente } from '@/lib/remetente';
@@ -300,8 +300,8 @@ export async function POST(req: Request) {
     // 5. Empresa completa + emails + role do user (pra forçar)
     const [empresaResult, emailsRes, userRoleRes] = await Promise.all([
       carregarEmpresaCompleta(admin, body.empresaId),
-      // Guia fiscal vai SÓ pro e-mail tipo 'fiscal' (não vaza pro e-mail do Cadastro).
-      admin.from('empresa_emails_cliente').select('email').eq('empresa_id', body.empresaId).eq('ativo', true).eq('tipo', 'fiscal'),
+      // Cada obrigação vai pro seu tipo: LIVROS FISCAIS → 'livros_fiscais'; guias → 'fiscal'.
+      admin.from('empresa_emails_cliente').select('email').eq('empresa_id', body.empresaId).eq('ativo', true).eq('tipo', tipoEmailDaObrigacao(body.obrigacao)),
       admin.from('usuarios').select('role').eq('id', userId).maybeSingle(),
     ]);
     if (isErroApi(empresaResult)) {

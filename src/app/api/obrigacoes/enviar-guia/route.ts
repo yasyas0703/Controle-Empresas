@@ -7,6 +7,7 @@ import { getBearerToken } from '@/lib/apiAuth';
 import { checkRateLimit, isErroApi } from '../../checklist-fiscal/_shared';
 import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
 import { formatarRemetente } from '@/lib/remetente';
+import { tipoEmailDaObrigacao } from '@/app/types';
 
 export const runtime = 'nodejs';
 
@@ -197,12 +198,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Falha ao decodificar token Gmail. Reconecte.' }, { status: 500 });
     }
 
-    // 2. Carrega empresa, obrigação e emails
-    const [empresaRes, obrigacaoRes, emailsRes] = await Promise.all([
+    // 2. Carrega empresa e obrigação. Os e-mails são buscados depois, porque o
+    //    tipo de destinatário depende do NOME da obrigação (LIVROS FISCAIS vai
+    //    pro tipo 'livros_fiscais'; demais guias, pro 'fiscal').
+    const [empresaRes, obrigacaoRes] = await Promise.all([
       admin.from('empresas').select('id, codigo, razao_social, apelido, cnpj').eq('id', body.empresaId).maybeSingle(),
       admin.from('obrigacoes').select('id, nome, codigo, template_email_assunto, template_email_corpo, notificar_cliente').eq('id', body.obrigacaoId).maybeSingle(),
-      // Guia fiscal vai SÓ pro e-mail tipo 'fiscal' (não vaza pro e-mail do Cadastro).
-      admin.from('empresa_emails_cliente').select('email').eq('empresa_id', body.empresaId).eq('ativo', true).eq('tipo', 'fiscal'),
     ]);
 
     if (empresaRes.error || !empresaRes.data) {
@@ -210,9 +211,6 @@ export async function POST(req: Request) {
     }
     if (obrigacaoRes.error || !obrigacaoRes.data) {
       return NextResponse.json({ error: 'Obrigação não encontrada.' }, { status: 404 });
-    }
-    if (emailsRes.error) {
-      return NextResponse.json({ error: 'Erro ao consultar emails da empresa.' }, { status: 500 });
     }
 
     const empresa = empresaRes.data as { codigo: string; razao_social?: string | null; apelido?: string | null; cnpj?: string | null };
@@ -223,6 +221,14 @@ export async function POST(req: Request) {
       template_email_corpo?: string | null;
       notificar_cliente?: boolean;
     };
+
+    // Destinatários pelo tipo da obrigação (não vaza pro e-mail do Cadastro nem
+    // mistura livros com guias).
+    const emailsRes = await admin.from('empresa_emails_cliente').select('email')
+      .eq('empresa_id', body.empresaId).eq('ativo', true).eq('tipo', tipoEmailDaObrigacao(obrigacao.nome));
+    if (emailsRes.error) {
+      return NextResponse.json({ error: 'Erro ao consultar emails da empresa.' }, { status: 500 });
+    }
     const emails = aplicarOverrideEmailTeste(
       ((emailsRes.data ?? []) as { email: string }[]).map((r) => r.email).filter(Boolean),
     );

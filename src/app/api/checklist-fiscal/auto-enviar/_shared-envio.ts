@@ -16,7 +16,7 @@ import { buscarResponsavelFiscal } from '@/lib/alertasAutoEnvio';
 import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
 import { formatarRemetente } from '@/lib/remetente';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Empresa } from '@/app/types';
+import { tipoEmailDaObrigacao, type Empresa } from '@/app/types';
 
 const BUCKET_DOCUMENTOS = 'documentos';
 const BUCKET_PORTAL = 'portal-documentos';
@@ -290,13 +290,14 @@ export async function enviarGuia(
     return { ok: false, motivo: 'gmail_nao_conectado', erro: 'Falha ao decodificar token Gmail.' };
   }
 
-  // 2. Emails da empresa — guia fiscal vai SÓ pro tipo 'fiscal' (não vaza pro Cadastro).
+  // 2. Emails da empresa — cada obrigação vai pro seu tipo: LIVROS FISCAIS →
+  //    'livros_fiscais'; demais guias → 'fiscal' (nunca vaza pro Cadastro).
   const { data: emailsRes } = await admin
     .from('empresa_emails_cliente')
     .select('email')
     .eq('empresa_id', params.empresa.id)
     .eq('ativo', true)
-    .eq('tipo', 'fiscal');
+    .eq('tipo', tipoEmailDaObrigacao(params.obrigacao));
 
   const emails = aplicarOverrideEmailTeste(
     ((emailsRes ?? []) as Array<{ email: string }>).map((r) => r.email).filter(Boolean),

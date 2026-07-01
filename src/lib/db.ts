@@ -4084,7 +4084,8 @@ function toEmpresaEmailCliente(row: EmpresaEmailRow): EmpresaEmailCliente {
     rotulo: row.rotulo ?? undefined,
     // Coluna `tipo` só existe após a migration supabase-migration-checklist-cadastro.sql.
     // Sem ela, todo e-mail é tratado como 'fiscal' (comportamento original).
-    tipo: row.tipo === 'cadastro' ? 'cadastro' : 'fiscal',
+    // 'livros_fiscais' vem da migration supabase-migration-email-livros-fiscais.sql.
+    tipo: row.tipo === 'cadastro' ? 'cadastro' : row.tipo === 'livros_fiscais' ? 'livros_fiscais' : 'fiscal',
     principal: row.principal,
     ativo: row.ativo,
     criadoEm: toIso(row.criado_em),

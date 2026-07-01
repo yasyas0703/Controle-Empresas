@@ -24,7 +24,7 @@ import { criarNotificacaoSistema, resolverDestinatariosFiscais } from '@/lib/ale
 import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
 import { formatarRemetente } from '@/lib/remetente';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Empresa } from '@/app/types';
+import { tipoEmailDaObrigacao, type Empresa } from '@/app/types';
 
 const BUCKET_DOCUMENTOS = 'documentos';
 const BUCKET_PORTAL = 'portal-documentos';
@@ -219,9 +219,11 @@ export async function enviarLote(
   let refreshToken: string;
   try { refreshToken = decryptToken(tokenRow.refresh_token_enc); } catch { return falha('gmail_nao_conectado'); }
 
-  // Guia fiscal vai SÓ pro e-mail tipo 'fiscal' (não vaza pro e-mail do Cadastro).
+  // Livros fiscais vão SÓ pro e-mail tipo 'livros_fiscais' (separado das guias e
+  // do Cadastro). Sem e-mail desse tipo cadastrado, cai em 'sem_emails' e bloqueia.
   const { data: emailsRes } = await admin
-    .from('empresa_emails_cliente').select('email').eq('empresa_id', params.empresa.id).eq('ativo', true).eq('tipo', 'fiscal');
+    .from('empresa_emails_cliente').select('email').eq('empresa_id', params.empresa.id).eq('ativo', true)
+    .eq('tipo', tipoEmailDaObrigacao(OBRIGACAO_LIVROS));
   const emails = aplicarOverrideEmailTeste(
     ((emailsRes ?? []) as Array<{ email: string }>).map((r) => r.email).filter(Boolean),
   );

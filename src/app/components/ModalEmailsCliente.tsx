@@ -11,6 +11,7 @@ import {
   createEmpresaEmailCliente,
   deleteEmpresaEmailCliente,
   fetchEmpresaEmailsCliente,
+  fetchEmpresaObrigacoesConfig,
   updateEmpresaEmailCliente,
 } from '@/lib/db';
 import type { Empresa, EmpresaEmailCliente, EmpresaEmailTipo, UUID } from '@/app/types';
@@ -31,7 +32,7 @@ interface FormState {
 
 const EMPTY_FORM: FormState = { email: '', rotulo: '', tipo: 'fiscal', principal: false };
 
-const TIPO_LABEL: Record<EmpresaEmailTipo, string> = { fiscal: 'Fiscal', cadastro: 'Cadastro' };
+const TIPO_LABEL: Record<EmpresaEmailTipo, string> = { fiscal: 'Fiscal', cadastro: 'Cadastro', livros_fiscais: 'Livros Fiscais' };
 
 function isEmailValido(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
@@ -46,13 +47,28 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
   const [editId, setEditId] = useState<UUID | null>(null);
   const [editForm, setEditForm] = useState<FormState>(EMPTY_FORM);
   const [confirmDelete, setConfirmDelete] = useState<EmpresaEmailCliente | null>(null);
+  // A opção de e-mail "Livros Fiscais" só existe pra empresas que têm a obrigação
+  // LIVROS FISCAIS ativa (senão não faz sentido cadastrar destinatário pra ela).
+  const [temLivrosFiscais, setTemLivrosFiscais] = useState(false);
+
+  const tiposDisponiveis = useMemo<EmpresaEmailTipo[]>(
+    () => (temLivrosFiscais ? ['fiscal', 'cadastro', 'livros_fiscais'] : ['fiscal', 'cadastro']),
+    [temLivrosFiscais]
+  );
 
   useEffect(() => {
     if (!isOpen) return;
     let cancelado = false;
     setLoading(true);
-    fetchEmpresaEmailsCliente(empresa.id)
-      .then((lista) => { if (!cancelado) setEmails(lista); })
+    Promise.all([
+      fetchEmpresaEmailsCliente(empresa.id),
+      fetchEmpresaObrigacoesConfig(empresa.id).catch(() => []),
+    ])
+      .then(([lista, configs]) => {
+        if (cancelado) return;
+        setEmails(lista);
+        setTemLivrosFiscais(configs.some((c) => c.obrigacao === 'LIVROS FISCAIS' && c.ativa));
+      })
       .catch((err) => {
         console.error(err);
         mostrarAlerta('Erro', 'Não foi possível carregar os e-mails.', 'erro');
@@ -255,7 +271,7 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
                 <label className="inline-flex items-center gap-2 text-xs text-[var(--text-2)]">
                   <span className="font-semibold">Tipo:</span>
                   <div className="inline-flex rounded-md border border-[var(--border)] overflow-hidden">
-                    {(['fiscal', 'cadastro'] as EmpresaEmailTipo[]).map((t) => (
+                    {tiposDisponiveis.map((t) => (
                       <button
                         key={t}
                         type="button"
@@ -282,6 +298,7 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
               </div>
               <p className="mt-2 text-[11px] text-[var(--text-3)]">
                 <strong>Fiscal</strong> recebe as guias. <strong>Cadastro</strong> recebe as certidões (Controle Cadastro).
+                {temLivrosFiscais && <> <strong>Livros Fiscais</strong> recebe só os livros — e-mail separado das guias.</>}
               </p>
             </div>
           )}
@@ -326,8 +343,11 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
                           onChange={(e) => setEditForm({ ...editForm, tipo: e.target.value as EmpresaEmailTipo })}
                           className="ct-input sm:col-span-2"
                         >
-                          <option value="fiscal">Fiscal</option>
-                          <option value="cadastro">Cadastro</option>
+                          {/* Mostra 'Livros Fiscais' se a empresa tem a obrigação OU se este
+                              e-mail já é desse tipo (não some ao editar um legado). */}
+                          {(temLivrosFiscais ? tiposDisponiveis : Array.from(new Set([...tiposDisponiveis, editForm.tipo]))).map((t) => (
+                            <option key={t} value={t}>{TIPO_LABEL[t]}</option>
+                          ))}
                         </select>
                         <label className="sm:col-span-2 inline-flex items-center gap-1 text-[11px] text-[var(--text-2)] cursor-pointer">
                           <input
@@ -363,7 +383,9 @@ export default function ModalEmailsCliente({ isOpen, onClose, empresa, zIndex }:
                           <div className="ct-num text-sm text-gray-900 flex items-center gap-2 flex-wrap">
                             <span className="truncate">{item.email}</span>
                             <span className={`inline-flex items-center text-[10px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 ${
-                              item.tipo === 'cadastro' ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700'
+                              item.tipo === 'cadastro' ? 'bg-sky-100 text-sky-700'
+                                : item.tipo === 'livros_fiscais' ? 'bg-amber-100 text-amber-700'
+                                : 'bg-violet-100 text-violet-700'
                             }`}>
                               {TIPO_LABEL[item.tipo]}
                             </span>

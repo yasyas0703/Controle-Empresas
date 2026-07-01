@@ -672,7 +672,17 @@ export interface EmpresaObrigacaoConfig {
  * Os e-mails legados são todos 'fiscal' (default da migration), então nenhum
  * envio fiscal muda de comportamento.
  */
-export type EmpresaEmailTipo = 'fiscal' | 'cadastro';
+export type EmpresaEmailTipo = 'fiscal' | 'cadastro' | 'livros_fiscais';
+
+/**
+ * Roteamento de destinatário por obrigação. Fonte única da verdade: LIVROS
+ * FISCAIS vai SÓ pros e-mails 'livros_fiscais' (não vaza pro e-mail das guias);
+ * qualquer outra obrigação fiscal continua no tipo 'fiscal'.
+ */
+export function tipoEmailDaObrigacao(obrigacao: string): EmpresaEmailTipo {
+  const n = (obrigacao ?? '').normalize('NFC').trim().toUpperCase();
+  return n === 'LIVROS FISCAIS' ? 'livros_fiscais' : 'fiscal';
+}
 
 export interface EmpresaEmailCliente {
   id: UUID;
