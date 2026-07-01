@@ -4,7 +4,7 @@ REM  ETAPA 3 - PRODUCAO (pasta unica, dia a dia)
 REM ============================================================
 REM
 REM  Modo "esquecer e funcionar":
-REM   - Observa a pasta T:\Fiscal\1-GUIAS A ENVIAR
+REM   - Observa a pasta T:\Fiscal\1-ENVIOS
 REM   - O pessoal joga as guias la; o sistema identifica por
 REM     dentro (OCR), envia e move pra pasta da empresa.
 REM   - Sem limite
@@ -34,7 +34,7 @@ echo.
 echo ============================================================
 echo  [%date% %time%] Iniciando watcher PROD...
 echo  URL: https://controle-empresas.vercel.app
-echo  Pasta: T:\Fiscal\1-GUIAS A ENVIAR
+echo  Pasta: T:\Fiscal\1-ENVIOS
 echo ============================================================
 echo.
 

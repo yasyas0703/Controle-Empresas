@@ -1,4 +1,4 @@
-// Daemon local que observa a pasta ÚNICA T:/Fiscal/1-GUIAS A ENVIAR/
+// Daemon local que observa a pasta ÚNICA T:/Fiscal/1-ENVIOS/
 // e dispara POST pra /api/checklist-fiscal/auto-enviar quando detecta PDFs novos.
 //
 // O servidor identifica empresa/obrigação/competência pelo CONTEÚDO do PDF (OCR)
@@ -27,8 +27,8 @@
 //   - APÓS a resposta, MOVE o arquivo:
 //       enviado/interno_marcado_feito → T:/Fiscal/EMPRESA/<EMPRESA>/<REGIME>/<ANO>/
 //       ja_processado/duplicado_periodo (guia repetida, já enviada antes)
-//                                     → T:/Fiscal/1-GUIAS A ENVIAR/_JA-ENVIADAS/
-//       qualquer outro status        → T:/Fiscal/1-GUIAS A ENVIAR/_PENDENTES/
+//                                     → T:/Fiscal/1-ENVIOS/_JA-ENVIADAS/
+//       qualquer outro status        → T:/Fiscal/1-ENVIOS/_PENDENTES/
 //   - State local em scripts/.watcher-state.json evita re-POST; o servidor também
 //     faz idempotência por hash (defesa em profundidade).
 //   - Retry com backoff exponencial (1s, 4s, 16s) em falha de rede
@@ -61,11 +61,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // No PC da usuária (com T: mapeado) o default abaixo continua valendo.
 const T_ROOT = process.env.FISCAL_ROOT || 'T:\\Fiscal\\EMPRESA';
 // Pasta de ENTRADA (onde o pessoal solta os PDFs). Desde 2026-06 fica FORA da
-// raiz das empresas: T:\Fiscal\1-GUIAS A ENVIAR (irmã de EMPRESA, não filha) —
-// a usuária moveu pra facilitar o acesso. Default: <pai do T_ROOT>\1-GUIAS A
-// ENVIAR, que funciona igual no T: mapeado e no UNC do servidor. Se um dia
-// mudar de novo, dá pra apontar direto com a env PASTA_GUIAS_ENVIAR.
-const NOME_PASTA_ENTRADA = '1-GUIAS A ENVIAR';
+// raiz das empresas: T:\Fiscal\1-ENVIOS (irmã de EMPRESA, não filha) — a usuária
+// moveu pra facilitar o acesso (renomeada de "1-GUIAS A ENVIAR" → "1-ENVIOS" em
+// 2026-07-01). Default: <pai do T_ROOT>\1-ENVIOS, que funciona igual no T:
+// mapeado e no UNC do servidor. Se um dia mudar de novo, dá pra apontar direto
+// com a env PASTA_GUIAS_ENVIAR.
+const NOME_PASTA_ENTRADA = '1-ENVIOS';
 const PASTA_ENTRADA = process.env.PASTA_GUIAS_ENVIAR || resolve(dirname(T_ROOT), NOME_PASTA_ENTRADA);
 const PASTA_PENDENTES = resolve(PASTA_ENTRADA, '_PENDENTES');
 // Guia repetida (mesmo PDF jogado de novo na entrada depois de já ter sido
