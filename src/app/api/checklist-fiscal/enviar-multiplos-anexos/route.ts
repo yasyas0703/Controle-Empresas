@@ -14,7 +14,7 @@ import { google } from 'googleapis';
 import { randomUUID } from 'node:crypto';
 import { getOAuthClient, decryptToken } from '@/lib/googleOAuth';
 import { sendPushToCliente } from '@/lib/webPush';
-import { vencimentoDoMes, vencimentoDoMesSn } from '@/app/utils/regrasVencimentosFiscais';
+import { mesDeVencimento, vencimentoDoMes, vencimentoDoMesSn } from '@/app/utils/regrasVencimentosFiscais';
 import {
   autenticarRequest, assertPodeEnviar, checkRateLimit, buscarEnvioAnterior,
   validarPdfNoServidor, carregarEmpresaCompleta, getSupabaseAdmin, isErroApi,
@@ -320,9 +320,11 @@ export async function POST(req: Request) {
 
     // 6. Vencimento
     const calcularVencimento = (): string | null => {
-      const fiscal = vencimentoDoMes(body.obrigacao, empresa.estado, body.mes, empresa.cidade);
+      // `body.mes` é a COMPETÊNCIA; a guia vence no mês seguinte (compet.+1).
+      const mesVenc = mesDeVencimento(body.mes);
+      const fiscal = vencimentoDoMes(body.obrigacao, empresa.estado, mesVenc, empresa.cidade);
       if (fiscal) return fiscal;
-      const sn = vencimentoDoMesSn(body.obrigacao, empresa.estado, body.mes, empresa.cidade);
+      const sn = vencimentoDoMesSn(body.obrigacao, empresa.estado, mesVenc, empresa.cidade);
       if (sn) return sn;
       const normalizar = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
       const alvo = normalizar(body.obrigacao);

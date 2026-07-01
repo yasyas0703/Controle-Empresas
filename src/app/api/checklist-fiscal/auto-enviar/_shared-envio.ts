@@ -10,7 +10,7 @@ import { google } from 'googleapis';
 import { randomUUID } from 'node:crypto';
 import { getOAuthClient, decryptToken } from '@/lib/googleOAuth';
 import { sendPushToCliente } from '@/lib/webPush';
-import { vencimentoDoMes, vencimentoDoMesSn } from '@/app/utils/regrasVencimentosFiscais';
+import { mesDeVencimento, vencimentoDoMes, vencimentoDoMesSn } from '@/app/utils/regrasVencimentosFiscais';
 import { ehObrigacaoSempreInterna } from '@/app/types';
 import { buscarResponsavelFiscal } from '@/lib/alertasAutoEnvio';
 import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
@@ -72,9 +72,11 @@ export function formatComp(iso?: string | null): string {
 }
 
 export function calcularVencimento(obrigacao: string, empresa: Empresa, mes: string): string | null {
-  const fiscal = vencimentoDoMes(obrigacao, empresa.estado, mes, empresa.cidade);
+  // `mes` é a COMPETÊNCIA; a guia vence no mês seguinte (compet.+1).
+  const mesVenc = mesDeVencimento(mes);
+  const fiscal = vencimentoDoMes(obrigacao, empresa.estado, mesVenc, empresa.cidade);
   if (fiscal) return fiscal;
-  const sn = vencimentoDoMesSn(obrigacao, empresa.estado, mes, empresa.cidade);
+  const sn = vencimentoDoMesSn(obrigacao, empresa.estado, mesVenc, empresa.cidade);
   if (sn) return sn;
   const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
   const obrigAlvo = norm(obrigacao);

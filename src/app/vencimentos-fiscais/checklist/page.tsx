@@ -13,7 +13,7 @@ import { VENCIMENTOS_FISCAIS_NOMES, VENCIMENTOS_FISCAIS_SN_NOMES, OBRIGACOES_FIS
 import * as db from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { sortByPtBr } from '@/lib/sort';
-import { obrigacaoAplicaParaEmpresa, obrigacaoSnAplicaParaEmpresa, vencimentoDoMes, vencimentoDoMesSn } from '@/app/utils/regrasVencimentosFiscais';
+import { mesDeVencimento, obrigacaoAplicaParaEmpresa, obrigacaoSnAplicaParaEmpresa, vencimentoDoMes, vencimentoDoMesSn } from '@/app/utils/regrasVencimentosFiscais';
 import { daysUntil, toISODate } from '@/app/utils/date';
 import { extrairTextoPdf } from '@/app/utils/extrairTextoPdf';
 import FiscalTabs from '@/app/vencimentos-fiscais/FiscalTabs';
@@ -1080,9 +1080,13 @@ export default function ChecklistFiscalPage() {
             const item = aplica ? items.get(buildKey(empresa.id, obrigacao)) : undefined;
             let cor: SemaforoCor | null = null;
             if (semaforo && aplica) {
+              // Guia da competência `mes` vence no mês SEGUINTE (compet.+1): a de
+              // junho vence em julho. Sem isso a data sai no mês da competência
+              // (já passada) e tudo fica roxo/laranja errado.
+              const mesVenc = mesDeVencimento(mes);
               const vencIso = aba === 'sn'
-                ? vencimentoDoMesSn(obrigacao, empresa.estado, mes, empresa.cidade)
-                : vencimentoDoMes(obrigacao, empresa.estado, mes, empresa.cidade);
+                ? vencimentoDoMesSn(obrigacao, empresa.estado, mesVenc, empresa.cidade)
+                : vencimentoDoMes(obrigacao, empresa.estado, mesVenc, empresa.cidade);
               cor = corSemaforo(item, vencIso);
             }
             return { obrigacao, aplica, item, cor };

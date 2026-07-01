@@ -142,6 +142,22 @@ export function vencimentoDoMes(
 }
 
 /**
+ * Mês em que a guia VENCE/é entregue, a partir do mês de COMPETÊNCIA. Regra do
+ * escritório (Yasmin, 2026-07): a guia da competência M é enviada e vence no mês
+ * SEGUINTE (M+1) — ex.: competência junho vence em julho. É este o mês que deve
+ * alimentar vencimentoDoMes/vencimentoDoMesSn quando se parte da competência;
+ * senão o vencimento sai um mês adiantado e aparece como já "vencido".
+ */
+export function mesDeVencimento(competencia: string): string {
+  const m = competencia.match(/^(\d{4})-(\d{1,2})$/);
+  if (!m) return competencia;
+  let ano = Number(m[1]);
+  let mes = Number(m[2]) + 1;
+  if (mes > 12) { mes = 1; ano += 1; }
+  return `${ano}-${String(mes).padStart(2, '0')}`;
+}
+
+/**
  * Devolve a data do próximo vencimento (a partir de `referencia`, default hoje).
  * Se hoje é dia 25/04 e o vencimento é dia 8, devolve 08/05. Se hoje é dia 5/04
  * e o vencimento é dia 8, devolve 08/04.
