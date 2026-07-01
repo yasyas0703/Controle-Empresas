@@ -8,6 +8,7 @@ import { checkRateLimit, isErroApi } from '../../checklist-fiscal/_shared';
 import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
 import { formatarRemetente } from '@/lib/remetente';
 import { tipoEmailDaObrigacao } from '@/app/types';
+import { linhaConfirmacaoRecebimento } from '@/lib/avisoConfirmacaoRecebimento';
 
 export const runtime = 'nodejs';
 
@@ -266,7 +267,7 @@ export async function POST(req: Request) {
       + '.\n\nQualquer dúvida, estamos à disposição.\n\nAtenciosamente.';
 
     const subject = applyTemplate(assuntoTpl, vars);
-    const bodyText = applyTemplate(corpoTpl, vars);
+    const bodyText = applyTemplate(corpoTpl, vars) + linhaConfirmacaoRecebimento();
     const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;white-space:pre-wrap;">${bodyText.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string))}</div>`;
 
     // 5. Renova access token e envia

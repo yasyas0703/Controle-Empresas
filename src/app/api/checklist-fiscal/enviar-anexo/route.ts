@@ -10,6 +10,7 @@ import {
 } from '../_shared';
 import { ehObrigacaoSempreInterna, tipoEmailDaObrigacao } from '@/app/types';
 import { avaliarJanelaCompetencia, competenciaEsperada } from '@/app/utils/competencia';
+import { linhaConfirmacaoRecebimento } from '@/lib/avisoConfirmacaoRecebimento';
 import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
 import { formatarRemetente } from '@/lib/remetente';
 
@@ -409,7 +410,8 @@ export async function POST(req: Request) {
       `Segue em anexo o arquivo referente à obrigação ${body.obrigacao}, competência ${competenciaLabel}.` +
       linhaVencimento +
       `\nQualquer dúvida, estamos à disposição.\n\n` +
-      `Atenciosamente.`;
+      `Atenciosamente.` +
+      linhaConfirmacaoRecebimento();
     const escapeHtml = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
 
     const envioId = randomUUID();

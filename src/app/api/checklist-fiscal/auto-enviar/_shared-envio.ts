@@ -17,6 +17,7 @@ import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
 import { formatarRemetente } from '@/lib/remetente';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { tipoEmailDaObrigacao, type Empresa } from '@/app/types';
+import { linhaConfirmacaoRecebimento } from '@/lib/avisoConfirmacaoRecebimento';
 
 const BUCKET_DOCUMENTOS = 'documentos';
 const BUCKET_PORTAL = 'portal-documentos';
@@ -329,7 +330,8 @@ export async function enviarGuia(
     `Segue em anexo o arquivo referente à obrigação ${params.obrigacao}, competência ${competenciaLabel}.` +
     linhaVencimento +
     `\nQualquer dúvida, estamos à disposição.\n\n` +
-    `Atenciosamente.`;
+    `Atenciosamente.` +
+    linhaConfirmacaoRecebimento();
   const escapeHtml = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
 
   // Pixel de tracking de abertura (igual ao envio manual). Precisa do checklistId
