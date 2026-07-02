@@ -19,7 +19,7 @@ import {
   stripCrlf, encodeRfc2047, sanitizeMimeFilename, storageKeySafe,
   formatComp, calcularVencimento, marcarChecklistComoFeito,
 } from './_shared-envio';
-import { tiposRequeridosDoLote, empresaPossuiRet, type TipoLivro } from '@/app/utils/validarGuia';
+import { tiposRequeridosDoLote, empresaEnviaCombinado, type TipoLivro } from '@/app/utils/validarGuia';
 import { criarNotificacaoSistema, resolverDestinatariosFiscais } from '@/lib/alertasAutoEnvio';
 import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
 import { linhaConfirmacaoRecebimento } from '@/lib/avisoConfirmacaoRecebimento';
@@ -253,7 +253,7 @@ export async function enviarLote(
   const vencimentoIso = calcularVencimento(OBRIGACAO_LIVROS, params.empresa, params.lote.competencia);
   // Empresa com RET recebe o pacote combinado (livros + demonstrativo + SPED);
   // sem RET, só os livros. O assunto/corpo refletem o que de fato vai no lote.
-  const combinado = empresaPossuiRet(params.empresa);
+  const combinado = empresaEnviaCombinado(params.empresa);
   const tituloPacote = combinado
     ? 'Livros Fiscais, Demonstrativo de Apuração e SPED ICMS'
     : 'Livros Fiscais';
@@ -330,6 +330,20 @@ export async function enviarLote(
     arquivoUrl: anexos[0].storagePath, fonte: 'auto-enviado', destinatarios: emails, gmailMessageId,
     destinatariosDetalhe, envioId,
   });
+
+  // Empresa combinada: o e-mail leva Livros + Demonstrativo + SPED ICMS JUNTOS, mas
+  // o checklist/Envio têm 1 linha por obrigação. Marca também Demonstrativo e SPED
+  // ICMS como feitos — senão ficam "pendentes" na aba Envio mesmo já tendo saído no
+  // e-mail combinado. Best-effort: falha aqui não derruba o envio (o principal já saiu).
+  if (combinado) {
+    for (const obrig of ['DEMONSTR. APURAÇÃO', 'SPED ICMS/IPI']) {
+      await marcarChecklistComoFeito(admin, {
+        empresaId: params.empresa.id, mes: params.lote.competencia, obrigacao: obrig,
+        ghostUserId: params.ghostUserId, arquivoNome: 'Enviado no e-mail combinado (Livros Fiscais)',
+        fonte: 'auto-enviado', destinatarios: emails, gmailMessageId,
+      }).catch((e) => console.error(`[enviarLote] marcar "${obrig}" feito falhou:`, e));
+    }
+  }
 
   // Portal: 1 documento por livro (best-effort) + 1 push.
   try {

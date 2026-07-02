@@ -752,22 +752,35 @@ export function raizesSpedTxt(): string[] {
     .map((s) => s.slice(0, 8));
 }
 
-/** True se a empresa (pela raiz do CNPJ) manda também o .txt do SPED no lote. */
+/**
+ * True se a empresa (pela raiz do CNPJ) manda também o .txt do SPED no lote.
+ * NÃO depende mais de RET: a CYGNUS, por ex., não é RET mas manda o .txt — basta
+ * estar na allowlist. Estar na allowlist já implica tratamento combinado (não dá
+ * pra mandar o .txt sem o lote combinado). Ver empresaEnviaCombinado.
+ */
 export function empresaEnviaSpedTxt(empresa: EmpresaLote): boolean {
-  if (!empresaPossuiRet(empresa)) return false;
   const raiz = (empresa.cnpj ?? '').replace(/\D/g, '').slice(0, 8);
   return raiz.length === 8 && raizesSpedTxt().includes(raiz);
 }
 
 /**
+ * True se a empresa recebe o e-mail COMBINADO (livros + demonstrativo + SPED ICMS
+ * num e-mail/tarefa só). Vale pra quem tem RET OU está na allowlist do .txt (a
+ * CYGNUS: não é RET, mas foi pedido tratá-la como se fosse). Ver [[lote-combinado-ret]].
+ */
+export function empresaEnviaCombinado(empresa: EmpresaLote): boolean {
+  return empresaPossuiRet(empresa) || empresaEnviaSpedTxt(empresa);
+}
+
+/**
  * Tipos que o lote combinado dessa empresa precisa reunir antes de fechar/enviar.
- *   - Empresa SEM RET: os 5 livros canônicos (comportamento original).
- *   - Empresa COM RET: os 5 + Demonstrativo de Apuração + SPED ICMS.
- *   - Empresa COM RET que manda o .txt (HEDRONS): + sped_txt.
+ *   - Empresa comum: os 5 livros canônicos (comportamento original).
+ *   - Empresa combinada (RET ou allowlist): os 5 + Demonstrativo + SPED ICMS.
+ *   - Empresa combinada que manda o .txt (HEDRONS, CYGNUS): + sped_txt.
  * Fonte única da verdade — usada por estagiar/fechar/enviar/alertar o lote.
  */
 export function tiposRequeridosDoLote(empresa: EmpresaLote): TipoLivro[] {
-  if (!empresaPossuiRet(empresa)) return [...TIPOS_LIVRO_CANONICOS];
+  if (!empresaEnviaCombinado(empresa)) return [...TIPOS_LIVRO_CANONICOS];
   const req: TipoLivro[] = [...TIPOS_LIVRO_CANONICOS, 'demonstrativo', 'sped_icms'];
   if (empresaEnviaSpedTxt(empresa)) req.push('sped_txt');
   return req;

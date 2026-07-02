@@ -31,7 +31,7 @@ import {
   identificarEmpresa, identificarObrigacao, competenciaDoPdf, competenciaDeLivro, type ConfigObrigacao,
 } from './_identificar';
 import { estagiarItemLote, fecharLotesMaduros } from './_shared-lote';
-import { classificarTipoLivro, empresaEnviaSpedTxt, empresaPossuiRet, type TipoLivro } from '@/app/utils/validarGuia';
+import { classificarTipoLivro, empresaEnviaSpedTxt, empresaEnviaCombinado, type TipoLivro } from '@/app/utils/validarGuia';
 import { ehSpedFiscalTxt, parseCabecalhoSped } from './_sped-txt';
 import {
   resolverDestinatariosFiscais, criarNotificacaoSistema,
@@ -727,7 +727,7 @@ export async function POST(req: Request) {
   // Empresa com RET: Demonstrativo e SPED ICMS entram no MESMO lote dos livros, então
   // precisam da MESMA competência (mês direto) — senão o lote racha e nunca fecha.
   const usaCompetenciaMesDireto = obrigacao === 'LIVROS FISCAIS'
-    || (empresaPossuiRet(empresa) && (obrigacao === 'DEMONSTR. APURAÇÃO' || obrigacao === 'SPED ICMS/IPI'));
+    || (empresaEnviaCombinado(empresa) && (obrigacao === 'DEMONSTR. APURAÇÃO' || obrigacao === 'SPED ICMS/IPI'));
   const competencia = usaCompetenciaMesDireto
     ? competenciaDeLivro(textoPdf)
     : competenciaDoPdf(textoPdf);
@@ -863,11 +863,11 @@ export async function POST(req: Request) {
   // (e o SPED ICMS deixa de ser INTERNO) e passam a ser estagiados no MESMO lote
   // dos livros, pra sair TUDO num e-mail só e concluir 1 tarefa só. LIVROS FISCAIS
   // vai pro lote sempre (com ou sem RET). Ver _shared-lote.ts / tiposRequeridosDoLote.
-  const empresaComRet = empresaPossuiRet(empresa);
+  const empresaCombinada = empresaEnviaCombinado(empresa);
   const tipoParaLote: TipoLivro | null =
     obrigacao === 'LIVROS FISCAIS' ? classificarTipoLivro(textoPdf)
-    : (empresaComRet && obrigacao === 'DEMONSTR. APURAÇÃO') ? 'demonstrativo'
-    : (empresaComRet && obrigacao === 'SPED ICMS/IPI') ? 'sped_icms'
+    : (empresaCombinada && obrigacao === 'DEMONSTR. APURAÇÃO') ? 'demonstrativo'
+    : (empresaCombinada && obrigacao === 'SPED ICMS/IPI') ? 'sped_icms'
     : null;
 
   // 12. Obrigação INTERNA: não envia email, só marca check — mas salva o PDF
