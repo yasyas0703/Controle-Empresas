@@ -747,9 +747,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'competencia_nao_identificada' } });
   }
 
-  // 9. Confere a config da obrigação identificada.
+  // Obrigações do LOTE combinado: LIVROS FISCAIS sempre; e — pra empresa combinada
+  // (RET ou allowlist) — também Demonstrativo de Apuração e SPED ICMS. Essas NÃO
+  // exigem config por empresa: se a empresa é combinada, o Demonstrativo e o SPED
+  // vão JUNTO com os livros no mesmo e-mail, sem ter que cadastrar cada uma. Por
+  // isso o tipoParaLote é decidido AQUI, antes das travas de config abaixo.
+  const tipoParaLote: TipoLivro | null =
+    obrigacao === 'LIVROS FISCAIS' ? classificarTipoLivro(textoPdf)
+    : (empresaEnviaCombinado(empresa) && obrigacao === 'DEMONSTR. APURAÇÃO') ? 'demonstrativo'
+    : (empresaEnviaCombinado(empresa) && obrigacao === 'SPED ICMS/IPI') ? 'sped_icms'
+    : null;
+
+  // 9. Confere a config da obrigação identificada. Obrigação de lote (tipoParaLote)
+  // dispensa config — vai pro lote mesmo sem linha cadastrada nem ativa.
   const config = configs.get(obrigacao) ?? null;
-  if (!config) {
+  if (!config && !tipoParaLote) {
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,
       empresaId: empresa.id, empresaNomePasta: null,
@@ -765,7 +777,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'obrigacao_nao_configurada' } });
   }
 
-  if (!config.ativa) {
+  if (config && !config.ativa && !tipoParaLote) {
     await registrarProblema(admin, {
       caminhoServidor, nomeArquivo, hashArquivo,
       empresaId: empresa.id, empresaNomePasta: null,
@@ -787,7 +799,7 @@ export async function POST(req: Request) {
   // 10. Validação rigorosa de PDF (defesa em profundidade).
   const validacao = await validarPdfNoServidor({
     buffer: fileBuffer, empresa, obrigacao,
-    codigosEsperados: config.codigos ?? [],
+    codigosEsperados: config?.codigos ?? [],
     forcarEnvio: false, motivoForcar: undefined, podeForcar: false,
   });
   if (isErroApi(validacao)) {
@@ -849,7 +861,7 @@ export async function POST(req: Request) {
         esperada,
         // Path pra rota /aprovar-e-enviar baixar e reenviar depois.
         arquivo_pendente_path: pathPendente,
-        codigos_esperados_snapshot: config.codigos ?? [],
+        codigos_esperados_snapshot: config?.codigos ?? [],
         perfil_validacao_snapshot: validacao.resultado.perfilUsado,
       },
     });
@@ -859,23 +871,12 @@ export async function POST(req: Request) {
     });
   }
 
-  // Empresa com RET: Demonstrativo de Apuração e SPED ICMS deixam de ser avulsos
-  // (e o SPED ICMS deixa de ser INTERNO) e passam a ser estagiados no MESMO lote
-  // dos livros, pra sair TUDO num e-mail só e concluir 1 tarefa só. LIVROS FISCAIS
-  // vai pro lote sempre (com ou sem RET). Ver _shared-lote.ts / tiposRequeridosDoLote.
-  const empresaCombinada = empresaEnviaCombinado(empresa);
-  const tipoParaLote: TipoLivro | null =
-    obrigacao === 'LIVROS FISCAIS' ? classificarTipoLivro(textoPdf)
-    : (empresaCombinada && obrigacao === 'DEMONSTR. APURAÇÃO') ? 'demonstrativo'
-    : (empresaCombinada && obrigacao === 'SPED ICMS/IPI') ? 'sped_icms'
-    : null;
-
   // 12. Obrigação INTERNA: não envia email, só marca check — mas salva o PDF
   // anexado na célula do Checklist mesmo assim. Interna = config.nao_envia_cliente
   // OU obrigação sempre-interna (RECIBO/DECLARAÇÃO do DAS — nunca vão pro cliente).
-  // Exceção: quando vai pro lote combinado (RET), o SPED ICMS interno é ENVIADO —
-  // por isso o `!tipoParaLote` aqui deixa esse caso cair no ramo do lote abaixo.
-  if ((config.naoEnviaCliente || ehObrigacaoSempreInterna(obrigacao)) && !tipoParaLote) {
+  // Exceção: quando vai pro lote combinado, o SPED ICMS interno é ENVIADO — por
+  // isso o `!tipoParaLote` aqui deixa esse caso cair no ramo do lote abaixo.
+  if ((config?.naoEnviaCliente || ehObrigacaoSempreInterna(obrigacao)) && !tipoParaLote) {
     const docPathInterno = await subirDocumentoInterno(admin, empresa.id, fileBuffer, nomeCanonico);
     await marcarChecklistComoFeito(admin, {
       empresaId: empresa.id, mes: competencia, obrigacao, ghostUserId,
