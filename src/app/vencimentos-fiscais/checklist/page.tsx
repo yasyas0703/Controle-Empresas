@@ -327,16 +327,21 @@ export default function ChecklistFiscalPage() {
   // Resolvido POR MÊS: override com vigência (ex: varredura de pastas, vigente
   // de 2026-06 em diante) não muda a visão de meses anteriores.
   const aplicaObrigacao = useCallback((obrigacao: string, empresa: Empresa): boolean => {
-    // Empresa com RET: Demonstrativo de Apuração e SPED ICMS/IPI vão JUNTOS no lote
-    // de LIVROS FISCAIS (1 e-mail, 1 tarefa que só conclui quando tudo chega). No
-    // checklist eles deixam de ser tarefas separadas — a coluna LIVROS FISCAIS passa
-    // a representar o pacote combinado. Regra dura: vem antes do override.
-    if (ehObrigacaoDobradaPorRet(empresa, obrigacao)) {
-      return false;
-    }
+    // Override manual (habilitar/desabilitar na mão) vence TUDO — inclusive a
+    // dobra de RET. É a válvula de escape do caso de transição: empresa virou RET
+    // DEPOIS de já ter enviado os livros do mês, e o SPED/DEMONSTR ainda precisa
+    // sair separado. Sem override, cai na dobra de RET abaixo (default).
     const override = obrigacoesOverrides.get(buildKey(empresa.id, obrigacao));
     const noMes = db.overrideHabilitadaNoMes(override, mes);
     if (typeof noMes === 'boolean') return noMes;
+    // Empresa com RET: Demonstrativo de Apuração e SPED ICMS/IPI vão JUNTOS no lote
+    // de LIVROS FISCAIS (1 e-mail, 1 tarefa que só conclui quando tudo chega). No
+    // checklist eles deixam de ser tarefas separadas — a coluna LIVROS FISCAIS passa
+    // a representar o pacote combinado. Default: dobra (só o habilitar manual acima
+    // consegue destravar como coluna separada).
+    if (ehObrigacaoDobradaPorRet(empresa, obrigacao)) {
+      return false;
+    }
     // Espelha o Envio: se a obrigação está ATIVA na config da empresa, ela aplica
     // no checklist tb — sem precisar habilitar na mão. Aditivo: só ATIVA; se não
     // tem na config, cai na regra de estado/cidade (nada some do que já mostra).
@@ -1782,9 +1787,25 @@ export default function ChecklistFiscalPage() {
                                   : `${obrigacao} não se aplica a esta empresa.`}
                               >
                                 {dobradaRet ? (
-                                  <span className="text-[9px] font-semibold text-center leading-tight text-slate-400">
-                                    incluído em<br />LIVROS FISCAIS
-                                  </span>
+                                  <>
+                                    <span className="text-[9px] font-semibold text-center leading-tight text-slate-400">
+                                      incluído em<br />LIVROS FISCAIS
+                                    </span>
+                                    {/* Válvula de escape: empresa que virou RET DEPOIS de já ter
+                                        enviado os livros do mês precisa mandar o SPED/DEMONSTR
+                                        separado. Habilitar cria override que vence a dobra de RET. */}
+                                    {canEdit && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setHabilitacaoObrigacao(l.empresa, obrigacao, true)}
+                                        disabled={isTogglingHab}
+                                        className="text-[8px] font-bold uppercase tracking-wider rounded-md border border-amber-300 bg-white text-amber-700 hover:bg-amber-50 px-1.5 py-0.5 transition disabled:opacity-60"
+                                        title={`Habilitar ${obrigacao} como coluna separada nesta empresa, mesmo com RET (para casos de transição). Vale pra todos os meses até você desabilitar.`}
+                                      >
+                                        {isTogglingHab ? <Loader2 size={9} className="animate-spin" /> : 'habilitar separado'}
+                                      </button>
+                                    )}
+                                  </>
                                 ) : (
                                   <>
                                     <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">N/A</span>
