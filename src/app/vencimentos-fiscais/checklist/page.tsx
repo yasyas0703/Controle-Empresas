@@ -63,6 +63,15 @@ function obrigacoesFiscaisPorMes(mes: string): readonly string[] {
     : VENCIMENTOS_FISCAIS_NOMES;
 }
 
+// Empresa com RET: Demonstrativo de Apuração e SPED ICMS/IPI vão JUNTOS no lote
+// de LIVROS FISCAIS (1 e-mail, 1 tarefa). No checklist eles deixam de ser colunas
+// separadas — a coluna LIVROS FISCAIS representa o pacote combinado. Estas duas
+// obrigações são "dobradas" em LIVROS FISCAIS quando a empresa tem RET.
+const OBRIGACOES_DOBRADAS_RET = new Set(['DEMONSTR. APURAÇÃO', 'SPED ICMS/IPI']);
+function ehObrigacaoDobradaPorRet(empresa: Empresa, obrigacao: string): boolean {
+  return empresa.possuiRet && OBRIGACOES_DOBRADAS_RET.has(obrigacao);
+}
+
 function monthKey(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -322,7 +331,7 @@ export default function ChecklistFiscalPage() {
     // de LIVROS FISCAIS (1 e-mail, 1 tarefa que só conclui quando tudo chega). No
     // checklist eles deixam de ser tarefas separadas — a coluna LIVROS FISCAIS passa
     // a representar o pacote combinado. Regra dura: vem antes do override.
-    if (empresa.possuiRet && (obrigacao === 'DEMONSTR. APURAÇÃO' || obrigacao === 'SPED ICMS/IPI')) {
+    if (ehObrigacaoDobradaPorRet(empresa, obrigacao)) {
       return false;
     }
     const override = obrigacoesOverrides.get(buildKey(empresa.id, obrigacao));
@@ -1758,23 +1767,39 @@ export default function ChecklistFiscalPage() {
                         const isTogglingHab = togglingHabilitacao.has(habKey);
 
                         if (!aplica) {
+                          // Empresa com RET: SPED ICMS/IPI e DEMONSTR. APURAÇÃO são
+                          // controlados DENTRO de LIVROS FISCAIS (lote combinado).
+                          // Não dá pra habilitar separado — o botão "+ Habilitar"
+                          // aqui não faria nada (a regra de RET vem antes do override
+                          // em aplicaObrigacao). Mostra o aviso em vez do botão.
+                          const dobradaRet = ehObrigacaoDobradaPorRet(l.empresa, obrigacao);
                           return (
                             <td key={obrigacao} className="border-b border-gray-100 p-1 w-[90px] min-w-[90px] max-w-[90px]">
                               <div
                                 className="rounded-lg border-2 border-dashed border-gray-200 bg-gray-50/60 p-1.5 flex flex-col items-center justify-center gap-1 min-h-[64px]"
-                                title={`${obrigacao} não se aplica a esta empresa.`}
+                                title={dobradaRet
+                                  ? `${obrigacao} é controlada dentro de LIVROS FISCAIS nesta empresa (tem RET — lote combinado).`
+                                  : `${obrigacao} não se aplica a esta empresa.`}
                               >
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">N/A</span>
-                                {canEdit && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setHabilitacaoObrigacao(l.empresa, obrigacao, true)}
-                                    disabled={isTogglingHab}
-                                    className="text-[9px] font-bold uppercase tracking-wider rounded-md border border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50 px-2 py-0.5 transition disabled:opacity-60"
-                                    title={`Habilitar ${obrigacao} pra esta empresa (vale pra todos os meses)`}
-                                  >
-                                    {isTogglingHab ? <Loader2 size={10} className="animate-spin" /> : '+ Habilitar'}
-                                  </button>
+                                {dobradaRet ? (
+                                  <span className="text-[9px] font-semibold text-center leading-tight text-slate-400">
+                                    incluído em<br />LIVROS FISCAIS
+                                  </span>
+                                ) : (
+                                  <>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">N/A</span>
+                                    {canEdit && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setHabilitacaoObrigacao(l.empresa, obrigacao, true)}
+                                        disabled={isTogglingHab}
+                                        className="text-[9px] font-bold uppercase tracking-wider rounded-md border border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50 px-2 py-0.5 transition disabled:opacity-60"
+                                        title={`Habilitar ${obrigacao} pra esta empresa (vale pra todos os meses)`}
+                                      >
+                                        {isTogglingHab ? <Loader2 size={10} className="animate-spin" /> : '+ Habilitar'}
+                                      </button>
+                                    )}
+                                  </>
                                 )}
                               </div>
                             </td>
