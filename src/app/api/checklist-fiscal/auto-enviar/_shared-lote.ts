@@ -22,6 +22,7 @@ import {
 import { tiposRequeridosDoLote, empresaPossuiRet, type TipoLivro } from '@/app/utils/validarGuia';
 import { criarNotificacaoSistema, resolverDestinatariosFiscais } from '@/lib/alertasAutoEnvio';
 import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
+import { linhaConfirmacaoRecebimento } from '@/lib/avisoConfirmacaoRecebimento';
 import { formatarRemetente } from '@/lib/remetente';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { tipoEmailDaObrigacao, type Empresa } from '@/app/types';
@@ -260,7 +261,9 @@ export async function enviarLote(
   const bodyText =
     `Olá,\n\n` +
     `Seguem em anexo ${combinado ? 'os livros fiscais, o demonstrativo de apuração e o SPED ICMS' : 'os livros fiscais'} referentes à competência ${competenciaLabel} (${anexos.length} arquivo(s)).\n\n` +
-    `Qualquer dúvida, estamos à disposição.\n\nAtenciosamente.`;
+    `Qualquer dúvida, estamos à disposição.` +
+    linhaConfirmacaoRecebimento() +
+    `\n\nAtenciosamente.`;
   const escapeHtml = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
 
   // Pixel: 1 envioId + garante a linha do checklist (sem marcar feito ainda).
