@@ -229,14 +229,19 @@ export async function enviarLote(
   let refreshToken: string;
   try { refreshToken = decryptToken(tokenRow.refresh_token_enc); } catch { return falha('gmail_nao_conectado'); }
 
-  // Livros fiscais vão SÓ pro e-mail tipo 'livros_fiscais' (separado das guias e
-  // do Cadastro). Sem e-mail desse tipo cadastrado, cai em 'sem_emails' e bloqueia.
-  const { data: emailsRes } = await admin
-    .from('empresa_emails_cliente').select('email').eq('empresa_id', params.empresa.id).eq('ativo', true)
-    .eq('tipo', tipoEmailDaObrigacao(OBRIGACAO_LIVROS));
-  const emails = aplicarOverrideEmailTeste(
-    ((emailsRes ?? []) as Array<{ email: string }>).map((r) => r.email).filter(Boolean),
-  );
+  // Livros fiscais vão pros e-mails tipo 'livros_fiscais'. FALLBACK (pedido da
+  // Yasmin): se a empresa não tiver NENHUM desse tipo, usa os do tipo 'fiscal' —
+  // pra nunca deixar de enviar por falta do contato dedicado. Só cai em 'sem_emails'
+  // se não tiver nem 'livros_fiscais' nem 'fiscal'.
+  const emailsDoTipo = async (tipo: string): Promise<string[]> => {
+    const { data } = await admin
+      .from('empresa_emails_cliente').select('email').eq('empresa_id', params.empresa.id).eq('ativo', true)
+      .eq('tipo', tipo);
+    return ((data ?? []) as Array<{ email: string }>).map((r) => r.email).filter(Boolean);
+  };
+  let emailsBrutos = await emailsDoTipo(tipoEmailDaObrigacao(OBRIGACAO_LIVROS));
+  if (emailsBrutos.length === 0) emailsBrutos = await emailsDoTipo('fiscal');
+  const emails = aplicarOverrideEmailTeste(emailsBrutos);
   if (emails.length === 0) return falha('sem_emails');
 
   // Baixa todos os PDFs do lote.
