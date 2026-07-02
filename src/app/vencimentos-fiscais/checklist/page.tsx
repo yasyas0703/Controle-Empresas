@@ -158,6 +158,11 @@ export default function ChecklistFiscalPage() {
   //   pastas valer só de junho/2026 sem reescrever a visão de maio.
   const [obrigacoesOverrides, setObrigacoesOverrides] = useState<Map<ChecklistKey, db.ObrigacaoOverride>>(new Map());
   const [togglingHabilitacao, setTogglingHabilitacao] = useState<Set<ChecklistKey>>(new Set());
+  // Obrigações ATIVAS por empresa na config (empresa_obrigacoes_config) — a MESMA
+  // fonte da tela de Envio. O checklist passa a espelhar isso: obrigação ativa no
+  // Envio aparece ativa no checklist tb (aditivo — nunca esconde o que a regra já
+  // mostra). Ver aplicaObrigacao. Pedido da Yasmin (2026-07): checklist = Envio.
+  const [obrigacoesAtivasMap, setObrigacoesAtivasMap] = useState<Map<UUID, Set<string>>>(new Map());
 
   const [search, setSearch] = useState('');
   const [filtroUsuario, setFiltroUsuario] = useState<string>('');
@@ -323,8 +328,12 @@ export default function ChecklistFiscalPage() {
     const override = obrigacoesOverrides.get(buildKey(empresa.id, obrigacao));
     const noMes = db.overrideHabilitadaNoMes(override, mes);
     if (typeof noMes === 'boolean') return noMes;
+    // Espelha o Envio: se a obrigação está ATIVA na config da empresa, ela aplica
+    // no checklist tb — sem precisar habilitar na mão. Aditivo: só ATIVA; se não
+    // tem na config, cai na regra de estado/cidade (nada some do que já mostra).
+    if (obrigacoesAtivasMap.get(empresa.id)?.has(obrigacao)) return true;
     return aplicaPelaRegra(obrigacao, empresa);
-  }, [aplicaPelaRegra, obrigacoesOverrides, mes]);
+  }, [aplicaPelaRegra, obrigacoesOverrides, obrigacoesAtivasMap, mes]);
 
   // Para usuário comum: a aba é forçada conforme seu departamento.
   // Gerente/admin pode alternar livremente.
@@ -388,6 +397,16 @@ export default function ChecklistFiscalPage() {
       .catch((err) => {
         console.error('Erro ao carregar overrides de obrigações:', err);
       });
+    return () => { cancelado = true; };
+  }, []);
+
+  // Carrega as obrigações ATIVAS na config por empresa (mesma fonte do Envio) —
+  // pra o checklist espelhar o que está ativo lá. Independe do mês.
+  useEffect(() => {
+    let cancelado = false;
+    db.fetchObrigacoesAtivasPorEmpresa()
+      .then((mapa) => { if (!cancelado) setObrigacoesAtivasMap(mapa); })
+      .catch((err) => { console.error('Erro ao carregar obrigações ativas por empresa:', err); });
     return () => { cancelado = true; };
   }, []);
 
