@@ -19,7 +19,7 @@ import {
   stripCrlf, encodeRfc2047, sanitizeMimeFilename, storageKeySafe,
   formatComp, calcularVencimento, marcarChecklistComoFeito,
 } from './_shared-envio';
-import { TIPOS_LIVRO_CANONICOS, type TipoLivro } from '@/app/utils/validarGuia';
+import { tiposRequeridosDoLote, empresaPossuiRet, type TipoLivro } from '@/app/utils/validarGuia';
 import { criarNotificacaoSistema, resolverDestinatariosFiscais } from '@/lib/alertasAutoEnvio';
 import { aplicarOverrideEmailTeste } from '@/lib/modoTesteEnvio';
 import { formatarRemetente } from '@/lib/remetente';
@@ -29,6 +29,12 @@ import { tipoEmailDaObrigacao, type Empresa } from '@/app/types';
 const BUCKET_DOCUMENTOS = 'documentos';
 const BUCKET_PORTAL = 'portal-documentos';
 const OBRIGACAO_LIVROS = 'LIVROS FISCAIS';
+
+/** MIME do anexo pela extensão do nome. O lote é quase todo PDF; só o .txt do
+ * SPED EFD-Fiscal é text/plain. */
+function mimeDoNome(nome: string): string {
+  return /\.txt$/i.test(nome) ? 'text/plain; charset=utf-8' : 'application/pdf';
+}
 // Lote incompleto parado há mais que isto (horas) → alerta (não envia). Default 18h.
 const LOTE_PARADO_HORAS_DEFAULT = Number(process.env.LOTE_PARADO_HORAS ?? 18) || 18;
 
@@ -108,6 +114,9 @@ export async function estagiarItemLote(
   params: {
     empresa: Empresa; competencia: string; hashArquivo: string; fileBuffer: Buffer;
     nomeArquivo: string; tipoLivro: TipoLivro; caminhoServidor?: string | null;
+    // MIME do arquivo estagiado. Default PDF (livros/demonstrativo/SPED em PDF);
+    // o .txt do SPED EFD-Fiscal passa 'text/plain'.
+    contentType?: string;
   },
 ): Promise<{ loteId: string | null; status: 'estagiado' | 'ja_estagiado' | 'lote_ja_enviado'; tipoLivro: TipoLivro }> {
   const empresaId = params.empresa.id;
@@ -134,7 +143,7 @@ export async function estagiarItemLote(
   const storagePath = `empresas/${empresaId}/lote/${randomUUID()}-${storageKeySafe(params.nomeArquivo)}`;
   const { error: upErr } = await admin.storage
     .from(BUCKET_DOCUMENTOS)
-    .upload(storagePath, params.fileBuffer, { contentType: 'application/pdf', upsert: false });
+    .upload(storagePath, params.fileBuffer, { contentType: params.contentType ?? 'application/pdf', upsert: false });
   if (upErr) throw new Error(`upload do livro falhou: ${upErr.message}`);
   // Insere o item — idempotente por (lote_id, hash). Se já existia, ignora.
   const { data: insItem } = await admin
@@ -206,7 +215,7 @@ export async function enviarLote(
     .order('adicionado_em', { ascending: true });
   const itens = (itensData ?? []) as ItemRow[];
   const tiposPresentes = new Set(itens.map((i) => i.tipo_livro));
-  const tiposAusentes = TIPOS_LIVRO_CANONICOS.filter((t) => !tiposPresentes.has(t));
+  const tiposAusentes = tiposRequeridosDoLote(params.empresa).filter((t) => !tiposPresentes.has(t));
   const parcial = tiposAusentes.length > 0;
   const falha = (motivo: string): ResultadoLote => ({ ok: false, motivo, enviados: 0, parcial, tiposAusentes });
 
@@ -234,17 +243,23 @@ export async function enviarLote(
   for (const it of itens) {
     const { data: blob, error } = await admin.storage.from(BUCKET_DOCUMENTOS).download(it.storage_path);
     if (error || !blob) { console.error('[enviarLote] falha ao baixar item', it.storage_path, error?.message); continue; }
-    anexos.push({ filename: it.nome_arquivo, mime: 'application/pdf', content: Buffer.from(await blob.arrayBuffer()), storagePath: it.storage_path });
+    anexos.push({ filename: it.nome_arquivo, mime: mimeDoNome(it.nome_arquivo), content: Buffer.from(await blob.arrayBuffer()), storagePath: it.storage_path });
   }
   if (anexos.length === 0) return falha('storage_download_failed');
 
   const empresaNome = params.empresa.razao_social || params.empresa.apelido || params.empresa.codigo;
   const competenciaLabel = formatComp(params.lote.competencia);
   const vencimentoIso = calcularVencimento(OBRIGACAO_LIVROS, params.empresa, params.lote.competencia);
-  const subject = `Livros Fiscais — ${empresaNome} (${competenciaLabel}) — ${anexos.length} arquivo(s)`;
+  // Empresa com RET recebe o pacote combinado (livros + demonstrativo + SPED);
+  // sem RET, só os livros. O assunto/corpo refletem o que de fato vai no lote.
+  const combinado = empresaPossuiRet(params.empresa);
+  const tituloPacote = combinado
+    ? 'Livros Fiscais, Demonstrativo de Apuração e SPED ICMS'
+    : 'Livros Fiscais';
+  const subject = `${tituloPacote} — ${empresaNome} (${competenciaLabel}) — ${anexos.length} arquivo(s)`;
   const bodyText =
     `Olá,\n\n` +
-    `Seguem em anexo os livros fiscais referentes à competência ${competenciaLabel} (${anexos.length} arquivo(s)).\n\n` +
+    `Seguem em anexo ${combinado ? 'os livros fiscais, o demonstrativo de apuração e o SPED ICMS' : 'os livros fiscais'} referentes à competência ${competenciaLabel} (${anexos.length} arquivo(s)).\n\n` +
     `Qualquer dúvida, estamos à disposição.\n\nAtenciosamente.`;
   const escapeHtml = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
 
@@ -323,12 +338,12 @@ export async function enviarLote(
     let primeiroPortalId: string | null = null;
     for (const a of anexos) {
       const portalPath = `${params.empresa.id}/${randomUUID()}-${storageKeySafe(a.filename)}`;
-      const { error: upPortalErr } = await admin.storage.from(BUCKET_PORTAL).upload(portalPath, a.content, { contentType: 'application/pdf', upsert: false });
+      const { error: upPortalErr } = await admin.storage.from(BUCKET_PORTAL).upload(portalPath, a.content, { contentType: a.mime, upsert: false });
       if (upPortalErr) continue;
       const { data: novoPortal } = await admin.from('portal_documentos').insert({
         empresa_id: params.empresa.id, checklist_fiscal_id: checklistId, obrigacao_nome: OBRIGACAO_LIVROS,
         competencia: params.lote.competencia, vencimento: vencimentoIso, arquivo_storage_path: portalPath,
-        arquivo_nome_original: a.filename, arquivo_mime: 'application/pdf', arquivo_tamanho_bytes: a.content.byteLength,
+        arquivo_nome_original: a.filename, arquivo_mime: a.mime, arquivo_tamanho_bytes: a.content.byteLength,
         enviado_email: true, enviado_email_em: nowIso, criado_por_usuario_id: params.ghostUserId,
       }).select('id').maybeSingle();
       if (!primeiroPortalId) primeiroPortalId = (novoPortal as { id?: string } | null)?.id ?? null;
@@ -368,21 +383,26 @@ export async function fecharLotesMaduros(
   const abertos = (abertosData ?? []) as LoteRow[];
   if (abertos.length === 0) return out;
 
-  // "SEMPRE 5" (decisão da usuária): o lote só fecha e envia quando os 5 tipos
-  // conhecidos chegaram. Incompleto NÃO é enviado — fica aberto; o cron chama
-  // alertarLotesIncompletosParados pra avisar se ficar muito tempo sem completar,
-  // pra nunca sumir em silêncio.
-  const maduros = abertos.filter((l) => {
-    const tipos = (l.tipos_recebidos ?? []).filter((t) => TIPOS_LIVRO_CANONICOS.includes(t as TipoLivro));
-    return tipos.length >= TIPOS_LIVRO_CANONICOS.length;
-  });
-  if (maduros.length === 0) return out;
-
-  // Carrega as empresas dos lotes maduros.
-  const empresaIds = [...new Set(maduros.map((l) => l.empresa_id))];
+  // Carrega as empresas dos lotes abertos ANTES de decidir quem está maduro: o
+  // conjunto de tipos exigido depende da empresa (RET reúne também Demonstrativo
+  // e SPED; HEDRONS ainda o .txt). Ver tiposRequeridosDoLote.
+  const empresaIds = [...new Set(abertos.map((l) => l.empresa_id))];
   const { data: empresasData } = await admin.from('empresas').select('*').in('id', empresaIds);
   const empresasMap = new Map<string, Empresa>();
   for (const e of (empresasData ?? []) as Empresa[]) empresasMap.set(e.id, e);
+
+  // "SEMPRE COMPLETO" (decisão da usuária): o lote só fecha e envia quando TODOS
+  // os tipos exigidos daquela empresa chegaram. Incompleto NÃO é enviado — fica
+  // aberto; o cron chama alertarLotesIncompletosParados pra avisar se ficar muito
+  // tempo sem completar, pra nunca sumir em silêncio.
+  const maduros = abertos.filter((l) => {
+    const empresa = empresasMap.get(l.empresa_id);
+    if (!empresa) return false;
+    const req = tiposRequeridosDoLote(empresa);
+    const recebidos = new Set(l.tipos_recebidos ?? []);
+    return req.every((t) => recebidos.has(t));
+  });
+  if (maduros.length === 0) return out;
 
   for (const lote of maduros) {
     out.fechados++;
@@ -409,13 +429,15 @@ export async function fecharLotesMaduros(
 
 const ROTULO_TIPO: Record<string, string> = {
   entradas: 'Entradas', saidas: 'Saídas', apuracao_icms: 'Apuração ICMS', apuracao_ipi: 'Apuração IPI', iss: 'ISS',
+  demonstrativo: 'Demonstrativo de Apuração', sped_icms: 'SPED ICMS', sped_txt: 'SPED ICMS (.txt)',
 };
 
 /**
- * Rede de segurança do "sempre 5": como o lote incompleto NÃO é enviado, esta
- * função (chamada pelo cron) avisa quando um lote fica parado há muito tempo sem
- * completar os 5 tipos — pra a pessoa colocar o que falta ou resolver manual.
- * Não envia nada; só alerta. Dedup por lote (detalhes.parado_alertado_em).
+ * Rede de segurança do "sempre completo": como o lote incompleto NÃO é enviado,
+ * esta função (chamada pelo cron) avisa quando um lote fica parado há muito tempo
+ * sem completar TODOS os tipos exigidos daquela empresa — pra a pessoa colocar o
+ * que falta ou resolver manual. Não envia nada; só alerta. Dedup por lote
+ * (detalhes.parado_alertado_em).
  */
 export async function alertarLotesIncompletosParados(
   admin: SupabaseClient,
@@ -426,28 +448,35 @@ export async function alertarLotesIncompletosParados(
   const { data: abertosData } = await admin.from('lotes_livros_fiscais').select('*').eq('status', 'aberto');
   const abertos = (abertosData ?? []) as LoteRow[];
   const cutoff = Date.now() - staleHoras * 3_600_000;
+  // Carrega as empresas antes de decidir "incompleto" — o conjunto exigido é
+  // por empresa (RET reúne mais tipos). Ver tiposRequeridosDoLote.
+  const empresaIds = [...new Set(abertos.map((l) => l.empresa_id))];
+  const { data: empresasData } = await admin.from('empresas').select('*').in('id', empresaIds);
+  const empresasMap = new Map<string, Empresa>();
+  for (const e of (empresasData ?? []) as Empresa[]) empresasMap.set(e.id, e);
   const parados = abertos.filter((l) => {
-    const tipos = (l.tipos_recebidos ?? []).filter((t) => TIPOS_LIVRO_CANONICOS.includes(t as TipoLivro));
-    const incompleto = tipos.length < TIPOS_LIVRO_CANONICOS.length;
+    const empresa = empresasMap.get(l.empresa_id);
+    if (!empresa) return false;
+    const req = tiposRequeridosDoLote(empresa);
+    const recebidos = new Set(l.tipos_recebidos ?? []);
+    const incompleto = !req.every((t) => recebidos.has(t));
     const velho = new Date(l.ultimo_item_em).getTime() < cutoff;
     const jaAlertado = !!(l.detalhes && (l.detalhes as { parado_alertado_em?: string }).parado_alertado_em);
     return incompleto && velho && !jaAlertado;
   });
   if (parados.length === 0) return out;
-  const empresaIds = [...new Set(parados.map((l) => l.empresa_id))];
-  const { data: empresasData } = await admin.from('empresas').select('*').in('id', empresaIds);
-  const empresasMap = new Map<string, Empresa>();
-  for (const e of (empresasData ?? []) as Empresa[]) empresasMap.set(e.id, e);
   for (const lote of parados) {
     const empresa = empresasMap.get(lote.empresa_id);
     if (!empresa) continue;
     const nome = empresa.apelido || empresa.razao_social || empresa.codigo;
-    const tipos = (lote.tipos_recebidos ?? []).filter((t) => TIPOS_LIVRO_CANONICOS.includes(t as TipoLivro));
-    const faltam = TIPOS_LIVRO_CANONICOS.filter((t) => !tipos.includes(t)).map((t) => ROTULO_TIPO[t] ?? t).join(', ');
+    const req = tiposRequeridosDoLote(empresa);
+    const recebidos = new Set(lote.tipos_recebidos ?? []);
+    const presentes = req.filter((t) => recebidos.has(t));
+    const faltam = req.filter((t) => !recebidos.has(t)).map((t) => ROTULO_TIPO[t] ?? t).join(', ');
     const destinatarios = (await resolverDestinatariosFiscais(admin, empresa.id)).map((u) => u.id);
     await criarNotificacaoSistema(admin, {
       titulo: `Livros incompletos parados — ${nome}`,
-      mensagem: `O lote de livros de ${nome} (${lote.competencia}) está com ${tipos.length} de ${TIPOS_LIVRO_CANONICOS.length} tipos e parado há mais de ${staleHoras}h. Faltam: ${faltam}. Coloque os livros que faltam (ou resolva manual) — não envio incompleto.`,
+      mensagem: `O lote de ${nome} (${lote.competencia}) está com ${presentes.length} de ${req.length} tipos e parado há mais de ${staleHoras}h. Faltam: ${faltam}. Coloque o que falta (ou resolva manual) — não envio incompleto.`,
       tipo: 'aviso', empresaId: empresa.id, destinatarios,
     });
     await admin.from('lotes_livros_fiscais')

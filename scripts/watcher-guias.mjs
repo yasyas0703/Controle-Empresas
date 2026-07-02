@@ -74,11 +74,17 @@ const PASTA_PENDENTES = resolve(PASTA_ENTRADA, '_PENDENTES');
 // pra não misturar com erro/aprovação real em _PENDENTES.
 const PASTA_JA_ENVIADAS = resolve(PASTA_ENTRADA, '_JA-ENVIADAS');
 
-// Interessa: PDF na pasta de entrada que NÃO esteja numa subpasta "_" (ex: _PENDENTES).
+// Interessa: PDF (guias/livros) OU .txt (SPED EFD-Fiscal da HEDRONS) na pasta de
+// entrada, desde que NÃO esteja numa subpasta "_" (ex: _PENDENTES).
 function pathInteressa(caminho) {
-  if (!/\.pdf$/i.test(caminho)) return false;
+  if (!/\.(pdf|txt)$/i.test(caminho)) return false;
   if (/[\\/]_[^\\/]*([\\/]|$)/.test(caminho)) return false;
   return true;
+}
+
+/** True se o caminho é um .txt (SPED EFD-Fiscal). */
+function ehTxt(caminho) {
+  return /\.txt$/i.test(caminho);
 }
 
 const STATE_FILE = resolve(__dirname, '.watcher-state.json');
@@ -468,6 +474,20 @@ function validarPdfBuffer(buffer) {
   return null;
 }
 
+// Validação do .txt do SPED EFD-Fiscal: a 1ª linha não-vazia começa com |0000|.
+// Mesma filosofia do validarPdfBuffer — barra arquivo vazio/errado ANTES do POST
+// (cópia em andamento cai no retry). Retorna null se ok, ou o motivo.
+function validarSpedTxtBuffer(buffer) {
+  if (buffer.length < 20) return `arquivo muito pequeno (${buffer.length} bytes)`;
+  const inicio = buffer.subarray(0, 4096).toString('latin1');
+  for (const linha of inicio.split(/\r?\n/)) {
+    const t = linha.trim();
+    if (!t) continue;
+    return /^\|0000\|/.test(t) ? null : 'não começa com |0000| (não é SPED EFD-Fiscal?)';
+  }
+  return 'arquivo vazio';
+}
+
 // Retentativas por arquivo quando a LEITURA falha (lock/antivírus) ou o buffer
 // é inválido (provável cópia em andamento). Mesma filosofia do renomearComRetry
 // do arquivamento, mas assíncrona via fila: agenda re-enfileirar com backoff e
@@ -700,7 +720,7 @@ async function processarArquivo(caminho) {
   //     cópia ainda em andamento → trata como "não pronto" e re-tenta com
   //     backoff. PDF inválido/truncado NUNCA é POSTado; depois de esgotar as
   //     retentativas vira invalido_local + _PENDENTES + alerta no sino.
-  const invalido = validarPdfBuffer(buffer);
+  const invalido = ehTxt(caminho) ? validarSpedTxtBuffer(buffer) : validarPdfBuffer(buffer);
   if (invalido) {
     agendarRetentativa(caminho, invalido);
     return;
@@ -828,7 +848,8 @@ async function processarArquivo(caminho) {
 
 async function enviarParaApi(caminho, buffer, hash) {
   const form = new FormData();
-  const blob = new Blob([buffer], { type: 'application/pdf' });
+  const mime = ehTxt(caminho) ? 'text/plain' : 'application/pdf';
+  const blob = new Blob([buffer], { type: mime });
   form.append('arquivo', blob, basename(caminho));
   form.append('meta', JSON.stringify({ caminhoServidor: caminho, hash }));
 
@@ -993,7 +1014,7 @@ function iniciar() {
       if (/(^|[\\/])\.[^.]/.test(path)) return true;          // dotfiles
       if (/~\$/.test(path)) return true;                       // temp do Office
       if (/[\\/]_[^\\/]*([\\/]|$)/.test(path)) return true;    // subpastas "_" (ex: _PENDENTES)
-      if (/\.pdf$/i.test(path)) return false;                  // PDFs interessam
+      if (/\.(pdf|txt)$/i.test(path)) return false;            // PDFs e .txt (SPED) interessam
       if (/\.[a-z0-9]{1,5}$/i.test(path)) return true;         // outros arquivos
       return false;                                            // diretórios passam
     },

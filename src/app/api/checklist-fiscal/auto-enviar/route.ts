@@ -31,7 +31,8 @@ import {
   identificarEmpresa, identificarObrigacao, competenciaDoPdf, competenciaDeLivro, type ConfigObrigacao,
 } from './_identificar';
 import { estagiarItemLote, fecharLotesMaduros } from './_shared-lote';
-import { classificarTipoLivro } from '@/app/utils/validarGuia';
+import { classificarTipoLivro, empresaEnviaSpedTxt, empresaPossuiRet, type TipoLivro } from '@/app/utils/validarGuia';
+import { ehSpedFiscalTxt, parseCabecalhoSped } from './_sped-txt';
 import {
   resolverDestinatariosFiscais, criarNotificacaoSistema,
   rotuloTipoProblema, severidadeDoProblema,
@@ -283,6 +284,158 @@ async function registrarProcessado(
     );
 }
 
+/** baseUrl do host da requisição (pra pixel de tracking / fechar lote). */
+function baseUrlDaReq(req: Request): string | null {
+  const proto = req.headers.get('x-forwarded-proto') ?? 'https';
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host');
+  if (host) return `${proto}://${host}`;
+  return process.env.NEXT_PUBLIC_APP_URL?.trim()?.replace(/\/+$/, '') ?? null;
+}
+
+// ─── Handler do .txt do SPED EFD-Fiscal (só HEDRONS, no lote combinado) ──────
+// Fluxo espelha o do LIVROS FISCAIS (estagia no lote e responde 'aguardando_lote'),
+// mas parte de um arquivo TEXTO (não PDF): identifica empresa/competência pelo
+// registro |0000|, confere a allowlist e estagia como tipo 'sped_txt'.
+async function processarSpedTxt(
+  admin: SupabaseClient,
+  ctx: {
+    req: Request; fileBuffer: Buffer; caminhoServidor: string; nomeArquivo: string;
+    hashArquivo: string; ghostUserId: string;
+  },
+): Promise<NextResponse> {
+  const { fileBuffer, caminhoServidor, nomeArquivo, hashArquivo, ghostUserId } = ctx;
+  const OBRIG = 'SPED ICMS/IPI';
+
+  const cab = parseCabecalhoSped(fileBuffer);
+  if (!cab.competencia) {
+    await registrarProblema(admin, {
+      caminhoServidor, nomeArquivo, hashArquivo, empresaId: null, empresaNomePasta: null,
+      tipoProblema: 'competencia_nao_identificada',
+      detalhes: { motivo: 'Não achei o período (registro |0000|) no arquivo .txt do SPED.' },
+      competenciaParseada: null, obrigacaoParseada: OBRIG,
+    });
+    await registrarProcessado(admin, {
+      caminhoServidor, hashArquivo, empresaId: null, competencia: null, obrigacao: OBRIG,
+      nomeArquivo, status: 'pendente_correcao',
+      detalhes: { tipoProblema: 'competencia_nao_identificada', arquivo: 'sped_txt' },
+    });
+    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'competencia_nao_identificada' } });
+  }
+  const competencia = cab.competencia;
+
+  // Identifica a empresa pelo CNPJ/IE no próprio conteúdo do .txt (mesma lógica das
+  // guias). O .txt é ASCII no que importa (pipes/dígitos) — latin1 preserva.
+  const texto = fileBuffer.toString('latin1');
+  const { data: empresasRows } = await admin.from('empresas').select('*').is('desligada_em', null);
+  const todasEmpresas = (empresasRows ?? []) as Empresa[];
+  const ident = identificarEmpresa(texto, todasEmpresas);
+  if (!ident.empresa || !ident.forte) {
+    const tipoProblema = ident.ambiguo ? 'empresa_ambigua' : 'empresa_nao_identificada';
+    await registrarProblema(admin, {
+      caminhoServidor, nomeArquivo, hashArquivo, empresaId: ident.empresa?.id ?? null, empresaNomePasta: null,
+      tipoProblema,
+      detalhes: { motivo: 'Não identifiquei a empresa do .txt do SPED pelo CNPJ/IE do registro |0000|.', candidatos: ident.candidatos },
+      competenciaParseada: competencia, obrigacaoParseada: OBRIG,
+    });
+    await registrarProcessado(admin, {
+      caminhoServidor, hashArquivo, empresaId: ident.empresa?.id ?? null, competencia, obrigacao: OBRIG,
+      nomeArquivo, status: 'pendente_correcao', detalhes: { tipoProblema, arquivo: 'sped_txt' },
+    });
+    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema } });
+  }
+
+  const empresaCompleta = await carregarEmpresaCompleta(admin, ident.empresa.id);
+  if (isErroApi(empresaCompleta)) {
+    return NextResponse.json({ status: 'erro', detalhes: { motivo: 'Falha ao carregar empresa do .txt do SPED.' } }, { status: 500 });
+  }
+  const empresa = empresaCompleta;
+
+  // Allowlist: só empresa COM RET cuja raiz de CNPJ está em SPED_TXT_CNPJ_RAIZES.
+  // Qualquer outro .txt (empresa fora da lista, ou sem RET) NÃO vaza — vira pendência.
+  if (!empresaEnviaSpedTxt(empresa)) {
+    await registrarProblema(admin, {
+      caminhoServidor, nomeArquivo, hashArquivo, empresaId: empresa.id, empresaNomePasta: null,
+      tipoProblema: 'sped_txt_nao_permitido',
+      detalhes: { motivo: `A empresa "${empresa.razao_social || empresa.apelido || empresa.codigo}" não está habilitada a enviar o .txt do SPED (precisa de RET e estar na allowlist SPED_TXT_CNPJ_RAIZES).` },
+      competenciaParseada: competencia, obrigacaoParseada: OBRIG,
+    });
+    await registrarProcessado(admin, {
+      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao: OBRIG,
+      nomeArquivo, status: 'pendente_correcao', detalhes: { tipoProblema: 'sped_txt_nao_permitido' },
+    });
+    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'sped_txt_nao_permitido' } });
+  }
+
+  // Janela de competência (igual aos PDFs): só o mês anterior entra automático.
+  const janela = avaliarJanelaCompetencia(competencia);
+  if (janela === 'adiantada' || janela === 'antiga') {
+    const esperada = competenciaEsperada();
+    await registrarProblema(admin, {
+      caminhoServidor, nomeArquivo, hashArquivo, empresaId: empresa.id, empresaNomePasta: null,
+      tipoProblema: janela === 'adiantada' ? 'competencia_futura' : 'competencia_antiga',
+      detalhes: { motivo: `Competência ${competencia} do .txt do SPED está fora da janela (esperada: ${esperada}).`, esperada },
+      competenciaParseada: competencia, obrigacaoParseada: OBRIG,
+    });
+    await registrarProcessado(admin, {
+      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao: OBRIG,
+      nomeArquivo, status: 'pendente_correcao',
+      detalhes: { tipoProblema: janela === 'adiantada' ? 'competencia_futura' : 'competencia_antiga', esperada },
+    });
+    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'competencia_fora_janela', esperada } });
+  }
+
+  const nomeCanonicoTxt = `${sanitizeNomeArquivo(`${competencia} - SPED ICMS EFD`)}.txt`;
+  let r: Awaited<ReturnType<typeof estagiarItemLote>>;
+  try {
+    r = await estagiarItemLote(admin, {
+      empresa, competencia, hashArquivo, fileBuffer, nomeArquivo: nomeCanonicoTxt,
+      tipoLivro: 'sped_txt', caminhoServidor, contentType: 'text/plain; charset=utf-8',
+    });
+  } catch (e) {
+    await registrarProblema(admin, {
+      caminhoServidor, nomeArquivo, hashArquivo, empresaId: empresa.id, empresaNomePasta: null,
+      tipoProblema: 'erro',
+      detalhes: { motivo: `Falha ao estagiar o .txt do SPED no lote: ${e instanceof Error ? e.message : 'erro'}` },
+      competenciaParseada: competencia, obrigacaoParseada: OBRIG,
+    });
+    await registrarProcessado(admin, {
+      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao: OBRIG,
+      nomeArquivo, status: 'pendente_correcao', detalhes: { tipoProblema: 'erro', arquivo: 'sped_txt' },
+    });
+    return NextResponse.json({ status: 'pendente_correcao', detalhes: { tipoProblema: 'erro' } });
+  }
+
+  if (r.status === 'lote_ja_enviado') {
+    await registrarProblema(admin, {
+      caminhoServidor, nomeArquivo, hashArquivo, empresaId: empresa.id, empresaNomePasta: null,
+      tipoProblema: 'erro',
+      detalhes: { motivo: `O .txt do SPED chegou depois do lote de ${competencia} já ter sido enviado. Se faltou, reenvie manualmente.`, livro_atrasado: true, tipoLivro: 'sped_txt' },
+      competenciaParseada: competencia, obrigacaoParseada: OBRIG,
+    });
+    await registrarProcessado(admin, {
+      caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao: OBRIG,
+      nomeArquivo, status: 'pendente_correcao', detalhes: { motivo: 'livro_atrasado_lote', tipoLivro: 'sped_txt' },
+    });
+    return NextResponse.json({ status: 'pendente_correcao', detalhes: { motivo: 'lote já enviado' } });
+  }
+
+  await registrarProcessado(admin, {
+    caminhoServidor, hashArquivo, empresaId: empresa.id, competencia, obrigacao: OBRIG,
+    nomeArquivo, status: 'aguardando_lote',
+    detalhes: { motivo: r.status === 'ja_estagiado' ? 'Já estava no lote' : 'Estagiado — aguardando os demais do lote', tipoLivro: 'sped_txt', loteId: r.loteId },
+  });
+  await resolverProblemasDoArquivo(admin, caminhoServidor, hashArquivo, 'estagiado no lote');
+  if (r.status === 'estagiado') {
+    try { await fecharLotesMaduros(admin, { ghostUserId, baseUrl: baseUrlDaReq(ctx.req) }); }
+    catch (e) { console.error('[auto-enviar] fechar lote (sped_txt) falhou:', e); }
+  }
+  return NextResponse.json({
+    status: 'aguardando_lote',
+    detalhes: { empresa: empresa.codigo || empresa.razao_social, obrigacao: OBRIG, competencia, tipoLivro: 'sped_txt', loteId: r.loteId },
+    destino: montarDestino(empresa, competencia, nomeCanonicoTxt, OBRIG),
+  });
+}
+
 // ─── Handler principal ─────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
@@ -403,6 +556,15 @@ export async function POST(req: Request) {
         statusAnterior: jaProcessado.status,
         processadoEm: jaProcessado.processado_em,
       },
+    });
+  }
+
+  // 4.5 SPED EFD-Fiscal (.txt): NÃO é PDF — desvia pro handler dedicado antes da
+  // extração de texto de PDF. Só empresa com RET na allowlist (HEDRONS) manda esse
+  // .txt anexado no lote combinado; qualquer outro vira pendência (não vaza).
+  if (ehSpedFiscalTxt(fileBuffer)) {
+    return await processarSpedTxt(admin, {
+      req, fileBuffer, caminhoServidor, nomeArquivo, hashArquivo, ghostUserId,
     });
   }
 
@@ -562,7 +724,11 @@ export async function POST(req: Request) {
   // competenciaDeLivro em _identificar.ts.
   // IRPJ/CSLL trimestral: usam o mês do fim do trimestre direto (competenciaDoPdf),
   // igual às demais guias — sem recuo (ver competencia.ts).
-  const competencia = obrigacao === 'LIVROS FISCAIS'
+  // Empresa com RET: Demonstrativo e SPED ICMS entram no MESMO lote dos livros, então
+  // precisam da MESMA competência (mês direto) — senão o lote racha e nunca fecha.
+  const usaCompetenciaMesDireto = obrigacao === 'LIVROS FISCAIS'
+    || (empresaPossuiRet(empresa) && (obrigacao === 'DEMONSTR. APURAÇÃO' || obrigacao === 'SPED ICMS/IPI'));
+  const competencia = usaCompetenciaMesDireto
     ? competenciaDeLivro(textoPdf)
     : competenciaDoPdf(textoPdf);
   if (!competencia) {
@@ -693,10 +859,23 @@ export async function POST(req: Request) {
     });
   }
 
+  // Empresa com RET: Demonstrativo de Apuração e SPED ICMS deixam de ser avulsos
+  // (e o SPED ICMS deixa de ser INTERNO) e passam a ser estagiados no MESMO lote
+  // dos livros, pra sair TUDO num e-mail só e concluir 1 tarefa só. LIVROS FISCAIS
+  // vai pro lote sempre (com ou sem RET). Ver _shared-lote.ts / tiposRequeridosDoLote.
+  const empresaComRet = empresaPossuiRet(empresa);
+  const tipoParaLote: TipoLivro | null =
+    obrigacao === 'LIVROS FISCAIS' ? classificarTipoLivro(textoPdf)
+    : (empresaComRet && obrigacao === 'DEMONSTR. APURAÇÃO') ? 'demonstrativo'
+    : (empresaComRet && obrigacao === 'SPED ICMS/IPI') ? 'sped_icms'
+    : null;
+
   // 12. Obrigação INTERNA: não envia email, só marca check — mas salva o PDF
   // anexado na célula do Checklist mesmo assim. Interna = config.nao_envia_cliente
   // OU obrigação sempre-interna (RECIBO/DECLARAÇÃO do DAS — nunca vão pro cliente).
-  if (config.naoEnviaCliente || ehObrigacaoSempreInterna(obrigacao)) {
+  // Exceção: quando vai pro lote combinado (RET), o SPED ICMS interno é ENVIADO —
+  // por isso o `!tipoParaLote` aqui deixa esse caso cair no ramo do lote abaixo.
+  if ((config.naoEnviaCliente || ehObrigacaoSempreInterna(obrigacao)) && !tipoParaLote) {
     const docPathInterno = await subirDocumentoInterno(admin, empresa.id, fileBuffer, nomeCanonico);
     await marcarChecklistComoFeito(admin, {
       empresaId: empresa.id, mes: competencia, obrigacao, ghostUserId,
@@ -715,11 +894,12 @@ export async function POST(req: Request) {
     });
   }
 
-  // 12.5 LIVROS FISCAIS: não envia agora — ESTAGIA no lote pra mandar todos os
-  // livros (entrada, saída, apuração ICMS/IPI, ISS) JUNTOS num email só quando o
-  // lote fechar (ver _shared-lote.ts). A tarefa fica pendente até o lote sair.
-  if (obrigacao === 'LIVROS FISCAIS') {
-    const tipoLivro = classificarTipoLivro(textoPdf);
+  // 12.5 LOTE COMBINADO: não envia agora — ESTAGIA no lote pra mandar tudo JUNTO
+  // num e-mail só quando o lote fechar (ver _shared-lote.ts). A tarefa fica pendente
+  // até o lote sair. Sempre inclui os livros (entrada, saída, apuração ICMS/IPI, ISS);
+  // pra empresa com RET inclui também Demonstrativo, SPED ICMS (e, p/ HEDRONS, o .txt).
+  if (tipoParaLote) {
+    const tipoLivro = tipoParaLote;
     let r: Awaited<ReturnType<typeof estagiarItemLote>>;
     try {
       r = await estagiarItemLote(admin, {

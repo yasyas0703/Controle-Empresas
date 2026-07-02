@@ -715,10 +715,63 @@ export function obrigacoesComValidacao(): string[] {
 }
 
 // ─── Lote de Livros Fiscais ────────────────────────────────────────────────────
-export type TipoLivro = 'entradas' | 'saidas' | 'apuracao_icms' | 'apuracao_ipi' | 'iss' | 'outro';
+// Além dos 5 livros canônicos, o lote agrupa (só pra empresas com RET) o
+// Demonstrativo de Apuração e o SPED ICMS — e, pra HEDRONS, também o .txt do
+// SPED EFD-Fiscal. Ver tiposRequeridosDoLote.
+export type TipoLivro =
+  | 'entradas' | 'saidas' | 'apuracao_icms' | 'apuracao_ipi' | 'iss'
+  | 'demonstrativo' | 'sped_icms' | 'sped_txt'
+  | 'outro';
 
 /** Os 5 tipos canônicos de livro que o escritório costuma gerar por competência. */
 export const TIPOS_LIVRO_CANONICOS: TipoLivro[] = ['entradas', 'saidas', 'apuracao_icms', 'apuracao_ipi', 'iss'];
+
+// Shape mínimo de empresa aceito pelos helpers do lote. É tolerante ao camelCase
+// (`possuiRet`, do tipo Empresa) E ao snake_case (`possui_ret`, das rows cruas do
+// Postgres) porque várias rotas do auto-envio passam a ROW crua (select('*') sem
+// mapear) — ex.: carregarEmpresaCompleta faz só `...row`. Ver empresaPossuiRet.
+type EmpresaLote = { cnpj?: string | null; possuiRet?: boolean; possui_ret?: boolean };
+
+/** Lê a flag de RET tolerando camelCase (Empresa) e snake_case (row crua do PG). */
+export function empresaPossuiRet(empresa: EmpresaLote): boolean {
+  return empresa.possuiRet ?? empresa.possui_ret ?? false;
+}
+
+/**
+ * Raízes de CNPJ (8 dígitos) das empresas que também mandam o .txt do SPED
+ * EFD-Fiscal anexado no lote combinado. Hoje só a HEDRONS — configurado por env
+ * (não colamos CNPJ de cliente no git; mesma técnica do ESCRITORIO_CNPJ_RAIZES).
+ */
+export function raizesSpedTxt(): string[] {
+  // Aceita cada item como raiz (8 díg.) OU CNPJ inteiro (com ou sem máscara) —
+  // tira tudo que não é dígito e fica com os 8 primeiros (a raiz).
+  return (process.env.SPED_TXT_CNPJ_RAIZES ?? '')
+    .split(',')
+    .map((s) => s.replace(/\D/g, ''))
+    .filter((s) => s.length >= 8)
+    .map((s) => s.slice(0, 8));
+}
+
+/** True se a empresa (pela raiz do CNPJ) manda também o .txt do SPED no lote. */
+export function empresaEnviaSpedTxt(empresa: EmpresaLote): boolean {
+  if (!empresaPossuiRet(empresa)) return false;
+  const raiz = (empresa.cnpj ?? '').replace(/\D/g, '').slice(0, 8);
+  return raiz.length === 8 && raizesSpedTxt().includes(raiz);
+}
+
+/**
+ * Tipos que o lote combinado dessa empresa precisa reunir antes de fechar/enviar.
+ *   - Empresa SEM RET: os 5 livros canônicos (comportamento original).
+ *   - Empresa COM RET: os 5 + Demonstrativo de Apuração + SPED ICMS.
+ *   - Empresa COM RET que manda o .txt (HEDRONS): + sped_txt.
+ * Fonte única da verdade — usada por estagiar/fechar/enviar/alertar o lote.
+ */
+export function tiposRequeridosDoLote(empresa: EmpresaLote): TipoLivro[] {
+  if (!empresaPossuiRet(empresa)) return [...TIPOS_LIVRO_CANONICOS];
+  const req: TipoLivro[] = [...TIPOS_LIVRO_CANONICOS, 'demonstrativo', 'sped_icms'];
+  if (empresaEnviaSpedTxt(empresa)) req.push('sped_txt');
+  return req;
+}
 
 /**
  * Sub-classifica um PDF JÁ reconhecido como LIVROS FISCAIS no tipo de livro, pra o

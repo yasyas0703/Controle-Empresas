@@ -313,6 +313,13 @@ export default function ChecklistFiscalPage() {
   // Resolvido POR MÊS: override com vigência (ex: varredura de pastas, vigente
   // de 2026-06 em diante) não muda a visão de meses anteriores.
   const aplicaObrigacao = useCallback((obrigacao: string, empresa: Empresa): boolean => {
+    // Empresa com RET: Demonstrativo de Apuração e SPED ICMS/IPI vão JUNTOS no lote
+    // de LIVROS FISCAIS (1 e-mail, 1 tarefa que só conclui quando tudo chega). No
+    // checklist eles deixam de ser tarefas separadas — a coluna LIVROS FISCAIS passa
+    // a representar o pacote combinado. Regra dura: vem antes do override.
+    if (empresa.possuiRet && (obrigacao === 'DEMONSTR. APURAÇÃO' || obrigacao === 'SPED ICMS/IPI')) {
+      return false;
+    }
     const override = obrigacoesOverrides.get(buildKey(empresa.id, obrigacao));
     const noMes = db.overrideHabilitadaNoMes(override, mes);
     if (typeof noMes === 'boolean') return noMes;
@@ -344,9 +351,11 @@ export default function ChecklistFiscalPage() {
   const mostrarAlertaRef = useRef(mostrarAlerta);
   useEffect(() => { mostrarAlertaRef.current = mostrarAlerta; }, [mostrarAlerta]);
 
-  // Load items for the selected month
-  const carregar = useCallback(async (mesAlvo: string) => {
-    setLoading(true);
+  // Load items for the selected month.
+  // silent=true reconcilia em background (sem spinner de tela cheia) — usado na
+  // reativação da aba, pra não "piscar" a grade inteira a cada volta pra cá.
+  const carregar = useCallback(async (mesAlvo: string, silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const lista = await db.fetchChecklistFiscalByMes(mesAlvo);
       const mapa = new Map<ChecklistKey, ChecklistFiscalItem>();
@@ -354,9 +363,11 @@ export default function ChecklistFiscalPage() {
       setItems(mapa);
     } catch (err) {
       console.error(err);
-      mostrarAlertaRef.current('Erro ao carregar', 'Não foi possível carregar o checklist deste mês.', 'erro');
+      // Erro em reconciliação silenciosa não vale interromper o usuário — o
+      // realtime segue ativo e a próxima reativação tenta de novo.
+      if (!silent) mostrarAlertaRef.current('Erro ao carregar', 'Não foi possível carregar o checklist deste mês.', 'erro');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -460,7 +471,7 @@ export default function ChecklistFiscalPage() {
     // rede), os eventos perdidos NÃO voltam sozinhos. Ao reativar a aba, refaz o
     // fetch pra reconciliar o que escapou — assim a tela fica correta sem F5.
     const onVisible = () => {
-      if (document.visibilityState === 'visible') carregar(mes);
+      if (document.visibilityState === 'visible') carregar(mes, true);
     };
     document.addEventListener('visibilitychange', onVisible);
 
